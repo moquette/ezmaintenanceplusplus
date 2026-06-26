@@ -45,6 +45,31 @@ AddonTitle = "EZ Maintenance++"
 AddonID = "script.ezmaintenanceplusplus"
 
 
+class VfsCopyError(Exception):
+    """Raised when shipping the finished zip to a VFS destination fails.
+
+    Lets backup() tell a FAILED copy apart from a user CANCEL: a cancel returns
+    canceled=True (delete temp, no rotation), while a copy failure raises this
+    so backup() can report an error and SKIP rotation - the prior good backup
+    is never pruned behind a ship that never landed.
+    """
+
+
+# Backup filenames carry a trailing _YYYYMMDDHHMM stamp before ".zip".
+_STAMP_RE = re.compile(r"_(\d{12})\.zip$", re.IGNORECASE)
+
+
+def _name_stamp(name):
+    """Parse the trailing _YYYYMMDDHHMM stamp from a backup filename.
+
+    Returns the 12-digit string (lexically == chronologically sortable) or ""
+    when absent, so an unstamped file sorts as the OLDEST and can never cause a
+    newer, stamped file to be deleted.
+    """
+    m = _STAMP_RE.search(name or "")
+    return m.group(1) if m else ""
+
+
 def get_Kodi_Version():
     try:
         KODIV = float(xbmc.getInfoLabel("System.BuildVersion")[:4])
@@ -225,14 +250,28 @@ def backup(mode="full"):
         pass
 
     exclude_dirs = [""]
-    canceled = CreateZip(
-        BACKUPDATA,
-        backup_zip,
-        "Creating Backup",
-        "Backing up files",
-        exclude_dirs,
-        exclude_database,
-    )
+    try:
+        canceled = CreateZip(
+            BACKUPDATA,
+            backup_zip,
+            "Creating Backup",
+            "Backing up files",
+            exclude_dirs,
+            exclude_database,
+        )
+    except VfsCopyError as e:
+        # The ship to the share/path FAILED. Never report success and never
+        # rotate - the prior good backup stays untouched.
+        xbmc.log(
+            "%s : backup copy failed: %s" % (AddonTitle, type(e).__name__),
+            level=xbmc.LOGERROR,
+        )
+        dialog.ok(
+            AddonTitle,
+            "Backup failed: could not write to the Backup Location. "
+            "Your previous backup was not touched.",
+        )
+        return
     if canceled:
         try:
             xbmcvfs.delete(backup_zip)  # VFS-safe: handles nfs:// and local
@@ -329,9 +368,14 @@ def _rotate_vfs(backupdir):
         return
     try:
         _dirs, files = xbmcvfs.listdir(backupdir)
+        # Sort OLDEST first by the in-name _YYYYMMDDHHMM stamp, NOT raw filename
+        # (users name their backups, so a lexical name sort could rank an older
+        # file last and delete the newest). An unstamped file has stamp "" and
+        # sorts oldest, so it is pruned before any stamped, newer backup.
         zips = sorted(
-            [f for f in files if f.endswith(".zip")]
-        )  # name carries date stamp
+            [f for f in files if f.endswith(".zip")],
+            key=lambda f: (_name_stamp(f), f),
+        )
         for old in zips[: max(0, len(zips) - n)]:
             try:
                 xbmcvfs.delete(translatePath(os.path.join(backupdir, old)))
@@ -556,13 +600,19 @@ def CreateZip(
 
     # EZ Maintenance++ : if the destination was a VFS path, the zip was built in
     # special://temp - ship the finished file to the share/cloud, then drop the temp.
+    copy_ok = True
     if remote:
         if not canceled:
-            xbmcvfs.copy(zip_filename, target)
+            # xbmcvfs.copy returns False on failure (share offline, no space,
+            # permission). Capture it - a discarded False let a failed ship look
+            # like success, so backup() rotated and pruned a good old backup.
+            copy_ok = bool(xbmcvfs.copy(zip_filename, target))
         try:
             os.remove(zip_filename)
         except:
             pass
+        if not canceled and not copy_ok:
+            raise VfsCopyError("VFS copy to %s failed" % target)
 
     return canceled
 

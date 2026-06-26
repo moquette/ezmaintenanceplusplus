@@ -11,7 +11,11 @@ OUT="dist/${ADDON}-${VERSION}.zip"
 rm -f "$OUT"
 
 zip -r -X "$OUT" "$ADDON" \
-  -x '*/__pycache__/*' -x '*.pyc' -x '*.pyo' -x '*.DS_Store' >/dev/null
+  -x '*/__pycache__/*' \
+  -x '*/.ruff_cache/*' \
+  -x '*/.pytest_cache/*' \
+  -x '*/.mypy_cache/*' \
+  -x '*.pyc' -x '*.pyo' -x '*.DS_Store' >/dev/null
 
 echo "built $OUT"
 unzip -l "$OUT" | tail -3

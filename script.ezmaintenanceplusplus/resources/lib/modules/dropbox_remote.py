@@ -15,6 +15,8 @@ This program is free software: GPL v3 or later (see the other modules).
 """
 
 import json
+import os
+import re
 import time
 
 import requests
@@ -22,6 +24,22 @@ import xbmc
 import xbmcaddon
 import xbmcgui
 import xbmcvfs
+
+# Backup filenames carry a trailing _YYYYMMDDHHMM stamp before ".zip"
+# (the 12-digit datetime EZ Maintenance++ appends at backup time).
+_STAMP_RE = re.compile(r"_(\d{12})\.zip$", re.IGNORECASE)
+
+
+def _name_stamp(name):
+    """Parse the trailing _YYYYMMDDHHMM stamp from a backup filename.
+
+    Returns the 12-digit string (lexically == chronologically sortable) or ""
+    when no stamp is present, so an unstamped file sorts as the OLDEST and can
+    never cause a newer, stamped file to be ranked below it.
+    """
+    m = _STAMP_RE.search(name or "")
+    return m.group(1) if m else ""
+
 
 APP_KEY = ""  # baked-in Dropbox App-folder app key (placeholder; falls back to setting 'dropbox_key')
 APP_SECRET = ""  # baked-in secret (placeholder; falls back to setting 'dropbox_secret')
@@ -252,16 +270,21 @@ def _do_upload(local_path, remote_name):
     size = xbmcvfs.Stat(local_path).st_size()
 
     if size <= CHUNK:
-        with xbmcvfs.File(local_path) as f:
-            body = f.readBytes()
         arg = {"path": path, "mode": "overwrite", "mute": True}
         for attempt in (1, 2):
             headers = _auth_header(force=(attempt == 2))
             headers["Dropbox-API-Arg"] = json.dumps(arg)
             headers["Content-Type"] = "application/octet-stream"
-            resp = requests.post(
-                CONTENT + "/files/upload", headers=headers, data=body, timeout=TIMEOUT
-            )
+            # Stream from disk - pass the open file object so requests sends it
+            # chunk by chunk and never buffers the whole (<=50MB) file in RAM.
+            # Re-open per attempt so a 401/429 retry restarts from byte 0.
+            with open(abs_local, "rb") as fh:
+                resp = requests.post(
+                    CONTENT + "/files/upload",
+                    headers=headers,
+                    data=fh,
+                    timeout=TIMEOUT,
+                )
             if resp.status_code == 200:
                 return
             if attempt == 1 and _handle_retryable(resp):
@@ -356,7 +379,6 @@ def _session_finish(session_id, offset, path):
 
 def list_backups():
     """Return .zip names in the app folder root, newest first."""
-    names = []
     arg = {"path": "", "recursive": False}
     resp = _rpc(API + "/files/list_folder", arg)
     if _handle_retryable(resp):
@@ -382,13 +404,19 @@ def list_backups():
         cursor = data.get("cursor")
         has_more = data.get("has_more", False)
 
+    files = []
     for e in entries:
         if e.get(".tag") == "file":
             n = e.get("name", "")
             if n.endswith(".zip"):
-                names.append(n)
-    # filenames carry a _YYYYMMDDHHMM stamp, so a reverse name sort is newest-first
-    return sorted(names, reverse=True)
+                files.append((n, e.get("server_modified", "")))
+    # Newest first, ordered by the in-name _YYYYMMDDHHMM stamp (NOT raw lexical
+    # name order: users name their backups, so prefixes differ and a name sort
+    # could rank an older file above a newer one). Files with no parseable stamp
+    # fall back to Dropbox's server_modified, then the raw name, and always sort
+    # as the OLDEST so they can never displace a stamped, newer backup.
+    files.sort(key=lambda t: (_name_stamp(t[0]), t[1], t[0]), reverse=True)
+    return [n for n, _mod in files]
 
 
 # ------------------------------------------------------------------------- download
@@ -409,10 +437,20 @@ def download(remote_name):
             timeout=TIMEOUT,
         )
         if resp.status_code == 200:
-            with open(dest, "wb") as fh:
-                for block in resp.iter_content(chunk_size=1024 * 1024):
-                    if block:
-                        fh.write(block)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            try:
+                with open(dest, "wb") as fh:
+                    for block in resp.iter_content(chunk_size=1024 * 1024):
+                        if block:
+                            fh.write(block)
+            except Exception:
+                # A broken stream leaves a partial temp file: remove it so a
+                # later restore can never pick up a truncated zip, then re-raise.
+                try:
+                    os.remove(dest)
+                except OSError:
+                    pass
+                raise
             return dest_special
         if attempt == 1 and _handle_retryable(resp):
             continue

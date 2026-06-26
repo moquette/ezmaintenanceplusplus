@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.26.1" provider-name="aenema, peno">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.26.2" provider-name="aenema, peno">
   <requires>
     <import addon="script.module.requests" version="1.0.0" />
   </requires>
@@ -20,6 +20,14 @@
 	    <fanart>fanart.png</fanart>
     </assets>
     <news>
+2026.06.26.2
+ - Backup safety fixes: a failed Network/SMB/NFS copy now reports an error and never
+   prunes your last good backup (the failed ship is no longer treated as success).
+ - Keep-N rotation now orders backups by the in-name date stamp, not the raw filename,
+   so a renamed/mixed-name backup set can never delete the newest one.
+ - Dropbox: single-shot uploads stream from disk (no whole-file buffer); a broken
+   download cleans up its partial temp file and creates the temp folder if missing.
+ - Build no longer ships lint/cache cruft (.ruff_cache, __pycache__) inside the zip.
 2026.06.26.1
  - All-in-one backup tool: pick a Destination - Local, Network (SMB/NFS), or Dropbox.
  - Dropbox is one-tap: Settings -> Backup/Restore -> Destination = Dropbox -> Sign in,

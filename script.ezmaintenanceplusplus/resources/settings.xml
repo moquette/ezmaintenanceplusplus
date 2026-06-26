@@ -41,7 +41,13 @@
     </category>
 	<category label="Backup/Restore">
 		<setting id="BackupFixSpecialHome" type="bool" label="Replace home folder in xml files with special://home" default="false" />
-		<setting id="download.path" type="folder" label="Backup Location" visible="True" />
-		<setting id="restore.path" type="folder" label="Restore from Zip Location (folder)" visible="True" />
+		<setting id="destination" type="enum" label="Destination" values="Local|Network (SMB/NFS)|Dropbox" default="0" />
+		<setting id="backup.keep" type="slider" label="Keep how many backups (0 = keep all)" default="5" range="0,50" option="int" />
+		<setting id="download.path" type="folder" label="Backup Location" visible="!eq(-2,2)" />
+		<setting id="restore.path" type="folder" label="Restore from Zip Location (folder)" visible="!eq(-3,2)" />
+		<setting id="dropbox_signin" type="action" label="Sign in to Dropbox" action="RunScript(script.ezmaintenanceplusplus,authorize)" option="close" visible="eq(-4,2)" />
+		<setting id="dropbox_key" type="text" label="Dropbox App key (advanced - only if not signing in normally)" default="" visible="eq(-5,2)" />
+		<setting id="dropbox_secret" type="text" label="Dropbox App secret (advanced)" default="" visible="eq(-6,2)" />
+		<setting id="dropbox_refresh_token" type="text" label="Dropbox refresh token" default="" visible="false" />
     </category>
 </settings>

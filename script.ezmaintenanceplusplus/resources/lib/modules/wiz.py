@@ -166,15 +166,18 @@ def skinswap():
             sys.exit(1)
 
 
+def _destination():
+    # 0 = Local, 1 = Network (SMB/NFS), 2 = Dropbox. Default 0.
+    try:
+        return int(control.setting("destination") or "0")
+    except:
+        return 0
+
+
 # BACKUP ZIP
 def backup(mode="full"):
     KODIV = get_Kodi_Version()
-
-    backupdir = control.setting("download.path")
-    if backupdir == "" or backupdir == None:
-        control.infoDialog("Please Setup a Path for Downlads first")
-        control.openSettings(query="1.3")
-        return
+    dest = _destination()
 
     if mode == "full":
         defaultName = "kodi_backup"
@@ -187,51 +190,184 @@ def backup(mode="full"):
         BACKUPDATA = control.USERDATA
     else:
         return
-    if os.path.exists(BACKUPDATA):
-        if not backupdir == "":
-            name = tools._get_keyboard(
-                default=defaultName, heading="Name your Backup", cancel="-"
+
+    if not os.path.exists(BACKUPDATA):
+        return
+
+    if dest == 2:
+        _backup_dropbox(mode, defaultName, BACKUPDATA)
+        return
+
+    # Local / Network (SMB/NFS): path-based CreateZip (VFS copy seam handles nfs://, smb://).
+    backupdir = control.setting("download.path")
+    if backupdir == "" or backupdir == None:
+        control.infoDialog("Please Setup a Path for Downloads first")
+        control.openSettings(query="1.3")
+        return
+
+    name = tools._get_keyboard(
+        default=defaultName, heading="Name your Backup", cancel="-"
+    )
+    if name == "-":
+        return
+    today = datetime.now().strftime("%Y%m%d%H%M")
+    today = re.sub("[^0-9]", "", str(today))
+    zipDATE = "_%s.zip" % today
+    name = re.sub(" ", "_", name) + zipDATE
+    backup_zip = translatePath(os.path.join(backupdir, name))
+    exclude_database = [".pyo", ".log"]
+
+    try:
+        maintenance.clearCache(mode="silent")
+        maintenance.deleteThumbnails(mode="silent")
+        maintenance.purgePackages(mode="silent")
+    except:
+        pass
+
+    exclude_dirs = [""]
+    canceled = CreateZip(
+        BACKUPDATA,
+        backup_zip,
+        "Creating Backup",
+        "Backing up files",
+        exclude_dirs,
+        exclude_database,
+    )
+    if canceled:
+        try:
+            xbmcvfs.delete(backup_zip)  # VFS-safe: handles nfs:// and local
+        except:
+            pass
+        dialog.ok(AddonTitle, "Backup canceled")
+    else:
+        # Only rotate AFTER a confirmed-landed backup; the new zip is sacred until then.
+        _rotate_vfs(backupdir)
+        dialog.ok(AddonTitle, "Backup complete")
+
+
+def _backup_dropbox(mode, defaultName, BACKUPDATA):
+    from resources.lib.modules import dropbox_remote
+
+    if not control.setting("dropbox_refresh_token").strip():
+        control.infoDialog("Sign in to Dropbox first (Settings -> Backup/Restore)")
+        return
+
+    name = tools._get_keyboard(
+        default=defaultName, heading="Name your Backup", cancel="-"
+    )
+    if name == "-":
+        return
+    today = datetime.now().strftime("%Y%m%d%H%M")
+    today = re.sub("[^0-9]", "", str(today))
+    name = re.sub(" ", "_", name) + ("_%s.zip" % today)
+
+    try:
+        maintenance.clearCache(mode="silent")
+        maintenance.deleteThumbnails(mode="silent")
+        maintenance.purgePackages(mode="silent")
+    except:
+        pass
+
+    # Build the zip LOCALLY in special://temp (no "://" so CreateZip skips its VFS copy
+    # branch), then ship it to Dropbox. The prior remote backup stays untouched unless
+    # this upload confirms, so a failed run never destroys the last good backup.
+    staged = "special://temp/" + name
+    exclude_dirs = [""]
+    exclude_database = [".pyo", ".log"]
+    canceled = CreateZip(
+        BACKUPDATA,
+        translatePath(staged),
+        "Creating Backup",
+        "Backing up files",
+        exclude_dirs,
+        exclude_database,
+    )
+    try:
+        if canceled:
+            dialog.ok(AddonTitle, "Backup canceled")
+            return
+        try:
+            dp2 = xbmcgui.DialogProgress()
+            dp2.create(AddonTitle, "Uploading to Dropbox..." + "\n" + "Please Wait")
+            dropbox_remote.upload(staged, name)
+            dp2.close()
+        except Exception as e:
+            try:
+                dp2.close()
+            except:
+                pass
+            xbmc.log(
+                "%s : Dropbox upload failed: %s" % (AddonTitle, type(e).__name__),
+                level=xbmc.LOGERROR,
             )
-            if name != "-":
-                today = datetime.now().strftime("%Y%m%d%H%M")
-                today = re.sub("[^0-9]", "", str(today))
-                zipDATE = "_%s.zip" % today
-                name = re.sub(" ", "_", name) + zipDATE
-                backup_zip = translatePath(os.path.join(backupdir, name))
-                exclude_database = [".pyo", ".log"]
-
-                try:
-                    maintenance.clearCache(mode="silent")
-                    maintenance.deleteThumbnails(mode="silent")
-                    maintenance.purgePackages(mode="silent")
-                except:
-                    pass
-
-                exclude_dirs = [""]
-                canceled = CreateZip(
-                    BACKUPDATA,
-                    backup_zip,
-                    "Creating Backup",
-                    "Backing up files",
-                    exclude_dirs,
-                    exclude_database,
-                )
-                if canceled:
-                    try:
-                        xbmcvfs.delete(backup_zip)  # VFS-safe: handles nfs:// and local
-                    except:
-                        pass
-                    dialog.ok(AddonTitle, "Backup canceled")
-                else:
-                    dialog.ok(AddonTitle, "Backup complete")
-        else:
             dialog.ok(
                 AddonTitle,
-                "No backup location found: Please setup your Backup location",
+                "Dropbox upload failed. Your previous backup was not touched.",
             )
+            return
+        # Confirmed landed -> safe to rotate the Dropbox folder.
+        _rotate_dropbox(dropbox_remote)
+        dialog.ok(AddonTitle, "Backup complete (Dropbox)")
+    finally:
+        try:
+            os.remove(translatePath(staged))
+        except:
+            pass
+
+
+def _keep_n():
+    try:
+        return int(control.setting("backup.keep") or "0")
+    except:
+        return 0
+
+
+def _rotate_vfs(backupdir):
+    # Destination-agnostic keep-N for Local/Network: delete oldest .zip beyond N.
+    n = _keep_n()
+    if n <= 0:
+        return
+    try:
+        _dirs, files = xbmcvfs.listdir(backupdir)
+        zips = sorted(
+            [f for f in files if f.endswith(".zip")]
+        )  # name carries date stamp
+        for old in zips[: max(0, len(zips) - n)]:
+            try:
+                xbmcvfs.delete(translatePath(os.path.join(backupdir, old)))
+            except:
+                pass
+    except Exception as e:
+        xbmc.log(
+            "%s : backup rotation skipped: %s" % (AddonTitle, type(e).__name__),
+            level=xbmc.LOGWARNING,
+        )
+
+
+def _rotate_dropbox(dropbox_remote):
+    # Destination-agnostic keep-N for Dropbox: delete oldest beyond N.
+    n = _keep_n()
+    if n <= 0:
+        return
+    try:
+        names = dropbox_remote.list_backups()  # newest-first
+        for old in names[n:]:
+            try:
+                dropbox_remote.delete(old)
+            except:
+                pass
+    except Exception as e:
+        xbmc.log(
+            "%s : Dropbox rotation skipped: %s" % (AddonTitle, type(e).__name__),
+            level=xbmc.LOGWARNING,
+        )
 
 
 def restoreFolder():
+    if _destination() == 2:
+        _restore_dropbox()
+        return
+
     names = []
     links = []
     zipFolder = control.setting("restore.path")
@@ -253,6 +389,58 @@ def restoreFolder():
     select = control.selectDialog(names)
     if select != -1:
         restore(links[select])
+
+
+def _restore_dropbox():
+    from resources.lib.modules import dropbox_remote
+
+    if not control.setting("dropbox_refresh_token").strip():
+        control.infoDialog("Sign in to Dropbox first (Settings -> Backup/Restore)")
+        return
+    try:
+        names = dropbox_remote.list_backups()
+    except Exception as e:
+        xbmc.log(
+            "%s : Dropbox list failed: %s" % (AddonTitle, type(e).__name__),
+            level=xbmc.LOGERROR,
+        )
+        dialog.ok(AddonTitle, "Could not list Dropbox backups.")
+        return
+    if not names:
+        dialog.ok(AddonTitle, "No backups found in Dropbox.")
+        return
+    select = control.selectDialog(names)
+    if select == -1:
+        return
+    chosen = names[select]
+    local = None
+    try:
+        dp2 = xbmcgui.DialogProgress()
+        dp2.create(AddonTitle, "Downloading from Dropbox..." + "\n" + "Please Wait")
+        special = dropbox_remote.download(chosen)  # special://temp/<name>
+        dp2.close()
+        local = translatePath(special)
+    except Exception as e:
+        try:
+            dp2.close()
+        except:
+            pass
+        xbmc.log(
+            "%s : Dropbox download failed: %s" % (AddonTitle, type(e).__name__),
+            level=xbmc.LOGERROR,
+        )
+        dialog.ok(AddonTitle, "Could not download that backup from Dropbox.")
+        return
+    # Hand the LOCAL staged path to restore(): it has no "://", so restore() extracts it
+    # directly (the unchanged extractor). restore() removes the temp on the remote branch
+    # only, so clean it up here after the user confirms (or declines) the restore.
+    try:
+        restore(local)
+    finally:
+        try:
+            os.remove(local)
+        except:
+            pass
 
 
 def restore(zipFile):

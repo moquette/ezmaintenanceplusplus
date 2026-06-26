@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.26.0" provider-name="aenema, peno">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.26.1" provider-name="aenema, peno">
   <requires>
     <import addon="script.module.requests" version="1.0.0" />
   </requires>
@@ -20,6 +20,13 @@
 	    <fanart>fanart.png</fanart>
     </assets>
     <news>
+2026.06.26.1
+ - All-in-one backup tool: pick a Destination - Local, Network (SMB/NFS), or Dropbox.
+ - Dropbox is one-tap: Settings -> Backup/Restore -> Destination = Dropbox -> Sign in,
+   paste one code, done. No app to create, no keys to type (talks to the Dropbox REST
+   API directly, no SDK). Backup uploads, Restore lists and pulls straight from Dropbox.
+ - Keep-N rotation: set how many backups to keep; the oldest are pruned only AFTER a new
+   backup lands, so a failed run never deletes your last good backup.
 2026.06.26.0
  - EZ Maintenance++ : forked from EZ Maintenance+ (aenema, peno).
  - Backup now writes through Kodi VFS: the zip is staged locally then copied to the

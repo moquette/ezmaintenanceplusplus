@@ -6,9 +6,9 @@ Paste this (or point an agent at it) to pick up where we left off.
 
 EZ Maintenance++ (`script.ezmaintenanceplusplus`) is the all-in-one "Swiss Army
 Knife" Kodi 21 Omega backup util: ONE tool, three destinations **Local | Network
-(SMB/NFS) | Dropbox**. Built, QA-hardened, signed in to Dropbox, and live-proven for
-normal backups. **ONE open issue:** very large backups (>~100 MB) time out on the
-chunked Dropbox upload from a Fire TV Stick. **Next task: harden the chunked upload.**
+(SMB/NFS) | Dropbox**. Built, QA-hardened, signed in to Dropbox, and live-proven. The
+previously-open large-upload issue (>~100 MB backups timing out on the chunked Dropbox
+upload) is **FIXED and proven on device** - see "RESOLVED" below.
 
 ## Repo / build / test
 
@@ -26,28 +26,31 @@ chunked Dropbox upload from a Fire TV Stick. **Next task: harden the chunked upl
 - **Full USERDATA backup -> Dropbox: SUCCEEDED** - `EZMpp_proof_userdata_202606261521.zip` (25 MB) is in `/Apps/tony-7-backup/`.
 - **48 unit tests green.** QA (2 agents) found + fixed 6 bugs, incl. two data-loss HIGHs: (1) a failed VFS/SMB copy reported success then rotation deleted the prior backup; (2) keep-N rotation sorted by filename not timestamp (could delete the newest). Both fixed + proven on-box.
 
-## OPEN / BROKEN - the next task
+## RESOLVED - large-upload fix (2026-06-30)
 
-**Large backups time out on the chunked Dropbox upload.** A 135 MB addons-mode zip
-builds fine (~90s) but the upload fails 3x with `ConnectionError: write operation
-timed out`. Current upload (`resources/lib/modules/dropbox_remote.py`): **50 MB
-chunks** (`CHUNK = 50 * 1000 * 1000`), a `(10, 300)` requests timeout, and it retries
-the **WHOLE upload once** (NOT per-chunk, NO resume-from-offset). On a Fire TV Stick's
-slow wifi uplink a single 50 MB chunk write blows the timeout, and the whole-upload
-retry just times out again. A true "full/everything" backup (`mode='full'` =
-`control.HOME`, userdata + addons) is even bigger and would also fail.
+**The chunked Dropbox upload is hardened and PROVEN on device.**
+`resources/lib/modules/dropbox_remote.py` now uses **8 MiB chunks**
+(`CHUNK = 8 * 1024 * 1024`, a 4 MiB multiple), a `(10, 180)` timeout, **per-chunk
+retry with exponential backoff** (on timeout / network error / 5xx), and
+**resume-from-offset** (re-reads the chunk from disk on a timeout; honors Dropbox's
+`incorrect_offset` `correct_offset`), bounded by `MAX_TRIES = 5`. The whole-op retry
+remains as a final backstop. Version bumped to **2026.06.30.0**; **53** unit tests
+green (added: timeout-resume, incorrect_offset resync, bounded give-up, 5xx backoff).
 
-### NEXT TASK: harden the chunked upload (standard, no hacks)
+**Live-proven on the Apple TV (2026-06-30):** a **full** backup
+(`kodi_backup_202606300850.zip`, **130.62 MB**) staged then uploaded clean over Apple
+TV wifi and landed in `/Apps/tony-7-backup/` - the exact >100 MB case that used to
+fail 3x with `write operation timed out`. Delivered to the Apple TV for install via an
+NFS export from the dev Mac (Kodi "install from an HTTP source" crashed on tvOS; NFS
+was clean). The baked `_appauth.py` (vault `DROPBOX_APP_KEY`/`_SECRET`) was recreated
+before building so one-tap sign-in worked.
 
-Adopt the resilient upload-session pattern:
+### Follow-up polish (in progress)
 
-1. **Smaller chunks** (multiple of 4 MB; likely ~8-16 MB) so each finishes within the timeout.
-2. **Retry EACH chunk** with backoff.
-3. **RESUME from the session offset** on failure (Dropbox upload sessions are resumable; on `incorrect_offset` Dropbox returns the `correct_offset`) instead of re-sending the whole file.
-4. Sane per-request timeout; keep streaming chunks from disk (the session path already streams).
-
-- We were mid-answering **"how are the others handling chunking?"**: xbmcbackup uses 50 MB chunks via the official Dropbox SDK + retry-whole-once (the SDK owns the HTTP/timeout). Finish grounding the exact Dropbox-recommended chunk size + the resilient pattern, then implement.
-- After implementing: **re-test the 135 MB backup INLINE, narrating each step** (do NOT background a live on-device test), verify it lands via the Dropbox API, bump version, re-run pytest, commit.
+- **Real upload progress bar** - the upload was a blocking call that left Kodi's
+  progress bar frozen at 100%. Now wired to report bytes-sent vs total per chunk.
+- **QR sign-in** - the authorize step made the user transcribe a long OAuth URL; now
+  shows a scannable QR (falls back to the URL dialog if QR generation fails).
 
 ## Box / device state (Bedroom Fire TV)
 

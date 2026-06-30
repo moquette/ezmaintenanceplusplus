@@ -52,16 +52,25 @@ try:
 except Exception:
     pass
 
-CHUNK = (
-    50 * 1000 * 1000
-)  # 50MB - xbmcbackup's memory-safe size for Fire TV/Apple TV (NOT 150MB)
+# Upload-session chunk size: a small 8 MiB (a multiple of Dropbox's 4 MiB session
+# unit) so one chunk finishes well inside TIMEOUT even on a slow Fire TV / Apple TV
+# wifi uplink. The old 50 MB chunk could not finish a single socket write before the
+# timeout, and with no per-chunk resume one slow chunk killed the whole upload. See
+# _do_upload + _session_append for the resumable retry that pairs with this.
+CHUNK = 8 * 1024 * 1024
 OAUTH_AUTHORIZE = "https://www.dropbox.com/oauth2/authorize"
 OAUTH_TOKEN = "https://api.dropboxapi.com/oauth2/token"
 API = "https://api.dropboxapi.com/2"
 CONTENT = "https://content.dropboxapi.com/2"
 
-# connect + read timeout (read is long because chunk uploads/downloads stream)
-TIMEOUT = (10, 300)
+# (connect, read) timeout per request. Generous (each chunk streams from disk) but
+# far shorter than before: a stalled connection now fails fast so the chunk is
+# retried/resumed instead of hanging for minutes.
+TIMEOUT = (10, 180)
+
+# Per-chunk attempts before a session upload gives up (upload() then retries the
+# whole op once as a final backstop). Transient/network failures back off.
+MAX_TRIES = 5
 
 AddonID = "script.ezmaintenanceplusplus"
 AddonTitle = "EZ Maintenance++"
@@ -250,7 +259,12 @@ def _rpc(url, arg, force=False):
 
 
 def upload(local_path, remote_name):
-    """Upload a local file to /<remote_name> in the app folder, retrying the whole op once."""
+    """Upload a local file to /<remote_name> in the app folder.
+
+    Small files (<= CHUNK) go in one streamed request; large files use a resumable
+    upload session where every chunk is retried with backoff and the loop resumes
+    from the session offset on failure. The whole op is retried once as a backstop.
+    """
     last_err = None
     for attempt in (1, 2):
         try:
@@ -276,7 +290,7 @@ def _do_upload(local_path, remote_name):
             headers["Dropbox-API-Arg"] = json.dumps(arg)
             headers["Content-Type"] = "application/octet-stream"
             # Stream from disk - pass the open file object so requests sends it
-            # chunk by chunk and never buffers the whole (<=50MB) file in RAM.
+            # chunk by chunk and never buffers the whole (<=CHUNK) file in RAM.
             # Re-open per attempt so a 401/429 retry restarts from byte 0.
             with open(abs_local, "rb") as fh:
                 resp = requests.post(
@@ -292,62 +306,139 @@ def _do_upload(local_path, remote_name):
             raise DropboxAuthError("upload failed (HTTP %s)" % resp.status_code)
         return
 
-    # large file: chunked upload session, streaming from disk one CHUNK at a time
-    session_id = None
-    offset = 0
+    # large file: resumable chunked upload session, streaming from disk one CHUNK at
+    # a time. Each chunk retries on its own and the loop resumes from the session
+    # offset, so one slow/timed-out chunk no longer restarts the whole file.
     with open(abs_local, "rb") as fh:
-        first = fh.read(CHUNK)
-        session_id = _session_start(first)
-        offset = len(first)
-        while True:
-            data = fh.read(CHUNK)
-            if not data:
-                break
-            _session_append(session_id, offset, data)
-            offset += len(data)
+        session_id, offset = _session_start(fh)
+        while offset < size:
+            offset = _session_append(session_id, fh, offset)
     _session_finish(session_id, offset, path)
 
 
-def _session_start(data):
-    arg = {"close": False}
-    for attempt in (1, 2):
-        headers = _auth_header(force=(attempt == 2))
-        headers["Dropbox-API-Arg"] = json.dumps(arg)
-        headers["Content-Type"] = "application/octet-stream"
-        resp = requests.post(
-            CONTENT + "/files/upload_session/start",
-            headers=headers,
-            data=data,
-            timeout=TIMEOUT,
-        )
+def _is_transient(resp):
+    """A server-side hiccup worth retrying with backoff (vs a hard 4xx)."""
+    return resp.status_code in (500, 502, 503, 504)
+
+
+def _correct_offset(resp):
+    """If resp is Dropbox's 409 incorrect_offset, return the offset Dropbox actually
+    holds (so the session can resume there); otherwise None."""
+    if resp.status_code != 409:
+        return None
+    try:
+        err = resp.json().get("error", {})
+        if isinstance(err, dict) and err.get(".tag") == "incorrect_offset":
+            return int(err.get("correct_offset"))
+    except Exception:
+        return None
+    return None
+
+
+def _session_start(fh):
+    """Open an upload session with the first chunk. Returns (session_id, bytes_sent).
+    Retries transient/network failures, re-reading the first chunk from disk."""
+    last = None
+    delay = 1
+    for attempt in range(1, MAX_TRIES + 1):
+        fh.seek(0)
+        data = fh.read(CHUNK)
+        try:
+            headers = _auth_header()
+            headers["Dropbox-API-Arg"] = json.dumps({"close": False})
+            headers["Content-Type"] = "application/octet-stream"
+            resp = requests.post(
+                CONTENT + "/files/upload_session/start",
+                headers=headers,
+                data=data,
+                timeout=TIMEOUT,
+            )
+        except Exception as e:
+            last = e
+            _log(
+                "session/start net error (try %s/%s): %s"
+                % (attempt, MAX_TRIES, type(e).__name__)
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
+            continue
         if resp.status_code == 200:
-            return resp.json()["session_id"]
-        if attempt == 1 and _handle_retryable(resp):
+            return resp.json()["session_id"], len(data)
+        if _handle_retryable(resp):
+            continue
+        if _is_transient(resp):
+            _log(
+                "session/start transient HTTP %s (try %s/%s)"
+                % (resp.status_code, attempt, MAX_TRIES)
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
             continue
         raise DropboxAuthError(
             "upload_session/start failed (HTTP %s)" % resp.status_code
         )
+    raise DropboxAuthError(
+        "upload_session/start failed after %s attempts%s"
+        % (MAX_TRIES, (": %s" % type(last).__name__) if last else "")
+    )
 
 
-def _session_append(session_id, offset, data):
-    arg = {"cursor": {"session_id": session_id, "offset": offset}, "close": False}
-    for attempt in (1, 2):
-        headers = _auth_header(force=(attempt == 2))
-        headers["Dropbox-API-Arg"] = json.dumps(arg)
-        headers["Content-Type"] = "application/octet-stream"
-        resp = requests.post(
-            CONTENT + "/files/upload_session/append_v2",
-            headers=headers,
-            data=data,
-            timeout=TIMEOUT,
-        )
+def _session_append(session_id, fh, offset):
+    """Upload one chunk starting at `offset`. Retries transient/network failures
+    (re-reading from disk) and, on Dropbox's incorrect_offset, resumes from the
+    offset Dropbox reports. Returns the new absolute offset."""
+    last = None
+    delay = 1
+    for attempt in range(1, MAX_TRIES + 1):
+        fh.seek(offset)
+        data = fh.read(CHUNK)
+        if not data:
+            return offset
+        arg = {"cursor": {"session_id": session_id, "offset": offset}, "close": False}
+        try:
+            headers = _auth_header()
+            headers["Dropbox-API-Arg"] = json.dumps(arg)
+            headers["Content-Type"] = "application/octet-stream"
+            resp = requests.post(
+                CONTENT + "/files/upload_session/append_v2",
+                headers=headers,
+                data=data,
+                timeout=TIMEOUT,
+            )
+        except Exception as e:
+            last = e
+            _log(
+                "session/append net error at %s (try %s/%s): %s"
+                % (offset, attempt, MAX_TRIES, type(e).__name__)
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
+            continue
         if resp.status_code == 200:
-            return
-        if attempt == 1 and _handle_retryable(resp):
+            return offset + len(data)
+        co = _correct_offset(resp)
+        if co is not None:
+            # A prior (maybe timed-out) attempt already landed bytes; jump to the
+            # offset Dropbox actually holds instead of re-sending what it has.
+            _log("session/append resync %s -> %s" % (offset, co))
+            return co
+        if _handle_retryable(resp):
+            continue
+        if _is_transient(resp):
+            _log(
+                "session/append transient HTTP %s at %s (try %s/%s)"
+                % (resp.status_code, offset, attempt, MAX_TRIES)
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
             continue
         raise DropboxAuthError(
             "upload_session/append_v2 failed (HTTP %s)" % resp.status_code
         )
+    raise DropboxAuthError(
+        "upload_session/append_v2 failed after %s attempts at offset %s%s"
+        % (MAX_TRIES, offset, (": %s" % type(last).__name__) if last else "")
+    )
 
 
 def _session_finish(session_id, offset, path):
@@ -355,23 +446,47 @@ def _session_finish(session_id, offset, path):
         "cursor": {"session_id": session_id, "offset": offset},
         "commit": {"path": path, "mode": "overwrite", "mute": True},
     }
-    for attempt in (1, 2):
-        headers = _auth_header(force=(attempt == 2))
-        headers["Dropbox-API-Arg"] = json.dumps(arg)
-        headers["Content-Type"] = "application/octet-stream"
-        resp = requests.post(
-            CONTENT + "/files/upload_session/finish",
-            headers=headers,
-            data=b"",
-            timeout=TIMEOUT,
-        )
+    last = None
+    delay = 1
+    for attempt in range(1, MAX_TRIES + 1):
+        try:
+            headers = _auth_header()
+            headers["Dropbox-API-Arg"] = json.dumps(arg)
+            headers["Content-Type"] = "application/octet-stream"
+            resp = requests.post(
+                CONTENT + "/files/upload_session/finish",
+                headers=headers,
+                data=b"",
+                timeout=TIMEOUT,
+            )
+        except Exception as e:
+            last = e
+            _log(
+                "session/finish net error (try %s/%s): %s"
+                % (attempt, MAX_TRIES, type(e).__name__)
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
+            continue
         if resp.status_code == 200:
             return
-        if attempt == 1 and _handle_retryable(resp):
+        if _handle_retryable(resp):
+            continue
+        if _is_transient(resp):
+            _log(
+                "session/finish transient HTTP %s (try %s/%s)"
+                % (resp.status_code, attempt, MAX_TRIES)
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
             continue
         raise DropboxAuthError(
             "upload_session/finish failed (HTTP %s)" % resp.status_code
         )
+    raise DropboxAuthError(
+        "upload_session/finish failed after %s attempts%s"
+        % (MAX_TRIES, (": %s" % type(last).__name__) if last else "")
+    )
 
 
 # --------------------------------------------------------------------------- listing

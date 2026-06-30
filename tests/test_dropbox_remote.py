@@ -183,28 +183,24 @@ def _wire_upload_responder(fake_kodi):
     return seen
 
 
+def test_chunk_size_is_small_and_4mib_aligned(fake_kodi):
+    """The fix: chunks are small (<=16 MiB, so one finishes inside the timeout on a
+    slow uplink) and a multiple of Dropbox's 4 MiB upload-session unit."""
+    dbx = fake_kodi.dbx
+    assert dbx.CHUNK <= 16 * 1024 * 1024
+    assert dbx.CHUNK % (4 * 1024 * 1024) == 0
+
+
 @pytest.mark.parametrize(
-    "mb,expect_single,expect_appends,expect_chunks",
+    "size_fn,expect_single",
     [
-        (49, True, 0, 0),  # < 50MB -> single shot
-        (50, True, 0, 0),  # == 50MB (50*1000*1000) -> single (size <= CHUNK)
-        (
-            51,
-            False,
-            0,
-            1,
-        ),  # > 50MB -> session: start(50) + finish; 1 more read=1MB -> 1 append
-        (
-            300,
-            False,
-            0,
-            5,
-        ),  # start(50) + 5 appends(50 each) = 6 reads of 50, last append 50
+        (lambda c: c - 1, True),  # < CHUNK -> single shot
+        (lambda c: c, True),  # == CHUNK -> single (size <= CHUNK)
+        (lambda c: c + 1, False),  # > CHUNK -> session (start + 1 append)
+        (lambda c: c * 3 + 7, False),  # several chunks -> start + multiple appends
     ],
 )
-def test_chunk_decision_and_offsets(
-    fake_kodi, mb, expect_single, expect_appends, expect_chunks
-):
+def test_chunk_decision_and_offsets(fake_kodi, size_fn, expect_single):
     dbx = fake_kodi.dbx
     fake_kodi.addon._settings.update(
         {"dropbox_key": "K", "dropbox_secret": "S", "dropbox_refresh_token": "R"}
@@ -215,7 +211,7 @@ def test_chunk_decision_and_offsets(
     dbx._cache["bearer"] = "B"
     dbx._cache["exp"] = time.time() + 99999
 
-    size = mb * 1000 * 1000
+    size = size_fn(dbx.CHUNK)
     real, special = _stage_file(fake_kodi, size)
     seen = _wire_upload_responder(fake_kodi)
     try:
@@ -223,12 +219,11 @@ def test_chunk_decision_and_offsets(
     finally:
         os.remove(real)
 
-    CHUNK = 50 * 1000 * 1000
     if expect_single:
-        assert seen["single"] == 1, f"{mb}MB should be single-shot"
+        assert seen["single"] == 1, f"{size}B should be single-shot"
         assert seen["start"] == 0
     else:
-        assert seen["single"] == 0, f"{mb}MB should NOT be single-shot"
+        assert seen["single"] == 0, f"{size}B should NOT be single-shot"
         assert seen["start"] == 1
         # offsets must equal cumulative bytes sent: first append offset == CHUNK,
         # each subsequent == prev + chunk_size
@@ -255,8 +250,8 @@ def test_chunk_decision_and_offsets(
         assert total_sent == size, f"sent {total_sent} != {size}"
 
 
-def test_chunk_50mb_plus_one_byte_uses_session(fake_kodi):
-    """The exact boundary: 50MB+1 byte must switch to a session (size > CHUNK)."""
+def test_chunk_boundary_plus_one_uses_session(fake_kodi):
+    """The exact boundary: CHUNK+1 byte must switch to a session (size > CHUNK)."""
     dbx = fake_kodi.dbx
     import time
 
@@ -265,7 +260,7 @@ def test_chunk_50mb_plus_one_byte_uses_session(fake_kodi):
     )
     dbx._cache["bearer"] = "B"
     dbx._cache["exp"] = time.time() + 99999
-    size = 50 * 1000 * 1000 + 1
+    size = dbx.CHUNK + 1
     real, special = _stage_file(fake_kodi, size)
     seen = _wire_upload_responder(fake_kodi)
     try:
@@ -275,9 +270,9 @@ def test_chunk_50mb_plus_one_byte_uses_session(fake_kodi):
     assert seen["single"] == 0
     assert seen["start"] == 1
     assert seen["finish_offset"] == size
-    # one trailing byte -> exactly one append of size 1
+    # one trailing byte beyond the first (start) chunk -> exactly one append of size 1
     assert seen["append_sizes"] == [1]
-    assert seen["append_offsets"] == [50 * 1000 * 1000]
+    assert seen["append_offsets"] == [dbx.CHUNK]
 
 
 # ============================================================ API-arg shape ===
@@ -731,6 +726,171 @@ def test_single_upload_409_raises_no_silent_success(fake_kodi):
             dbx.upload(special, "x.zip")
     finally:
         os.remove(real)
+
+
+# ===================================================== resilient sessions ===
+def _prime(fake_kodi):
+    import time
+
+    fake_kodi.addon._settings.update(
+        {"dropbox_key": "K", "dropbox_secret": "S", "dropbox_refresh_token": "R"}
+    )
+    fake_kodi.dbx._cache["bearer"] = "B"
+    fake_kodi.dbx._cache["exp"] = time.time() + 99999
+
+
+def test_session_resumes_after_chunk_timeout(fake_kodi, monkeypatch):
+    """FIX: a chunk that times out is retried at the SAME offset (resumed from disk),
+    so no bytes are skipped and the whole upload still completes - the original bug
+    was a single timed-out 50 MB chunk killing the entire upload."""
+    dbx = fake_kodi.dbx
+    _prime(fake_kodi)
+    monkeypatch.setattr(dbx.time, "sleep", lambda s: None)  # no real backoff wait
+    size = dbx.CHUNK * 2 + 123  # start + 2 appends
+    real, special = _stage_file(fake_kodi, size)
+    seen = {"start_size": None, "appends": [], "finish_offset": None}
+    state = {"append_calls": 0}
+
+    def responder(idx, call):
+        url = call["url"]
+        if url.endswith("/upload_session/start"):
+            seen["start_size"] = len(call["data"]) if call["data"] else 0
+            return fake_kodi.FakeResponse(200, {"session_id": "SID"})
+        if url.endswith("/upload_session/append_v2"):
+            state["append_calls"] += 1
+            # the very first append attempt times out mid-write
+            if state["append_calls"] == 1:
+                raise OSError("write operation timed out")
+            arg = json.loads(call["headers"]["Dropbox-API-Arg"])
+            seen["appends"].append(
+                (arg["cursor"]["offset"], len(call["data"]) if call["data"] else 0)
+            )
+            return fake_kodi.FakeResponse(200, {})
+        if url.endswith("/upload_session/finish"):
+            arg = json.loads(call["headers"]["Dropbox-API-Arg"])
+            seen["finish_offset"] = arg["cursor"]["offset"]
+            return fake_kodi.FakeResponse(200, {})
+        return fake_kodi.FakeResponse(200, {})
+
+    fake_kodi.requests.responder = responder
+    try:
+        assert dbx.upload(special, "x.zip") is True
+    finally:
+        os.remove(real)
+    # the retried append re-sent the SAME first chunk (offset == start_size), not the
+    # next one - nothing was skipped by the timeout
+    assert seen["appends"][0][0] == seen["start_size"]
+    assert seen["finish_offset"] == size
+    # every byte accounted for across start + successful appends (no gap, no dup)
+    assert seen["start_size"] + sum(s for _o, s in seen["appends"]) == size
+
+
+def test_session_resyncs_on_incorrect_offset(fake_kodi, monkeypatch):
+    """FIX: on Dropbox's 409 incorrect_offset the loop resumes from the offset
+    Dropbox reports (correct_offset) instead of re-sending what it already has."""
+    dbx = fake_kodi.dbx
+    _prime(fake_kodi)
+    monkeypatch.setattr(dbx.time, "sleep", lambda s: None)
+    size = dbx.CHUNK * 3 + 5
+    real, special = _stage_file(fake_kodi, size)
+    seen = {"start_size": None, "offsets": [], "finish_offset": None}
+    state = {"n": 0}
+
+    def responder(idx, call):
+        url = call["url"]
+        if url.endswith("/upload_session/start"):
+            seen["start_size"] = len(call["data"]) if call["data"] else 0
+            return fake_kodi.FakeResponse(200, {"session_id": "SID"})
+        if url.endswith("/upload_session/append_v2"):
+            arg = json.loads(call["headers"]["Dropbox-API-Arg"])
+            off = arg["cursor"]["offset"]
+            seen["offsets"].append(off)
+            state["n"] += 1
+            if state["n"] == 1:
+                # Dropbox says it already holds one more chunk than we think
+                return fake_kodi.FakeResponse(
+                    409,
+                    {
+                        "error": {
+                            ".tag": "incorrect_offset",
+                            "correct_offset": off + dbx.CHUNK,
+                        }
+                    },
+                )
+            return fake_kodi.FakeResponse(200, {})
+        if url.endswith("/upload_session/finish"):
+            arg = json.loads(call["headers"]["Dropbox-API-Arg"])
+            seen["finish_offset"] = arg["cursor"]["offset"]
+            return fake_kodi.FakeResponse(200, {})
+        return fake_kodi.FakeResponse(200, {})
+
+    fake_kodi.requests.responder = responder
+    try:
+        assert dbx.upload(special, "x.zip") is True
+    finally:
+        os.remove(real)
+    # first append at the start-chunk boundary, then RESUMED at the corrected offset
+    assert seen["offsets"][0] == seen["start_size"]
+    assert seen["offsets"][1] == seen["start_size"] + dbx.CHUNK
+    assert seen["finish_offset"] == size
+
+
+def test_session_gives_up_after_max_tries_no_infinite_loop(fake_kodi, monkeypatch):
+    """A persistently failing chunk raises (bounded) rather than looping forever:
+    MAX_TRIES attempts per session, and upload() retries the whole op once -> the
+    append endpoint is hit exactly 2 * MAX_TRIES times, then it surfaces an error."""
+    dbx = fake_kodi.dbx
+    _prime(fake_kodi)
+    monkeypatch.setattr(dbx.time, "sleep", lambda s: None)
+    size = dbx.CHUNK + 10
+    real, special = _stage_file(fake_kodi, size)
+    counts = {"append": 0}
+
+    def responder(idx, call):
+        url = call["url"]
+        if url.endswith("/upload_session/start"):
+            return fake_kodi.FakeResponse(200, {"session_id": "SID"})
+        if url.endswith("/upload_session/append_v2"):
+            counts["append"] += 1
+            raise OSError("write operation timed out")
+        return fake_kodi.FakeResponse(200, {})
+
+    fake_kodi.requests.responder = responder
+    try:
+        with pytest.raises(dbx.DropboxAuthError):
+            dbx.upload(special, "x.zip")
+    finally:
+        os.remove(real)
+    assert counts["append"] == 2 * dbx.MAX_TRIES
+
+
+def test_session_append_retries_transient_5xx(fake_kodi, monkeypatch):
+    """A 5xx during append is retried with backoff (then succeeds), not raised."""
+    dbx = fake_kodi.dbx
+    _prime(fake_kodi)
+    slept = []
+    monkeypatch.setattr(dbx.time, "sleep", lambda s: slept.append(s))
+    size = dbx.CHUNK + 10
+    real, special = _stage_file(fake_kodi, size)
+    state = {"append": 0}
+
+    def responder(idx, call):
+        url = call["url"]
+        if url.endswith("/upload_session/start"):
+            return fake_kodi.FakeResponse(200, {"session_id": "SID"})
+        if url.endswith("/upload_session/append_v2"):
+            state["append"] += 1
+            if state["append"] == 1:
+                return fake_kodi.FakeResponse(503, {})  # transient
+            return fake_kodi.FakeResponse(200, {})
+        return fake_kodi.FakeResponse(200, {})
+
+    fake_kodi.requests.responder = responder
+    try:
+        assert dbx.upload(special, "x.zip") is True
+    finally:
+        os.remove(real)
+    assert slept, "a transient 5xx should back off before retrying"
 
 
 # ============================================================ redaction ===

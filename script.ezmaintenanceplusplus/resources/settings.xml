@@ -13,32 +13,51 @@
 		<setting id="filesizethumb_alert" type="slider" label="Max Total Files Size (MB)" default="500" range="50,2000" option="int" />
 	</category>
 
-	<category label="Wizard Creator">
-		<setting id="enable_wiz1" type="bool" label="Enable wizard" default="false"/>
-		<setting id="name1" type="text" label="Name" default="name" enable="!eq(-1,false)"/>
-		<setting id="url1" type="text" label="Zip Url" default="zip url" enable="!eq(-2,false)"/>
-		<setting id="img1" type="text" label="Image" default="special://home/addons/script.ezmaintenanceplusplus/fanart.jpg" enable="!eq(-3,false)"/>
-
-		<setting id="enable_wiz2" type="bool" label="Enable wizard" default="false"/>
-		<setting id="name2" type="text" label="Name" default="name" enable="!eq(-1,false)"/>
-		<setting id="url2" type="text" label="Zip Url" default="https://" enable="!eq(-2,false)"/>
-		<setting id="img2" type="text" label="Image" default="special://home/addons/script.ezmaintenanceplusplus/fanart.jpg" enable="!eq(-3,false)"/>
-
-		<setting id="enable_wiz3" type="bool" label="Enable wizard" default="false"/>
-		<setting id="name3" type="text" label="Name" default="name" enable="!eq(-1,false)"/>
-		<setting id="url3" type="text" label="Zip Url" default="https://" enable="!eq(-2,false)"/>
-		<setting id="img3" type="text" label="Image" default="special://home/addons/script.ezmaintenanceplusplus/fanart.jpg" enable="!eq(-3,false)"/>
-
-		<setting id="enable_wiz4" type="bool" label="Enable wizard" default="false"/>
-		<setting id="name4" type="text" label="Name" default="name" enable="!eq(-1,false)"/>
-		<setting id="url4" type="text" label="Zip Url" default="https://" enable="!eq(-2,false)"/>
-		<setting id="img4" type="text" label="Image" default="special://home/addons/script.ezmaintenanceplusplus/fanart.jpg" enable="!eq(-3,false)"/>
-
-		<setting id="enable_wiz5" type="bool" label="Enable wizard" default="false"/>
-		<setting id="name5" type="text" label="Name" default="" enable="!eq(-1,false)"/>
-		<setting id="url5" type="text" label="Zip Url" default="http://" enable="!eq(-2,false)"/>
-		<setting id="img5" type="text" label="Image" default="special://home/addons/script.ezmaintenanceplusplus/fanart.jpg" enable="!eq(-3,false)"/>
-    </category>
+	<category label="One-Tap Restore">
+		<setting type="lsep" label="Pin a specific backup to a slot, then restore it in one tap. Pick = choose the backup (a network/local file or a Dropbox backup); Verify = check it still exists and is a valid zip." />
+		<setting id="pin1_name" type="text" label="1. Name" default="" />
+		<setting id="pin1_pick" type="action" label="1. Pick backup..." action="RunScript(script.ezmaintenanceplusplus,onetap,pick,1)" option="close" />
+		<setting id="pin1_verify" type="action" label="1. Verify this pin" action="RunScript(script.ezmaintenanceplusplus,onetap,verify,1)" option="close" />
+		<setting id="pin1_kind" type="text" default="" visible="false" />
+		<setting id="pin1_src" type="text" default="" visible="false" />
+		<setting id="pin1_type" type="text" default="" visible="false" />
+		<setting id="pin1_meta" type="text" default="" visible="false" />
+		<setting id="pin2_name" type="text" label="2. Name" default="" />
+		<setting id="pin2_pick" type="action" label="2. Pick backup..." action="RunScript(script.ezmaintenanceplusplus,onetap,pick,2)" option="close" />
+		<setting id="pin2_verify" type="action" label="2. Verify this pin" action="RunScript(script.ezmaintenanceplusplus,onetap,verify,2)" option="close" />
+		<setting id="pin2_kind" type="text" default="" visible="false" />
+		<setting id="pin2_src" type="text" default="" visible="false" />
+		<setting id="pin2_type" type="text" default="" visible="false" />
+		<setting id="pin2_meta" type="text" default="" visible="false" />
+		<setting id="pin3_name" type="text" label="3. Name" default="" />
+		<setting id="pin3_pick" type="action" label="3. Pick backup..." action="RunScript(script.ezmaintenanceplusplus,onetap,pick,3)" option="close" />
+		<setting id="pin3_verify" type="action" label="3. Verify this pin" action="RunScript(script.ezmaintenanceplusplus,onetap,verify,3)" option="close" />
+		<setting id="pin3_kind" type="text" default="" visible="false" />
+		<setting id="pin3_src" type="text" default="" visible="false" />
+		<setting id="pin3_type" type="text" default="" visible="false" />
+		<setting id="pin3_meta" type="text" default="" visible="false" />
+		<setting id="pin4_name" type="text" label="4. Name" default="" />
+		<setting id="pin4_pick" type="action" label="4. Pick backup..." action="RunScript(script.ezmaintenanceplusplus,onetap,pick,4)" option="close" />
+		<setting id="pin4_verify" type="action" label="4. Verify this pin" action="RunScript(script.ezmaintenanceplusplus,onetap,verify,4)" option="close" />
+		<setting id="pin4_kind" type="text" default="" visible="false" />
+		<setting id="pin4_src" type="text" default="" visible="false" />
+		<setting id="pin4_type" type="text" default="" visible="false" />
+		<setting id="pin4_meta" type="text" default="" visible="false" />
+		<setting id="pin5_name" type="text" label="5. Name" default="" />
+		<setting id="pin5_pick" type="action" label="5. Pick backup..." action="RunScript(script.ezmaintenanceplusplus,onetap,pick,5)" option="close" />
+		<setting id="pin5_verify" type="action" label="5. Verify this pin" action="RunScript(script.ezmaintenanceplusplus,onetap,verify,5)" option="close" />
+		<setting id="pin5_kind" type="text" default="" visible="false" />
+		<setting id="pin5_src" type="text" default="" visible="false" />
+		<setting id="pin5_type" type="text" default="" visible="false" />
+		<setting id="pin5_meta" type="text" default="" visible="false" />
+		<setting id="pin6_name" type="text" label="6. Name" default="" />
+		<setting id="pin6_pick" type="action" label="6. Pick backup..." action="RunScript(script.ezmaintenanceplusplus,onetap,pick,6)" option="close" />
+		<setting id="pin6_verify" type="action" label="6. Verify this pin" action="RunScript(script.ezmaintenanceplusplus,onetap,verify,6)" option="close" />
+		<setting id="pin6_kind" type="text" default="" visible="false" />
+		<setting id="pin6_src" type="text" default="" visible="false" />
+		<setting id="pin6_type" type="text" default="" visible="false" />
+		<setting id="pin6_meta" type="text" default="" visible="false" />
+	</category>
 	<category label="Backup/Restore">
 		<setting id="BackupFixSpecialHome" type="bool" label="Replace home folder in xml files with special://home" default="false" />
 		<setting id="destination" type="enum" label="Destination" values="Local|Network (SMB/NFS)|Dropbox" default="0" />

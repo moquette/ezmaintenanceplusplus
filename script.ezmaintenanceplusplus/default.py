@@ -468,6 +468,20 @@ if _script_arg in ("authorize", "dbtest"):
         _dbtest(dropbox_remote)
     sys.exit(0)
 
+# One-Tap Restore config actions from the settings tab:
+#   RunScript(script.ezmaintenanceplusplus,onetap,<pick|verify>,<slot>)
+if _script_arg == "onetap":
+    from resources.lib.modules import onetap
+
+    _verb = sys.argv[2] if len(sys.argv) > 2 else ""
+    _slot = int(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3].isdigit() else 0
+    if _slot:
+        if _verb == "pick":
+            onetap.pick(_slot)
+        elif _verb == "verify":
+            onetap.verify(_slot)
+    sys.exit(0)
+
 params = dict(parse_qsl(sys.argv[2].replace("?", "")))
 action = params.get("action")
 

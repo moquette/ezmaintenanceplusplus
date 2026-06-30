@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.14" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.15" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,10 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+2026.06.30.15
+ - One-Tap Restore (foundation): a new Settings tab to pin a specific backup (a
+   network/local file or a Dropbox backup) to a slot and verify it still exists and is a
+   valid zip. Replaces the old Wizard Creator. One-tap restore-from-pin is the next step.
 2026.06.30.14
  - Authorship cleanup: the add-on's listed author is now its maintainer only. The
    original EZ Maintenance+ authors are credited in the project README, not in the app.

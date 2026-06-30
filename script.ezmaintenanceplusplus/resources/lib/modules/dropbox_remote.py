@@ -43,20 +43,12 @@ def _name_stamp(name):
     return m.group(1) if m else ""
 
 
-APP_KEY = ""  # baked-in Dropbox App-folder client_id (placeholder; falls back to setting 'dropbox_key')
-APP_SECRET = (
-    ""  # unused under PKCE; kept only for the legacy _secret() settings fallback
-)
-
-# Dropbox sign-in uses PKCE (see authorize / _access_token), so only the PUBLIC
-# client_id (app key) is ever needed - there is NO client_secret in the flow, and
-# nothing secret ships in the public build. APP_KEY is baked in via _appauth.py
-# (gitignored, but included in the built zip); if absent it falls back to the
-# 'dropbox_key' advanced setting so a user can paste their own app's client_id.
-try:
-    from resources.lib.modules._appauth import APP_KEY
-except Exception:
-    pass
+# Built-in Dropbox App-folder client_id for the "tony-7-backup" app. Under PKCE there is
+# NO client_secret, and an OAuth client_id is public by design (it ships in every copy of
+# the add-on), so it is safe to hardcode here. Falls back to the 'dropbox_key' advanced
+# setting if a user points the add-on at their own Dropbox app.
+APP_KEY = "0xzoqv9xq7ji6et"
+APP_SECRET = ""  # unused under PKCE; kept only for the legacy _secret() settings fallback
 
 # Upload-session chunk size: a small 8 MiB (a multiple of Dropbox's 4 MiB session
 # unit) so one chunk finishes well inside TIMEOUT even on a slow Fire TV / Apple TV

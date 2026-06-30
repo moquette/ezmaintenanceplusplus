@@ -272,4 +272,7 @@ def fake_kodi(monkeypatch):
     # reset module bearer cache between tests
     dbx._cache["bearer"] = None
     dbx._cache["exp"] = 0
+    # APP_KEY is now hardcoded (public PKCE client_id); blank it so tests exercise the
+    # 'dropbox_key' settings-fallback path they set up.
+    dbx.APP_KEY = ""
     return ns

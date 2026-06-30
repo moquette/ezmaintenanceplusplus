@@ -1,4 +1,4 @@
-# EZ Maintenance++ - RESUME HERE (handoff, 2026-06-26)
+# EZ Maintenance++ - RESUME HERE (handoff, 2026-06-30)
 
 Paste this (or point an agent at it) to pick up where we left off.
 
@@ -7,17 +7,21 @@ Paste this (or point an agent at it) to pick up where we left off.
 EZ Maintenance++ (`script.ezmaintenanceplusplus`) is the all-in-one "Swiss Army
 Knife" Kodi 21 Omega backup util: ONE tool, three destinations **Local | Network
 (SMB/NFS) | Dropbox**. Built, QA-hardened, and **live-proven end-to-end on Apple TV
-(tvOS) and Fire TV**. As of **2026.06.30.12**: PKCE sign-in (no app secret), on-device
+(tvOS) and Fire TV**. As of **2026.06.30.14**: PKCE sign-in (no app secret), on-device
 QR, resilient resumable uploads, real progress bars, and a fully working **restore**
 (the big saga - fixed a backup that included a partial copy of itself under `temp/`,
-which corrupted extraction). **61 tests green.** Next: the **One-Tap Restore** feature
-(`docs/one-tap-restore.md`) and publishing to the tony7bones Kodi repo under `addons/`.
+which corrupted extraction). **61 tests green.** **SHIPPED + LIVE in the Tony.7.Bones Kodi
+repo** (`tony7bones.github.io`, proxy v2.2.2; it serves `script.ezmaintenanceplusplus`
+2026.06.30.14 from `addons/`). Part of the **Tony.7.Bones "++" suite** - the thesis is
+"take a proven app and strengthen it" - alongside **Estuary MOD V2++** and **Tony.7.Bones
+Setup**. Next: the **One-Tap Restore** feature (`docs/one-tap-restore.md`).
 
 ## Repo / build / test
 
 - Repo: `~/Code/moquette/ezmaintenanceplusplus` (its OWN git repo, NOT tony7bones.github.io), branch `main`.
-- Add-on dir: `script.ezmaintenanceplusplus/`. Version **2026.06.30.12**.
-- Build: `./build.sh` -> `dist/script.ezmaintenanceplusplus-<version>.zip` (excludes cache cruft; INCLUDES the gitignored `_appauth.py`).
+- Add-on dir: `script.ezmaintenanceplusplus/`. Version **2026.06.30.14**.
+- Build: `./build.sh` -> `dist/script.ezmaintenanceplusplus-<version>.zip` (excludes cache cruft). The Dropbox **client_id is hardcoded** in `dropbox_remote.py` (public under PKCE; no `_appauth.py`, no secret).
+- Deployed copy lives in `~/Code/moquette/tony7bones.github.io/addons/script.ezmaintenanceplusplus/`; to ship a new version use that repo's **`deploy` skill** (edit source here -> sync -> generate_repo -> push; EZM++ is raw-served, no proxy release needed).
 - Tests: `cd repo && python3 -m pytest -q` (`tests/`, 61 passing, mock-Kodi harness).
 - Dropbox creds: built-in App-folder app `tony-7-backup`; key/secret live in the gitignored `script.ezmaintenanceplusplus/resources/lib/modules/_appauth.py` (ships in the zip, NEVER in git) AND in the vault: `cd ~/Code/moquette/vault && bin/vault-get DROPBOX_APP_KEY` / `bin/vault-get DROPBOX_APP_SECRET` (VAULT.md §23).
 

@@ -54,3 +54,24 @@ captured date/size for display.
 
 Dynamic unlimited in-page add/edit (we chose fixed slots + pin-as-you-go); installing
 external community builds (this is now a personal-restore tool).
+
+## The "++" pattern it inherits (from Estuary MOD V2++)
+
+One-Tap Restore is the next add-on in the Tony.7.Bones "++" suite, and it is built to the
+same discipline already proven in Estuary MOD V2++ (`script.tony7bones.modv2plus`). That
+add-on's contract is the spec for the whole line:
+
+- **In-tab Apply / Restore + Verify buttons** in a settings tab (mirror modv2plus's Skin
+  Settings category UX - the "one tap" IS that Apply button).
+- **Non-destructive**: back up / confirm before you touch anything. Here: download and
+  verify the pinned snapshot is a valid zip BEFORE any wipe.
+- **Verify before destroy**: never Fresh Start until the snapshot is confirmed good - a bad
+  source can never strand a wiped box.
+- **Survive the device's weirdness**: route the actual restore through the proven
+  `wiz.restore()` path so the tvOS fixes (temp/-skip, `_kodisettings` re-apply,
+  `UpdateLocalAddons`, clean Quit) come for free.
+- **Self-heal**: consider a settings-aware gate (like modv2plus's boot service) that can
+  re-verify pins on launch and warn if a pinned snapshot has gone missing.
+
+The suite thesis in one line: **back up before you touch, verify before you destroy,
+survive the device, self-heal.** Anything that earns the "++" clears that bar.

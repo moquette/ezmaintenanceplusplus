@@ -61,3 +61,10 @@ Produces `dist/script.ezmaintenanceplusplus-<version>.zip`. Install it in Kodi w
 Forked from **EZ Maintenance+** by **aenema** and **peno**. License is unchanged from the
 upstream add-on (see `script.ezmaintenanceplusplus/addon.xml`). This fork only adds VFS
 network-destination support.
+
+**aenema** and **peno** authored the _original_ add-on only. They are not affiliated with,
+and have not endorsed, this fork, and have not given permission for their names to be used
+as its authors. They are therefore credited here as the upstream we forked, and are
+deliberately kept out of the add-on's own `provider-name` (which lists only the fork
+maintainer). This README credit is a factual statement of lineage, not a claim of authorship
+or endorsement.

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.13" provider-name="aenema, peno, tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.14" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,9 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+2026.06.30.14
+ - Authorship cleanup: the add-on's listed author is now its maintainer only. The
+   original EZ Maintenance+ authors are credited in the project README, not in the app.
 2026.06.30.13
  - Fixes the add-on not appearing in the Kodi 19+/Omega add-on browser. It now
    declares xbmc.python 3.0.0 compatibility; without it Kodi treated the add-on as

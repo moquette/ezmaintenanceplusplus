@@ -10,6 +10,10 @@ mkdir -p dist
 OUT="dist/${ADDON}-${VERSION}.zip"
 rm -f "$OUT"
 
+# Note: the Dropbox sign-in QR is generated ON THE DEVICE at sign-in time (PKCE makes
+# the authorize URL change every sign-in, so it can't be pre-baked). The vendored
+# encoder lives at resources/lib/modules/_vendor/qrcode + _qrgen.py - no build step.
+
 zip -r -X "$OUT" "$ADDON" \
   -x '*/__pycache__/*' \
   -x '*/.ruff_cache/*' \

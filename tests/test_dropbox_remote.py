@@ -37,7 +37,8 @@ def test_refresh_grant_params(fake_kodi):
     assert call["data"]["grant_type"] == "refresh_token"
     assert call["data"]["refresh_token"] == "REFRESH"
     assert call["data"]["client_id"] == "KEY"
-    assert call["data"]["client_secret"] == "SEC"
+    # PKCE: refresh uses client_id only, never a client_secret
+    assert "client_secret" not in call["data"]
 
 
 def test_expiry_skew_5min(fake_kodi):
@@ -317,6 +318,9 @@ def test_authorize_url_shape(fake_kodi):
     assert "client_id=MYKEY" in blob
     assert "response_type=code" in blob
     assert "token_access_type=offline" in blob
+    # PKCE: the challenge (not a secret) rides in the URL
+    assert "code_challenge=" in blob
+    assert "code_challenge_method=S256" in blob
 
 
 def test_authorize_code_exchange_params(fake_kodi):
@@ -333,7 +337,9 @@ def test_authorize_code_exchange_params(fake_kodi):
     assert call["data"]["grant_type"] == "authorization_code"
     assert call["data"]["code"] == "AUTHCODE123"
     assert call["data"]["client_id"] == "K"
-    assert call["data"]["client_secret"] == "S"
+    # PKCE: the code is redeemed with a code_verifier, never a client_secret
+    assert call["data"]["code_verifier"]
+    assert "client_secret" not in call["data"]
     # refresh token persisted
     assert fake_kodi.addon._settings["dropbox_refresh_token"] == "RT"
 
@@ -591,6 +597,32 @@ def test_download_streamed_to_temp(fake_kodi, tmp_path):
     arg = json.loads(call["headers"]["Dropbox-API-Arg"])
     assert arg["path"] == "/dl.zip"
     assert call["stream"] is True
+
+
+def test_download_progress_total_from_api_result(fake_kodi, tmp_path):
+    """The download gauge needs a total. Dropbox streams chunked (no Content-Length),
+    so the size must come from the Dropbox-API-Result header - else the bar stays at 0."""
+    dbx = fake_kodi.dbx
+    import time
+
+    fake_kodi.addon._settings.update(
+        {"dropbox_key": "K", "dropbox_secret": "S", "dropbox_refresh_token": "R"}
+    )
+    dbx._cache["bearer"] = "B"
+    dbx._cache["exp"] = time.time() + 99999
+    dest_real = str(tmp_path / "dl.zip")
+    fake_kodi.xbmcvfs._temp_map["special://temp/dl.zip"] = dest_real
+    payload = b"X" * 5000
+    fake_kodi.requests.responder = lambda i, c: fake_kodi.FakeResponse(
+        200,
+        {},
+        headers={"Dropbox-API-Result": json.dumps({"size": 5000})},
+        content=payload,
+    )
+    seen = []
+    dbx.download("dl.zip", progress=lambda r, t: seen.append((r, t)))
+    assert seen, "progress callback was never called"
+    assert seen[-1] == (5000, 5000)  # total parsed from Dropbox-API-Result, not 0
 
 
 def test_download_broken_stream_removes_partial_temp(fake_kodi, tmp_path):
@@ -891,6 +923,151 @@ def test_session_append_retries_transient_5xx(fake_kodi, monkeypatch):
     finally:
         os.remove(real)
     assert slept, "a transient 5xx should back off before retrying"
+
+
+def test_resumed_upload_is_byte_identical(fake_kodi, monkeypatch):
+    """A chunk that stalls AFTER Dropbox received it forces a resume. Verify the bytes
+    Dropbox ends up holding are identical to the source - i.e. a screensaver-style stall
+    mid-upload (which this exact backup hit) cannot skip or duplicate bytes."""
+    dbx = fake_kodi.dbx
+    _prime(fake_kodi)
+    monkeypatch.setattr(dbx.time, "sleep", lambda s: None)
+    size = dbx.CHUNK * 3 + 1234
+    real, special = _stage_file(fake_kodi, size)
+    # overwrite the staged zeros with a non-uniform deterministic pattern, so a skip or
+    # duplication is detectable (all-zero content would hide it)
+    pattern = bytes((i * 31 + 7) & 0xFF for i in range(size))
+    with open(real, "wb") as fh:
+        fh.write(pattern)
+
+    server = {"recv": bytearray(), "failed_once": False}
+
+    def responder(idx, call):
+        url = call["url"]
+        data = call["data"] or b""
+        if url.endswith("/upload_session/start"):
+            server["recv"] = bytearray(data)
+            return fake_kodi.FakeResponse(200, {"session_id": "SID"})
+        if url.endswith("/upload_session/append_v2"):
+            off = json.loads(call["headers"]["Dropbox-API-Arg"])["cursor"]["offset"]
+            if off != len(server["recv"]):
+                # client is out of sync -> Dropbox replies with the true offset
+                return fake_kodi.FakeResponse(
+                    409,
+                    {
+                        "error": {
+                            ".tag": "incorrect_offset",
+                            "correct_offset": len(server["recv"]),
+                        }
+                    },
+                )
+            # offset matches: Dropbox receives the chunk, then on the first append the
+            # RESPONSE is lost (the stall) so the client must recover without corrupting
+            server["recv"].extend(data)
+            if not server["failed_once"]:
+                server["failed_once"] = True
+                raise OSError("stall after Dropbox received the chunk")
+            return fake_kodi.FakeResponse(200, {})
+        if url.endswith("/upload_session/finish"):
+            return fake_kodi.FakeResponse(200, {})
+        return fake_kodi.FakeResponse(200, {})
+
+    fake_kodi.requests.responder = responder
+    try:
+        assert dbx.upload(special, "x.zip") is True
+    finally:
+        os.remove(real)
+    assert len(server["recv"]) == size
+    assert bytes(server["recv"]) == pattern, "resumed upload corrupted the data"
+
+
+# ===================================================== progress + cancel ===
+def test_single_upload_reports_progress(fake_kodi):
+    dbx = fake_kodi.dbx
+    _prime(fake_kodi)
+    real, special = _stage_file(fake_kodi, 1000)  # < CHUNK -> single shot
+    fake_kodi.requests.responder = lambda i, c: fake_kodi.FakeResponse(200, {})
+    seen = []
+    try:
+        assert (
+            dbx.upload(
+                special, "x.zip", progress=lambda s, t: seen.append((s, t)) or True
+            )
+            is True
+        )
+    finally:
+        os.remove(real)
+    assert seen[0] == (0, 1000)
+    assert seen[-1] == (1000, 1000)
+
+
+def test_session_upload_reports_monotonic_progress(fake_kodi):
+    dbx = fake_kodi.dbx
+    _prime(fake_kodi)
+    size = dbx.CHUNK * 2 + 50
+    real, special = _stage_file(fake_kodi, size)
+    _wire_upload_responder(fake_kodi)
+    seen = []
+    try:
+        assert (
+            dbx.upload(special, "x.zip", progress=lambda s, t: seen.append((s, t)))
+            is not False
+        )
+    finally:
+        os.remove(real)
+    # total is always the file size; sent is non-decreasing and ends exactly at size
+    assert all(t == size for _s, t in seen)
+    sents = [s for s, _t in seen]
+    assert sents == sorted(sents)
+    assert sents[0] == 0  # reports 0 before the session opens (no 100% flash)
+    assert sents[-1] == size
+    assert dbx.CHUNK in sents  # advances by chunk after the start
+
+
+def test_upload_progress_cancel_raises_and_is_not_retried(fake_kodi):
+    dbx = fake_kodi.dbx
+    _prime(fake_kodi)
+    size = dbx.CHUNK * 3
+    real, special = _stage_file(fake_kodi, size)
+    counts = {"start": 0, "append": 0}
+
+    def responder(idx, call):
+        url = call["url"]
+        if url.endswith("/upload_session/start"):
+            counts["start"] += 1
+            return fake_kodi.FakeResponse(200, {"session_id": "SID"})
+        if url.endswith("/upload_session/append_v2"):
+            counts["append"] += 1
+            return fake_kodi.FakeResponse(200, {})
+        return fake_kodi.FakeResponse(200, {})
+
+    fake_kodi.requests.responder = responder
+    calls = {"n": 0}
+
+    def progress(sent, total):
+        calls["n"] += 1
+        return calls["n"] < 2  # allow the initial 0% report, then cancel after start
+
+    try:
+        with pytest.raises(dbx.DropboxCanceled):
+            dbx.upload(special, "x.zip", progress=progress)
+    finally:
+        os.remove(real)
+    # canceled right after the session opened, before any append, and NOT retried
+    assert counts["append"] == 0
+    assert counts["start"] == 1
+
+
+def test_authorize_falls_back_to_url_dialog_when_no_qr(fake_kodi):
+    """The QR fetch uses requests.get (absent in the fake), so authorize() must fall
+    back to showing the URL in an ok() dialog - sign-in still works without QR."""
+    dbx = fake_kodi.dbx
+    fake_kodi.addon._settings.update({"dropbox_key": "MYKEY", "dropbox_secret": "S"})
+    fake_kodi.xbmcgui.Dialog.inputs = [""]  # cancel after the prompt
+    dbx.authorize()
+    blob = " ".join(str(a) for a in fake_kodi.xbmcgui.Dialog.last_ok)
+    assert "https://www.dropbox.com/oauth2/authorize" in blob
+    assert "client_id=MYKEY" in blob
 
 
 # ============================================================ redaction ===

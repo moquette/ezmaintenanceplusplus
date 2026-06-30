@@ -249,7 +249,7 @@ def backup(mode="full"):
     except:
         pass
 
-    exclude_dirs = [""]
+    exclude_dirs = ["temp"]  # never back up special://home/temp (transient + self-ref)
     try:
         canceled = CreateZip(
             BACKUPDATA,
@@ -307,11 +307,17 @@ def _backup_dropbox(mode, defaultName, BACKUPDATA):
     except:
         pass
 
+    # Keep the box awake for the whole backup - zip build + upload can run for several
+    # minutes, and an idle/screensaver suspension was stalling the upload. Released in
+    # the finally below. (On tvOS the OS screensaver can still appear, but the upload's
+    # per-chunk resume rides out a brief stall instead of restarting.)
+    xbmc.executebuiltin("InhibitIdleShutdown(true)")
+
     # Build the zip LOCALLY in special://temp (no "://" so CreateZip skips its VFS copy
     # branch), then ship it to Dropbox. The prior remote backup stays untouched unless
     # this upload confirms, so a failed run never destroys the last good backup.
     staged = "special://temp/" + name
-    exclude_dirs = [""]
+    exclude_dirs = ["temp"]  # never back up special://home/temp (transient + self-ref)
     exclude_database = [".pyo", ".log"]
     canceled = CreateZip(
         BACKUPDATA,
@@ -325,11 +331,32 @@ def _backup_dropbox(mode, defaultName, BACKUPDATA):
         if canceled:
             dialog.ok(AddonTitle, "Backup canceled")
             return
+        dp2 = xbmcgui.DialogProgress()
+        dp2.create(AddonTitle, "Uploading to Dropbox...")
+        dp2.update(
+            0, "Uploading to Dropbox...\nStarting..."
+        )  # avoid Kodi's default 100% bar
+
+        def _upload_progress(sent, total):
+            mb = 1024 * 1024
+            pct = int(sent * 100 / total) if total else 0
+            dp2.update(
+                pct, "Uploading to Dropbox...\n%d of %d MB" % (sent // mb, total // mb)
+            )
+            return not dp2.iscanceled()
+
         try:
-            dp2 = xbmcgui.DialogProgress()
-            dp2.create(AddonTitle, "Uploading to Dropbox..." + "\n" + "Please Wait")
-            dropbox_remote.upload(staged, name)
+            dropbox_remote.upload(staged, name, progress=_upload_progress)
             dp2.close()
+        except dropbox_remote.DropboxCanceled:
+            try:
+                dp2.close()
+            except:
+                pass
+            dialog.ok(
+                AddonTitle, "Backup canceled. Your previous backup was not touched."
+            )
+            return
         except Exception as e:
             try:
                 dp2.close()
@@ -348,6 +375,7 @@ def _backup_dropbox(mode, defaultName, BACKUPDATA):
         _rotate_dropbox(dropbox_remote)
         dialog.ok(AddonTitle, "Backup complete (Dropbox)")
     finally:
+        xbmc.executebuiltin("InhibitIdleShutdown(false)")
         try:
             os.remove(translatePath(staged))
         except:
@@ -460,8 +488,19 @@ def _restore_dropbox():
     local = None
     try:
         dp2 = xbmcgui.DialogProgress()
-        dp2.create(AddonTitle, "Downloading from Dropbox..." + "\n" + "Please Wait")
-        special = dropbox_remote.download(chosen)  # special://temp/<name>
+        dp2.create(AddonTitle, "Downloading from Dropbox...")
+        dp2.update(0, "Downloading from Dropbox...\nStarting...")
+
+        def _dl_progress(received, total):
+            mb = 1024 * 1024
+            pct = int(received * 100 / total) if total else 0
+            dp2.update(
+                pct,
+                "Downloading from Dropbox...\n%d of %d MB"
+                % (received // mb, total // mb),
+            )
+
+        special = dropbox_remote.download(chosen, progress=_dl_progress)
         dp2.close()
         local = translatePath(special)
     except Exception as e:
@@ -494,30 +533,101 @@ def restore(zipFile):
         yeslabel="Yes",
         nolabel="No",
     )
-    if yesDialog:
+    if not yesDialog:
+        return
+
+    # Stage a remote (VFS) zip locally first; a plain local path extracts directly.
+    local = zipFile
+    staged = False
+    if "://" in zipFile:
+        local = translatePath(os.path.join("special://temp", os.path.basename(zipFile)))
         try:
-            dp = xbmcgui.DialogProgress()
-            dp.create("Restoring File", "In Progress..." + "\n" + "Please Wait")
-            dp.update(0, "" + "\n" + "Extracting Zip Please Wait")
-            local = zipFile
-            if "://" in zipFile:  # remote zip: stage it local before extracting
-                local = translatePath(
-                    os.path.join("special://temp", os.path.basename(zipFile))
-                )
-                xbmcvfs.copy(zipFile, local)
-            canceled = ExtractZip(local, control.HOME, dp)
-            if "://" in zipFile:
-                try:
-                    os.remove(local)
-                except:
-                    pass
-            if canceled:
-                dialog.ok(AddonTitle, "Restore Canceled")
-            else:
-                dialog.ok(AddonTitle, "Restore Complete")
-            xbmc.executebuiltin("ShutDown")
-        except:
+            xbmcvfs.copy(zipFile, local)
+            staged = True
+        except Exception:
             pass
+
+    # Validate BEFORE extracting so we never report success on a missing / empty / bad
+    # zip (the false-success the QA pass killed on the backup side, now on restore too).
+    # The byte count in the failure message also diagnoses a download that came up short.
+    try:
+        size = os.path.getsize(local)
+    except OSError:
+        size = 0
+    if size == 0 or not zipfile.is_zipfile(local):
+        if staged:
+            try:
+                os.remove(local)
+            except OSError:
+                pass
+        dialog.ok(
+            AddonTitle,
+            "Restore failed: the backup is missing or not a valid zip (%d bytes). "
+            "Nothing was changed." % size,
+        )
+        return
+
+    try:
+        items = len(zipfile.ZipFile(local).infolist())
+    except Exception:
+        items = 0
+
+    # Skip the temp/ subtree on extract: the restore zip is staged in special://temp
+    # (== special://home/temp), and a full backup contains a partial copy of itself
+    # there - extracting it would clobber the source mid-read.
+    skip_prefix = None
+    try:
+        rel = os.path.relpath(
+            translatePath("special://temp"), translatePath("special://home/")
+        )
+        if not rel.startswith(".."):
+            skip_prefix = rel.replace("\\", "/").rstrip("/") + "/"
+    except Exception:
+        pass
+
+    try:
+        dp = xbmcgui.DialogProgress()
+        dp.create("Restoring File", "In Progress..." + "\n" + "Please Wait")
+        dp.update(0, "" + "\n" + "Extracting Zip Please Wait")
+        canceled = ExtractZip(local, control.HOME, dp, skip_prefix=skip_prefix)
+    finally:
+        if staged:
+            try:
+                os.remove(local)
+            except OSError:
+                pass
+
+    if canceled:
+        dialog.ok(AddonTitle, "Restore Canceled")
+        return
+
+    # Make the restore actually take effect on every platform - critically on tvOS,
+    # where Kodi mirrors guisettings.xml in NSUserDefaults and would otherwise revert a
+    # file-only restore. Mirror the official Backup add-on: re-apply settings through
+    # the JSON-RPC API and rescan add-ons, then exit cleanly (Quit, not ShutDown) so the
+    # applied settings flush.
+    applied = 0
+    try:
+        from resources.lib.modules import _kodisettings
+
+        applied = _kodisettings.apply_guisettings(
+            os.path.join(control.USERDATA, "guisettings.xml")
+        )
+    except Exception:
+        pass
+    try:
+        xbmc.executebuiltin("UpdateLocalAddons")
+    except Exception:
+        pass
+
+    if dialog.yesno(
+        AddonTitle,
+        "Restore Complete: %d items, %d settings applied.\n"
+        "Kodi must restart to finish. Restart now?" % (items, applied),
+        yeslabel="Restart",
+        nolabel="Later",
+    ):
+        xbmc.executebuiltin("Quit")
 
 
 def CreateZip(
@@ -618,9 +728,9 @@ def CreateZip(
 
 
 # EXTRACT ZIP
-def ExtractZip(_in, _out, dp=None):
+def ExtractZip(_in, _out, dp=None, skip_prefix=None):
     if dp:
-        return ExtractWithProgress(_in, _out, dp)
+        return ExtractWithProgress(_in, _out, dp, skip_prefix=skip_prefix)
     return ExtractNOProgress(_in, _out)
 
 
@@ -635,17 +745,26 @@ def ExtractNOProgress(_in, _out):
     return canceled
 
 
-def ExtractWithProgress(_in, _out, dp):
-    zin = zipfile.ZipFile(_in, "r")
-    nFiles = float(len(zin.infolist()))
+def ExtractWithProgress(_in, _out, dp, skip_prefix=None):
     count = 0
+    extracted = 0
     errors = 0
+    skipped = 0
     canceled = False
+    last_error = ""
     try:
+        zin = zipfile.ZipFile(_in, "r")
+        nFiles = float(len(zin.infolist())) or 1.0
         for item in zin.infolist():
             canceled = dp.iscanceled()
             if canceled:
                 break
+            # Never restore the transient temp tree: a full backup includes a partial
+            # copy of itself at temp/<backup>.zip, and the restore zip is staged in temp
+            # - extracting it would overwrite the source mid-read (Truncated file header).
+            if skip_prefix and item.filename.startswith(skip_prefix):
+                skipped += 1
+                continue
             count += 1
             update = count / nFiles * 100
             try:
@@ -663,12 +782,24 @@ def ExtractWithProgress(_in, _out, dp):
                 )
             try:
                 zin.extract(item, _out)
+                extracted += 1
             except Exception as e:
-                print("EXTRACTING ERRORS", e)
-                pass
-
+                errors += 1
+                last_error = "%s: %s" % (type(e).__name__, e)
     except Exception as e:
-        print(str(e))
+        last_error = "%s: %s" % (type(e).__name__, e)
+    xbmc.log(
+        "%s : extract to %s -> %d ok, %d errors, %d skipped%s"
+        % (
+            AddonTitle,
+            _out,
+            extracted,
+            errors,
+            skipped,
+            (" | last: " + last_error) if last_error else "",
+        ),
+        level=xbmc.LOGERROR if errors else xbmc.LOGINFO,
+    )
     return canceled
 
 

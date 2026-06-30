@@ -275,6 +275,19 @@ def BUILDS():
         except:
             pass
 
+    # Empty-state: if no wizard is enabled the page would be blank (reads as broken).
+    # Show one non-build row that opens settings so it's clearly empty-on-purpose.
+    if all(w == "false" for w in (wizard1, wizard2, wizard3, wizard4, wizard5)):
+        CreateDir(
+            "[COLOR grey]No builds yet - add one in Settings > Wizard Creator[/COLOR]",
+            "",
+            "settings",
+            "",
+            "",
+            "Open settings to enable a wizard and set its Name and Zip Url.",
+            isFolder=False,
+        )
+
 
 def FRESHSTART(mode="verbose"):
     if mode != "silent":

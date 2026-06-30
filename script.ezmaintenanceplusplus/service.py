@@ -95,7 +95,7 @@ if __name__ == '__main__':
                 maintenance.clearCache()
                 xbmc.log("ezmaintenanceplus: AutoClean done", level=loglevel)
                 maintenance.determineNextMaintenance()
-                #xbmc.executebuiltin('Notification(%s, %s, %s, %s)' % ('Maintenance' , 'Clean Completed' , '3000', iconpath))
+                #xbmc.executebuiltin('Notification(%s, %s, %s, %s)' % ('EZ Maintenance++' , 'Clean Completed' , '3000', iconpath))
 
     del monitor
 

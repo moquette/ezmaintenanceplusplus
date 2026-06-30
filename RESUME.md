@@ -6,16 +6,19 @@ Paste this (or point an agent at it) to pick up where we left off.
 
 EZ Maintenance++ (`script.ezmaintenanceplusplus`) is the all-in-one "Swiss Army
 Knife" Kodi 21 Omega backup util: ONE tool, three destinations **Local | Network
-(SMB/NFS) | Dropbox**. Built, QA-hardened, signed in to Dropbox, and live-proven. The
-previously-open large-upload issue (>~100 MB backups timing out on the chunked Dropbox
-upload) is **FIXED and proven on device** - see "RESOLVED" below.
+(SMB/NFS) | Dropbox**. Built, QA-hardened, and **live-proven end-to-end on Apple TV
+(tvOS) and Fire TV**. As of **2026.06.30.12**: PKCE sign-in (no app secret), on-device
+QR, resilient resumable uploads, real progress bars, and a fully working **restore**
+(the big saga - fixed a backup that included a partial copy of itself under `temp/`,
+which corrupted extraction). **61 tests green.** Next: the **One-Tap Restore** feature
+(`docs/one-tap-restore.md`) and publishing to the tony7bones Kodi repo under `addons/`.
 
 ## Repo / build / test
 
 - Repo: `~/Code/moquette/ezmaintenanceplusplus` (its OWN git repo, NOT tony7bones.github.io), branch `main`.
-- Add-on dir: `script.ezmaintenanceplusplus/`. Version **2026.06.26.2**. Latest commit **f7da26c** (QA fixes + test suite).
+- Add-on dir: `script.ezmaintenanceplusplus/`. Version **2026.06.30.12**.
 - Build: `./build.sh` -> `dist/script.ezmaintenanceplusplus-<version>.zip` (excludes cache cruft; INCLUDES the gitignored `_appauth.py`).
-- Tests: `cd repo && python3 -m pytest -q` (`tests/`, 48 passing, mock-Kodi harness).
+- Tests: `cd repo && python3 -m pytest -q` (`tests/`, 61 passing, mock-Kodi harness).
 - Dropbox creds: built-in App-folder app `tony-7-backup`; key/secret live in the gitignored `script.ezmaintenanceplusplus/resources/lib/modules/_appauth.py` (ships in the zip, NEVER in git) AND in the vault: `cd ~/Code/moquette/vault && bin/vault-get DROPBOX_APP_KEY` / `bin/vault-get DROPBOX_APP_SECRET` (VAULT.md §23).
 
 ## What WORKS (proven)

@@ -116,7 +116,7 @@ def clearCache(mode='verbose'):
                 else:
                     pass
 
-    if mode == 'verbose': xbmc.executebuiltin('Notification(%s, %s, %s, %s)' % ('Maintenance' , 'Clean Completed' , '3000', iconpath))
+    if mode == 'verbose': xbmc.executebuiltin('Notification(%s, %s, %s, %s)' % ('EZ Maintenance++' , 'Clean Completed' , '3000', iconpath))
 
 def deleteThumbnails(mode='verbose'):
 

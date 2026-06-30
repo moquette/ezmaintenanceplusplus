@@ -14,6 +14,8 @@ one-tap experience; if left empty they fall back to the (whitespace-trimmed) set
 This program is free software: GPL v3 or later (see the other modules).
 """
 
+import base64
+import hashlib
 import json
 import os
 import re
@@ -41,14 +43,18 @@ def _name_stamp(name):
     return m.group(1) if m else ""
 
 
-APP_KEY = ""  # baked-in Dropbox App-folder app key (placeholder; falls back to setting 'dropbox_key')
-APP_SECRET = ""  # baked-in secret (placeholder; falls back to setting 'dropbox_secret')
+APP_KEY = ""  # baked-in Dropbox App-folder client_id (placeholder; falls back to setting 'dropbox_key')
+APP_SECRET = (
+    ""  # unused under PKCE; kept only for the legacy _secret() settings fallback
+)
 
-# The real baked-in credentials ship in _appauth.py, which is gitignored (never committed)
-# but IS included in the built install zip. If absent, _key()/_secret() fall back to the
-# advanced settings fields so a user can paste their own Dropbox app key/secret.
+# Dropbox sign-in uses PKCE (see authorize / _access_token), so only the PUBLIC
+# client_id (app key) is ever needed - there is NO client_secret in the flow, and
+# nothing secret ships in the public build. APP_KEY is baked in via _appauth.py
+# (gitignored, but included in the built zip); if absent it falls back to the
+# 'dropbox_key' advanced setting so a user can paste their own app's client_id.
 try:
-    from resources.lib.modules._appauth import APP_KEY, APP_SECRET
+    from resources.lib.modules._appauth import APP_KEY
 except Exception:
     pass
 
@@ -69,8 +75,10 @@ CONTENT = "https://content.dropboxapi.com/2"
 TIMEOUT = (10, 180)
 
 # Per-chunk attempts before a session upload gives up (upload() then retries the
-# whole op once as a final backstop). Transient/network failures back off.
-MAX_TRIES = 5
+# whole op once as a final backstop). Transient/network failures back off. Set high
+# so a brief stall (e.g. a TV screensaver suspending the app) is ridden out by
+# resuming the same chunk rather than restarting the whole upload.
+MAX_TRIES = 8
 
 AddonID = "script.ezmaintenanceplusplus"
 AddonTitle = "EZ Maintenance++"
@@ -82,6 +90,12 @@ _cache = {"bearer": None, "exp": 0}
 
 
 class DropboxAuthError(Exception):
+    pass
+
+
+class DropboxCanceled(Exception):
+    """Raised when an upload progress callback asks to cancel the in-flight upload."""
+
     pass
 
 
@@ -113,28 +127,36 @@ def _set_refresh_token(token):
     xbmcaddon.Addon(id=AddonID).setSetting("dropbox_refresh_token", token)
 
 
+def _pkce_pair():
+    """Return (code_verifier, code_challenge) for a PKCE S256 sign-in. The verifier is
+    a fresh per-sign-in secret that never leaves the device; the challenge is its
+    SHA-256 (base64url, unpadded) and is the only PKCE value that travels in the URL."""
+    verifier = base64.urlsafe_b64encode(os.urandom(32)).rstrip(b"=").decode("ascii")
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return verifier, challenge
+
+
 def authorize():
-    """Interactive one-time sign in: get a code, swap it for a refresh token, store it."""
-    key, secret = _key(), _secret()
-    if not key or not secret:
+    """Interactive one-time sign in via PKCE: show a QR, take the code, swap it for a
+    refresh token using the code_verifier (NO client_secret), and store it."""
+    key = _key()
+    if not key:
         xbmcgui.Dialog().ok(
             AddonTitle,
             "Dropbox is not set up in this build. Open the add-on settings and paste a "
-            "Dropbox App key and secret (Advanced), then try Sign in again.",
+            "Dropbox App key (Advanced), then try Sign in again.",
         )
         return False
 
-    auth_url = "%s?client_id=%s&response_type=code&token_access_type=offline" % (
-        OAUTH_AUTHORIZE,
-        key,
+    verifier, challenge = _pkce_pair()
+    auth_url = (
+        "%s?client_id=%s&response_type=code&code_challenge=%s"
+        "&code_challenge_method=S256&token_access_type=offline"
+        % (OAUTH_AUTHORIZE, key, challenge)
     )
-    xbmcgui.Dialog().ok(
-        AddonTitle,
-        "1) On a phone or computer open:\n%s\n\n"
-        "2) Approve access, copy the code Dropbox shows, then paste it on the next screen."
-        % auth_url,
-    )
-    code = xbmcgui.Dialog().input("Paste the Dropbox code", type=xbmcgui.INPUT_ALPHANUM)
+    _show_auth_prompt(auth_url)
+    code = xbmcgui.Dialog().input("Enter the Dropbox code", type=xbmcgui.INPUT_ALPHANUM)
     if not code:
         return False
     code = code.strip()
@@ -146,7 +168,7 @@ def authorize():
                 "grant_type": "authorization_code",
                 "code": code,
                 "client_id": key,
-                "client_secret": secret,
+                "code_verifier": verifier,
             },
             timeout=TIMEOUT,
         )
@@ -186,6 +208,78 @@ def authorize():
     return True
 
 
+def _show_auth_prompt(url):
+    """Show a scannable QR of the PKCE authorize URL so nobody types it on a remote.
+
+    The QR is generated locally on the device (no external service), which is required
+    under PKCE because the URL carries a per-sign-in challenge and so cannot be
+    pre-baked. If QR generation or the window fails, it falls back to the plain URL
+    dialog. Only the public client_id and the PKCE challenge ride in the URL - no
+    secret, code, or token."""
+    try:
+        img = _qr_image(url)
+        if img:
+            _make_qr_window(img).doModal()
+            return
+    except Exception as e:
+        _log("auth QR unavailable, showing URL instead: %s" % type(e).__name__)
+    xbmcgui.Dialog().ok(
+        AddonTitle,
+        "On a phone or computer, open this URL:\n\n%s\n\n"
+        "Approve access, then enter the code Dropbox shows on the next screen." % url,
+    )
+
+
+def _qr_image(url):
+    """Generate a QR PNG for `url` locally (no network) into special://temp and return
+    its path. Uses the vendored encoder + zlib PNG writer in _qrgen."""
+    from resources.lib.modules import _qrgen
+
+    real = xbmcvfs.translatePath("special://temp/_dbx_qr.png")
+    with open(real, "wb") as fh:
+        fh.write(_qrgen.make_qr_png_bytes(url))
+    return real
+
+
+def _make_qr_window(image_path):
+    """Build the fullscreen QR overlay. Defined lazily so importing this module under
+    a mock Kodi (tests) never needs xbmcgui.WindowDialog."""
+
+    class _QRWindow(xbmcgui.WindowDialog):
+        def __init__(self):
+            w, h, qr = 1280, 720, 480
+            try:
+                bg = os.path.join(
+                    xbmcaddon.Addon(id=AddonID).getAddonInfo("path"),
+                    "resources",
+                    "skins",
+                    "Default",
+                    "media",
+                    "bg-fade.png",
+                )
+                self.addControl(xbmcgui.ControlImage(0, 0, w, h, bg))
+            except Exception:
+                pass
+            self.addControl(xbmcgui.ControlImage((w - qr) // 2, 60, qr, qr, image_path))
+            self.addControl(
+                xbmcgui.ControlLabel(
+                    0,
+                    560,
+                    w,
+                    40,
+                    "Scan with your phone, approve, then press OK to enter the code",
+                    alignment=(0x00000002 | 0x00000004),
+                )
+            )
+
+        def onAction(self, action):
+            # close on OK/select or any back/menu/stop action
+            if action.getId() in (7, 9, 10, 13, 92):
+                self.close()
+
+    return _QRWindow()
+
+
 def _access_token(force=False):
     """Return a valid bearer token, refreshing via the stored refresh token as needed."""
     now = time.time()
@@ -195,9 +289,9 @@ def _access_token(force=False):
     refresh = _refresh_token()
     if not refresh:
         raise DropboxAuthError("not signed in to Dropbox")
-    key, secret = _key(), _secret()
-    if not key or not secret:
-        raise DropboxAuthError("Dropbox app key/secret missing")
+    key = _key()
+    if not key:
+        raise DropboxAuthError("Dropbox app key missing")
 
     try:
         resp = requests.post(
@@ -206,7 +300,6 @@ def _access_token(force=False):
                 "grant_type": "refresh_token",
                 "refresh_token": refresh,
                 "client_id": key,
-                "client_secret": secret,
             },
             timeout=TIMEOUT,
         )
@@ -258,18 +351,23 @@ def _rpc(url, arg, force=False):
 # ----------------------------------------------------------------------------- upload
 
 
-def upload(local_path, remote_name):
+def upload(local_path, remote_name, progress=None):
     """Upload a local file to /<remote_name> in the app folder.
 
     Small files (<= CHUNK) go in one streamed request; large files use a resumable
     upload session where every chunk is retried with backoff and the loop resumes
     from the session offset on failure. The whole op is retried once as a backstop.
+
+    `progress`, if given, is called progress(bytes_sent, total_bytes) after each
+    chunk; returning False cancels (raises DropboxCanceled, which is never retried).
     """
     last_err = None
     for attempt in (1, 2):
         try:
-            _do_upload(local_path, remote_name)
+            _do_upload(local_path, remote_name, progress=progress)
             return True
+        except DropboxCanceled:
+            raise
         except Exception as e:
             last_err = e
             _log("upload attempt %s failed: %s" % (attempt, type(e).__name__))
@@ -278,12 +376,17 @@ def upload(local_path, remote_name):
     return False
 
 
-def _do_upload(local_path, remote_name):
+def _do_upload(local_path, remote_name, progress=None):
     path = "/" + remote_name
     abs_local = xbmcvfs.translatePath(local_path)
     size = xbmcvfs.Stat(local_path).st_size()
 
+    def _report(sent):
+        if progress is not None and progress(sent, size) is False:
+            raise DropboxCanceled()
+
     if size <= CHUNK:
+        _report(0)
         arg = {"path": path, "mode": "overwrite", "mute": True}
         for attempt in (1, 2):
             headers = _auth_header(force=(attempt == 2))
@@ -300,6 +403,7 @@ def _do_upload(local_path, remote_name):
                     timeout=TIMEOUT,
                 )
             if resp.status_code == 200:
+                _report(size)
                 return
             if attempt == 1 and _handle_retryable(resp):
                 continue
@@ -310,10 +414,14 @@ def _do_upload(local_path, remote_name):
     # a time. Each chunk retries on its own and the loop resumes from the session
     # offset, so one slow/timed-out chunk no longer restarts the whole file.
     with open(abs_local, "rb") as fh:
+        _report(0)
         session_id, offset = _session_start(fh)
+        _report(offset)
         while offset < size:
             offset = _session_append(session_id, fh, offset)
+            _report(offset)
     _session_finish(session_id, offset, path)
+    _report(size)
 
 
 def _is_transient(resp):
@@ -537,10 +645,18 @@ def list_backups():
 # ------------------------------------------------------------------------- download
 
 
-def download(remote_name):
-    """Download /<remote_name> to special://temp/<remote_name>; return that special:// path."""
-    dest_special = "special://temp/" + remote_name
-    dest = xbmcvfs.translatePath(dest_special)
+def download(remote_name, dest_dir=None, progress=None):
+    """Download /<remote_name> and return the path it was written to.
+
+    By default it stages in special://temp; pass dest_dir (a real local directory) to
+    stage elsewhere (the raw path is then returned). `progress`, if given, is called
+    progress(bytes_received, total_bytes) as the stream is written."""
+    if dest_dir:
+        dest = os.path.join(dest_dir, remote_name)
+        ret = dest
+    else:
+        ret = "special://temp/" + remote_name
+        dest = xbmcvfs.translatePath(ret)
     arg = {"path": "/" + remote_name}
     for attempt in (1, 2):
         headers = _auth_header(force=(attempt == 2))
@@ -553,11 +669,35 @@ def download(remote_name):
         )
         if resp.status_code == 200:
             os.makedirs(os.path.dirname(dest), exist_ok=True)
+            # Dropbox /files/download streams chunked (no Content-Length); the real
+            # size is in the Dropbox-API-Result header metadata. Fall back to
+            # Content-Length if present.
+            total = 0
+            try:
+                total = int(
+                    json.loads(resp.headers.get("Dropbox-API-Result", "{}")).get(
+                        "size", 0
+                    )
+                )
+            except Exception:
+                total = 0
+            if not total:
+                try:
+                    total = int(resp.headers.get("Content-Length", 0))
+                except (TypeError, ValueError):
+                    total = 0
+            written = 0
             try:
                 with open(dest, "wb") as fh:
                     for block in resp.iter_content(chunk_size=1024 * 1024):
                         if block:
                             fh.write(block)
+                            written += len(block)
+                            if progress is not None:
+                                try:
+                                    progress(written, total)
+                                except Exception:
+                                    pass
             except Exception:
                 # A broken stream leaves a partial temp file: remove it so a
                 # later restore can never pick up a truncated zip, then re-raise.
@@ -566,7 +706,16 @@ def download(remote_name):
                 except OSError:
                     pass
                 raise
-            return dest_special
+            _log("download wrote %s bytes for %s" % (written, remote_name))
+            # A 200 with no body would otherwise become a silent "restore complete"
+            # on an empty file - fail loud instead so the caller surfaces it.
+            if written == 0:
+                try:
+                    os.remove(dest)
+                except OSError:
+                    pass
+                raise DropboxAuthError("download produced an empty file (0 bytes)")
+            return ret
         if attempt == 1 and _handle_retryable(resp):
             continue
         raise DropboxAuthError("download failed (HTTP %s)" % resp.status_code)

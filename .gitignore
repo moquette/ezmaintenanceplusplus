@@ -4,5 +4,6 @@ __pycache__/
 .DS_Store
 dist/
 
-# Baked-in Dropbox app credentials: ships in the build zip, never in git history.
+# Baked-in Dropbox app client_id: ships in the build zip, never in git history.
+# (PKCE: this is the public client_id only - there is no secret to protect.)
 script.ezmaintenanceplusplus/resources/lib/modules/_appauth.py

@@ -368,10 +368,11 @@ def test_dropbox_upload_failure_does_not_rotate(monkeypatch):
     dbx_mod = types.ModuleType("resources.lib.modules.dropbox_remote")
     dbx_mod.delete_calls = []
 
-    def _upload(local, name):
+    def _upload(local, name, progress=None):
         raise RuntimeError("network down")
 
     dbx_mod.upload = _upload
+    dbx_mod.DropboxCanceled = type("DropboxCanceled", (Exception,), {})
     dbx_mod.list_backups = lambda: ["a.zip", "b.zip", "c.zip"]
     dbx_mod.delete = lambda n: dbx_mod.delete_calls.append(n)
     monkeypatch.setitem(sys.modules, "resources.lib.modules.dropbox_remote", dbx_mod)
@@ -397,7 +398,7 @@ def test_dropbox_canceled_zip_does_not_upload_or_rotate(monkeypatch):
     )
     dbx_mod = types.ModuleType("resources.lib.modules.dropbox_remote")
     upload_calls = {"n": 0}
-    dbx_mod.upload = lambda l, n: upload_calls.__setitem__("n", 1)
+    dbx_mod.upload = lambda l, n, progress=None: upload_calls.__setitem__("n", 1)
     monkeypatch.setitem(sys.modules, "resources.lib.modules.dropbox_remote", dbx_mod)
     # CreateZip returns True (canceled)
     monkeypatch.setattr(wiz, "CreateZip", lambda *a, **k: True)
@@ -415,7 +416,8 @@ def test_dropbox_success_rotates_and_cleans_temp(monkeypatch):
         wiz, "_rotate_dropbox", lambda dbx: rotate_called.__setitem__("n", 1)
     )
     dbx_mod = types.ModuleType("resources.lib.modules.dropbox_remote")
-    dbx_mod.upload = lambda l, n: True
+    dbx_mod.upload = lambda l, n, progress=None: True
+    dbx_mod.DropboxCanceled = type("DropboxCanceled", (Exception,), {})
     monkeypatch.setitem(sys.modules, "resources.lib.modules.dropbox_remote", dbx_mod)
     monkeypatch.setattr(wiz, "CreateZip", lambda *a, **k: False)
     removed = []
@@ -507,7 +509,7 @@ def test_dropbox_no_refresh_token_aborts_early(monkeypatch):
     wiz, _ = _import_wiz(monkeypatch, settings)
     dbx_mod = types.ModuleType("resources.lib.modules.dropbox_remote")
     up = {"n": 0}
-    dbx_mod.upload = lambda l, n: up.__setitem__("n", 1)
+    dbx_mod.upload = lambda l, n, progress=None: up.__setitem__("n", 1)
     monkeypatch.setitem(sys.modules, "resources.lib.modules.dropbox_remote", dbx_mod)
     czip = {"n": 0}
     monkeypatch.setattr(wiz, "CreateZip", lambda *a, **k: czip.__setitem__("n", 1))

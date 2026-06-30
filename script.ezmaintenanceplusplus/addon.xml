@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.12" provider-name="aenema, peno, tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.13" provider-name="aenema, peno, tony7bones">
   <requires>
+    <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
   </requires>
   <extension point="xbmc.python.pluginsource" library="default.py">
@@ -20,6 +21,10 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+2026.06.30.13
+ - Fixes the add-on not appearing in the Kodi 19+/Omega add-on browser. It now
+   declares xbmc.python 3.0.0 compatibility; without it Kodi treated the add-on as
+   incompatible and hid it from Program add-ons entirely.
 2026.06.30.12
  - Restore is faster: removed the diagnostic full-CRC scan that was added while tracking
    down the large-backup corruption (now fixed), which added ~20s to every restore.

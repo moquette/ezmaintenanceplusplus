@@ -75,3 +75,27 @@ add-on's contract is the spec for the whole line:
 
 The suite thesis in one line: **back up before you touch, verify before you destroy,
 survive the device, self-heal.** Anything that earns the "++" clears that bar.
+
+## Status: SHIPPED (2026.06.30.15 - .20)
+
+Built and live on Apple TV. Code: `resources/lib/modules/onetap.py` (+ `tests/test_onetap.py`,
+part of the 90-test suite). Routing/menu in `default.py`; hidden pin storage in `settings.xml`.
+
+- **.15** - pin data model (settings-backed), source picker (VFS browse + Dropbox list), and
+  read-only **Verify** (exists + non-empty + zip-header sniff, no full download).
+- **.16** - the **RESTORE** action: verify -> stage + FULLY validate the zip locally -> confirm
+  -> hardened wipe (`_wipe`, preserves this add-on, its deps, and `temp/`) ->
+  `wiz.restore(local, confirm=False)`. The safety invariant (never wipe until the snapshot is
+  fetched and confirmed a valid zip) is enforced and unit-tested.
+- **.17** - moved out of Settings into a first-class **ONE-TAP RESTORE** main-menu item
+  (`onetap.menu()`); the settings tab is now hidden pin storage only.
+- **.18** - per-pin actions on tap: **Restore / Rename / Verify / Change / Remove**.
+- **.19 - .20** - Fresh Start rebuilt on the same hardened wipe: no skin-swap (it hung); keeps
+  EZM++ **enabled** through the wipe (preserves Kodi's `Addons*.db`); clear message + auto-restart.
+
+### Rough edges to polish later
+
+Full-vs-userdata partial restore; pin-as-you-go right after a backup; a browsable directory
+listing (with native context menus) instead of the select-dialog menu; an optional "keep the
+Tony.7.Bones repo" mode for Fresh Start; and validating the preserve-`Addons*.db` trick across
+more Kodi builds.

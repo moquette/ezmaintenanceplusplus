@@ -56,6 +56,22 @@ Produces `dist/script.ezmaintenanceplusplus-<version>.zip`. Install it in Kodi w
 3. Run a Backup. It stages locally, then lands on the share.
 4. To restore: set the **Restore from Zip Location** to the same share folder and run Restore.
 
+## One-Tap Restore + Fresh Start
+
+Beyond VFS backup/restore, the "++" fork adds two guarded operations from the add-on's main
+menu:
+
+- **One-Tap Restore** - pin a specific backup (a network/local file or a Dropbox backup) as a
+  golden snapshot, then restore it in one tap. It downloads and verifies the snapshot is a
+  valid zip _before_ touching the box, then wipes and restores through the proven restore
+  path. Tap a pin for Restore / Rename / Verify / Change / Remove.
+- **Fresh Start** - wipe to a clean Kodi canvas with only this add-on left (its dependencies
+  and your backups survive), then restart. It keeps the add-on enabled through the wipe so it
+  is never "lost" afterward.
+
+Both run the same hardened wipe, which never removes this add-on, its dependencies, or your
+backups.
+
 ## Credit and license
 
 Forked from **EZ Maintenance+** by **aenema** and **peno**. License is unchanged from the

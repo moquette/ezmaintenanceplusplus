@@ -76,10 +76,10 @@ add-on's contract is the spec for the whole line:
 The suite thesis in one line: **back up before you touch, verify before you destroy,
 survive the device, self-heal.** Anything that earns the "++" clears that bar.
 
-## Status: SHIPPED (2026.06.30.15 - .20)
+## Status: SHIPPED (2026.06.30.15 - .27)
 
 Built and live on Apple TV. Code: `resources/lib/modules/onetap.py` (+ `tests/test_onetap.py`,
-part of the 90-test suite). Routing/menu in `default.py`; hidden pin storage in `settings.xml`.
+part of the 95-test suite). Routing/menu in `default.py`; hidden pin storage in `settings.xml`.
 
 - **.15** - pin data model (settings-backed), source picker (VFS browse + Dropbox list), and
   read-only **Verify** (exists + non-empty + zip-header sniff, no full download).
@@ -92,6 +92,10 @@ part of the 90-test suite). Routing/menu in `default.py`; hidden pin storage in 
 - **.18** - per-pin actions on tap: **Restore / Rename / Verify / Change / Remove**.
 - **.19 - .20** - Fresh Start rebuilt on the same hardened wipe: no skin-swap (it hung); keeps
   EZM++ **enabled** through the wipe (preserves Kodi's `Addons*.db`); clear message + auto-restart.
+- **.24 - .25** - polish: pin labels are rebuilt from the pin's fields (no more doubled "Dropbox"
+  or a raw "unknown" type); the tool ASKS the backup type (Full / Userdata / Not sure) when it
+  cannot be inferred from the file name; the redundant "[+] Pin or change" row was dropped (an
+  empty slot IS the pin action, a filled one has "Change"); and slots went **6 -> 10**.
 
 ### Rough edges to polish later
 

@@ -97,6 +97,42 @@ def test_not_signed_in_raises(fake_kodi):
         dbx._access_token(force=True)
 
 
+def test_access_token_rebinds_on_account_switch(fake_kodi):
+    """REALTIME FIX: if the signed-in account changes (stored refresh token differs from
+    the one the cached bearer was minted for), the cache is NOT reused - otherwise a
+    list/restore would keep reading the OLD account's folder until the token expired."""
+    dbx = fake_kodi.dbx
+    import time
+
+    fake_kodi.addon._settings.update(
+        {"dropbox_key": "K", "dropbox_refresh_token": "ACCOUNT_B"}
+    )
+    # a still-valid cached bearer, but it belongs to ACCOUNT_A
+    dbx._cache["bearer"] = "OLD_A"
+    dbx._cache["exp"] = time.time() + 99999
+    dbx._cache["rt"] = "ACCOUNT_A"
+    fake_kodi.requests.responder = lambda i, c: fake_kodi.FakeResponse(
+        200, {"access_token": "NEW_B", "expires_in": 14400}
+    )
+    assert dbx._access_token() == "NEW_B"  # refreshed for B, did NOT serve OLD_A
+    assert dbx._cache["rt"] == "ACCOUNT_B"
+
+
+def test_access_token_reuses_cache_for_same_account(fake_kodi):
+    """Same account (same refresh token) + unexpired -> cache reused, no refresh call."""
+    dbx = fake_kodi.dbx
+    import time
+
+    fake_kodi.addon._settings.update(
+        {"dropbox_key": "K", "dropbox_refresh_token": "ACCOUNT_A"}
+    )
+    dbx._cache["bearer"] = "CACHED_A"
+    dbx._cache["exp"] = time.time() + 99999
+    dbx._cache["rt"] = "ACCOUNT_A"
+    assert dbx._access_token() == "CACHED_A"
+    assert len(fake_kodi.requests.calls) == 0
+
+
 # ============================================================ chunk decision ===
 def _stage_file(fake_kodi, size_bytes, special="special://temp/x.zip"):
     """Create a real temp file of size_bytes and wire xbmcvfs to it."""

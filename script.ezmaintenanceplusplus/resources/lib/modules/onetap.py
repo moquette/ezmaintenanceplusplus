@@ -477,7 +477,7 @@ def menu():
     # slot's action menu already has "Change backup". Each row does one obvious thing.
     pins = all_pins()
     labels = [
-        label_for(p) if is_set(p) else "[ + ]  Pin a backup  (slot %d)" % p["slot"]
+        label_for(p) if is_set(p) else "Pin a backup  (slot %d)" % p["slot"]
         for p in pins
     ]
     idx = xbmcgui.Dialog().select("One-Tap Restore", labels)

@@ -60,11 +60,32 @@ def _name_stamp(name):
     """Parse the trailing _YYYYMMDDHHMM stamp from a backup filename.
 
     Returns the 12-digit string (lexically == chronologically sortable) or ""
-    when absent, so an unstamped file sorts as the OLDEST and can never cause a
-    newer, stamped file to be deleted.
+    when the file has no tool stamp (e.g. a user-renamed backup).
     """
     m = _STAMP_RE.search(name or "")
     return m.group(1) if m else ""
+
+
+# A "keep" token anywhere in a name marks a protected backup even if it still
+# carries a stamp (rescues a user who renamed but left the date on).
+_KEEP_TOKEN_RE = re.compile(r"keep", re.IGNORECASE)
+
+
+def _is_rolling(name):
+    """True only for a tool-created ROLLING backup that keep-N may prune.
+
+    A rolling backup matches the tool's own naming contract: a trailing
+    _YYYYMMDDHHMM.zip stamp (always appended at backup time) AND no explicit
+    'keep' token. Every other file - a user rename, a manual copy, a foreign zip -
+    is PROTECTED: rotation never counts it toward keep-N and never deletes it.
+    Renaming is exactly how users protect a golden backup, so this fails SAFE:
+    an unrecognized name is always protected, never a rotation victim.
+    """
+    if not _name_stamp(name):
+        return False
+    if _KEEP_TOKEN_RE.search(name or ""):
+        return False
+    return True
 
 
 def get_Kodi_Version():
@@ -277,7 +298,7 @@ def backup(mode="full"):
         dialog.ok(AddonTitle, "Backup canceled")
     else:
         # Only rotate AFTER a confirmed-landed backup; the new zip is sacred until then.
-        _rotate_vfs(backupdir)
+        _rotate_vfs(backupdir, protect={name})
         dialog.ok(AddonTitle, "Backup complete")
 
 
@@ -351,7 +372,7 @@ def _backup_dropbox(mode, defaultName, BACKUPDATA):
             )
             return
         # Confirmed landed -> safe to rotate the Dropbox folder.
-        _rotate_dropbox(dropbox_remote)
+        _rotate_dropbox(dropbox_remote, protect={name})
         dialog.ok(AddonTitle, "Backup complete (Dropbox)")
     finally:
         xbmc.executebuiltin("InhibitIdleShutdown(false)")
@@ -368,25 +389,30 @@ def _keep_n():
         return 0
 
 
-def _rotate_vfs(backupdir):
-    # Destination-agnostic keep-N for Local/Network: delete oldest .zip beyond N.
+def _rotate_vfs(backupdir, protect=None):
+    # Keep-N for Local/Network: prune ONLY tool-created ROLLING backups (a trailing
+    # _YYYYMMDDHHMM.zip stamp). A user-renamed / protected backup is never counted
+    # toward N and never deleted - renaming is how users keep a golden backup.
     n = _keep_n()
     if n <= 0:
         return
+    protect = protect or set()
     try:
         _dirs, files = xbmcvfs.listdir(backupdir)
-        # Sort OLDEST first by the in-name _YYYYMMDDHHMM stamp, NOT raw filename
-        # (users name their backups, so a lexical name sort could rank an older
-        # file last and delete the newest). An unstamped file has stamp "" and
-        # sorts oldest, so it is pruned before any stamped, newer backup.
-        zips = sorted(
-            [f for f in files if f.endswith(".zip")],
+        # Only rolling (stamped) files are prune candidates, so every entry HAS a
+        # stamp and the oldest-first sort is fully defined.
+        rolling = sorted(
+            [
+                f
+                for f in files
+                if f.endswith(".zip") and _is_rolling(f) and f not in protect
+            ],
             key=lambda f: (_name_stamp(f), f),
         )
-        for old in zips[: max(0, len(zips) - n)]:
+        for old in rolling[: max(0, len(rolling) - n)]:
             try:
                 xbmcvfs.delete(translatePath(os.path.join(backupdir, old)))
-            except:
+            except Exception:
                 pass
     except Exception as e:
         xbmc.log(
@@ -395,17 +421,20 @@ def _rotate_vfs(backupdir):
         )
 
 
-def _rotate_dropbox(dropbox_remote):
-    # Destination-agnostic keep-N for Dropbox: delete oldest beyond N.
+def _rotate_dropbox(dropbox_remote, protect=None):
+    # Keep-N for Dropbox: prune ONLY tool-created ROLLING backups; a user-renamed /
+    # protected backup is never counted toward N and never deleted.
     n = _keep_n()
     if n <= 0:
         return
+    protect = protect or set()
     try:
         names = dropbox_remote.list_backups()  # newest-first
-        for old in names[n:]:
+        rolling = [nm for nm in names if _is_rolling(nm) and nm not in protect]
+        for old in rolling[n:]:
             try:
                 dropbox_remote.delete(old)
-            except:
+            except Exception:
                 pass
     except Exception as e:
         xbmc.log(

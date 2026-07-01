@@ -280,21 +280,72 @@ def test_rotate_vfs_keeps_newest_when_names_differ(monkeypatch):
     assert len(deleted) == 2
 
 
-def test_rotate_vfs_unstamped_pruned_before_stamped(monkeypatch):
-    """A backup whose name has no parseable stamp must be treated as OLDEST and
-    pruned before any stamped, newer backup."""
+def test_rotate_vfs_never_deletes_unstamped_backup(monkeypatch):
+    """DATA-LOSS FIX (flips the old bug-blessing test): a user-renamed (unstamped)
+    backup is PROTECTED - rotation never counts it toward keep-N and never deletes it.
+    Only tool-created stamped rolling backups are pruned. Renaming is how users keep a
+    golden backup, so it must be the SAFEST file, not the first casualty."""
     wiz, _ = _import_wiz(monkeypatch, {"backup.keep": "1"})
     files = [
-        "legacy_no_stamp.zip",  # unstamped -> oldest
-        "kodi_backup_202601020101.zip",  # newest
+        "My Golden Build.zip",  # user renamed -> PROTECTED
+        "kodi_backup_202601010101.zip",  # rolling (older)
+        "kodi_backup_202601020101.zip",  # rolling (newer)
     ]
     wiz.xbmcvfs._listdir_result = ([], list(files))
     wiz.xbmcvfs._deleted = []
     wiz._rotate_vfs("/backups")
     deleted = wiz.xbmcvfs._deleted
-    assert any("legacy_no_stamp" in d for d in deleted)  # unstamped pruned
-    assert not any("202601020101" in d for d in deleted)  # stamped newest kept
+    assert not any("Golden" in d for d in deleted), "renamed golden was deleted"
+    # keep=1 among the 2 rolling -> delete only the oldest rolling
+    assert any("202601010101" in d for d in deleted)
+    assert not any("202601020101" in d for d in deleted)
     assert len(deleted) == 1
+
+
+def test_rotate_vfs_all_unstamped_deletes_nothing(monkeypatch):
+    """If nothing is a stamped rolling backup, rotation has no candidates and deletes
+    nothing, even when the count far exceeds keep (fail-safe)."""
+    wiz, _ = _import_wiz(monkeypatch, {"backup.keep": "1"})
+    wiz.xbmcvfs._listdir_result = ([], ["base-atv.zip", "new-atv-2.zip", "GOLDEN.zip"])
+    wiz.xbmcvfs._deleted = []
+    wiz._rotate_vfs("/backups")
+    assert wiz.xbmcvfs._deleted == []
+
+
+def test_rotate_vfs_keep_token_protects_even_with_stamp(monkeypatch):
+    """A 'keep' token protects a file even if it still carries a date stamp (rescues a
+    user who renamed but left the stamp on)."""
+    wiz, _ = _import_wiz(monkeypatch, {"backup.keep": "1"})
+    files = [
+        "KEEP golden_202601010101.zip",  # stamped BUT has 'keep' -> protected
+        "kodi_backup_202601020101.zip",  # rolling
+        "kodi_backup_202601030101.zip",  # rolling
+    ]
+    wiz.xbmcvfs._listdir_result = ([], list(files))
+    wiz.xbmcvfs._deleted = []
+    wiz._rotate_vfs("/backups")
+    assert not any("KEEP golden" in d for d in wiz.xbmcvfs._deleted)
+    assert any(
+        "202601020101" in d for d in wiz.xbmcvfs._deleted
+    )  # oldest rolling pruned
+
+
+def test_rotate_vfs_protects_just_created(monkeypatch):
+    """The just-created backup passed via protect= is never deleted even if it is the
+    oldest-stamped (belt-and-suspenders against a clock skew / duplicate stamp)."""
+    wiz, _ = _import_wiz(monkeypatch, {"backup.keep": "1"})
+    files = [
+        "kodi_backup_202601010101.zip",  # oldest stamp
+        "kodi_backup_202601020101.zip",
+        "kodi_backup_202601030101.zip",
+    ]
+    wiz.xbmcvfs._listdir_result = ([], list(files))
+    wiz.xbmcvfs._deleted = []
+    wiz._rotate_vfs("/backups", protect={"kodi_backup_202601010101.zip"})
+    deleted = wiz.xbmcvfs._deleted
+    assert not any("202601010101" in d for d in deleted)  # protected, though oldest
+    assert any("202601020101" in d for d in deleted)  # oldest candidate pruned
+    assert not any("202601030101" in d for d in deleted)  # newest kept
 
 
 # ============================================================ dropbox rotation ===
@@ -350,6 +401,32 @@ def test_rotate_dropbox_exactly_keep_deletes_nothing(monkeypatch):
     assert fdbx.deleted == []
 
 
+def test_rotate_dropbox_never_deletes_unstamped_backup(monkeypatch):
+    """DATA-LOSS FIX: on Dropbox too, a user-renamed (unstamped) backup is PROTECTED -
+    never counted toward keep-N, never deleted. Only stamped rolling backups prune."""
+    wiz, _ = _import_wiz(monkeypatch, {"backup.keep": "1"})
+    # list_backups returns newest-first; the renamed golden sorts last (unstamped)
+    fdbx = _FakeDbx(
+        [
+            "kodi_backup_202601020101.zip",  # rolling newest
+            "kodi_backup_202601010101.zip",  # rolling older
+            "My Golden Build.zip",  # renamed -> protected
+        ]
+    )
+    wiz._rotate_dropbox(fdbx)
+    assert "My Golden Build.zip" not in fdbx.deleted  # protected
+    assert "kodi_backup_202601010101.zip" in fdbx.deleted  # oldest rolling pruned
+    assert "kodi_backup_202601020101.zip" not in fdbx.deleted  # newest rolling kept
+
+
+def test_rotate_dropbox_all_unstamped_deletes_nothing(monkeypatch):
+    """No stamped rolling backups -> no prune candidates -> nothing deleted (fail-safe)."""
+    wiz, _ = _import_wiz(monkeypatch, {"backup.keep": "1"})
+    fdbx = _FakeDbx(["base-atv.zip", "new-atv-2.zip", "GOLDEN.zip"])
+    wiz._rotate_dropbox(fdbx)
+    assert fdbx.deleted == []
+
+
 # ============================================================ routing ===
 def test_destination_parsing(monkeypatch):
     wiz, _ = _import_wiz(monkeypatch, {"destination": "2"})
@@ -374,7 +451,9 @@ def test_dropbox_upload_failure_does_not_rotate(monkeypatch):
     monkeypatch.setattr(
         wiz,
         "_rotate_dropbox",
-        lambda dbx: rotate_called.__setitem__("n", rotate_called["n"] + 1),
+        lambda dbx, protect=None: rotate_called.__setitem__(
+            "n", rotate_called["n"] + 1
+        ),
     )
 
     # stub dropbox_remote module with a failing upload + a tracking delete
@@ -407,7 +486,9 @@ def test_dropbox_canceled_zip_does_not_upload_or_rotate(monkeypatch):
     wiz, _ = _import_wiz(monkeypatch, settings)
     rotate_called = {"n": 0}
     monkeypatch.setattr(
-        wiz, "_rotate_dropbox", lambda dbx: rotate_called.__setitem__("n", 1)
+        wiz,
+        "_rotate_dropbox",
+        lambda dbx, protect=None: rotate_called.__setitem__("n", 1),
     )
     dbx_mod = types.ModuleType("resources.lib.modules.dropbox_remote")
     upload_calls = {"n": 0}
@@ -426,7 +507,9 @@ def test_dropbox_success_rotates_and_cleans_temp(monkeypatch):
     wiz, _ = _import_wiz(monkeypatch, settings)
     rotate_called = {"n": 0}
     monkeypatch.setattr(
-        wiz, "_rotate_dropbox", lambda dbx: rotate_called.__setitem__("n", 1)
+        wiz,
+        "_rotate_dropbox",
+        lambda dbx, protect=None: rotate_called.__setitem__("n", 1),
     )
     dbx_mod = types.ModuleType("resources.lib.modules.dropbox_remote")
     dbx_mod.upload = lambda l, n, progress=None: True
@@ -521,7 +604,9 @@ def test_backup_vfs_copy_failure_no_success_no_rotation(monkeypatch, tmp_path):
         lambda *a, **k: (_ for _ in ()).throw(wiz.VfsCopyError("copy failed")),
     )
     rotate_called = {"n": 0}
-    monkeypatch.setattr(wiz, "_rotate_vfs", lambda d: rotate_called.__setitem__("n", 1))
+    monkeypatch.setattr(
+        wiz, "_rotate_vfs", lambda d, protect=None: rotate_called.__setitem__("n", 1)
+    )
     ok_calls = []
     monkeypatch.setattr(wiz.dialog, "ok", lambda *a, **k: ok_calls.append(a))
     # BACKUPDATA must exist so backup() proceeds; control.HOME == "/home"

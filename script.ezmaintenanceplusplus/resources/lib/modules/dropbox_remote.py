@@ -79,8 +79,10 @@ AddonTitle = "EZ Maintenance++"
 
 _addon = xbmcaddon.Addon(id=AddonID)
 
-# module-level in-memory bearer cache; exp is an absolute unix time
-_cache = {"bearer": None, "exp": 0}
+# module-level in-memory bearer cache; exp is an absolute unix time, rt is the refresh
+# token (account) the bearer was minted for so a re-auth to another account is not served
+# a stale bearer.
+_cache = {"bearer": None, "exp": 0, "rt": None}
 
 
 class DropboxAuthError(Exception):
@@ -196,6 +198,7 @@ def authorize():
     bearer = data.get("access_token")
     if bearer:
         _cache["bearer"] = bearer
+        _cache["rt"] = refresh
         _cache["exp"] = time.time() + expires_in
     _log("authorize: connected (refresh token stored)")
     xbmcgui.Dialog().ok(AddonTitle, "Connected to Dropbox.")
@@ -275,14 +278,27 @@ def _make_qr_window(image_path):
 
 
 def _access_token(force=False):
-    """Return a valid bearer token, refreshing via the stored refresh token as needed."""
-    now = time.time()
-    if not force and _cache["bearer"] and now < (_cache["exp"] - 300):
-        return _cache["bearer"]
+    """Return a valid bearer token, refreshing via the stored refresh token as needed.
 
+    The cached bearer is bound to the account it was minted for (its refresh token). If
+    the signed-in account changed (the stored refresh token differs), the cache is NOT
+    reused - otherwise the add-on would keep reading the OLD account's Dropbox folder
+    until the token expired, so a list/restore would show a stale account. Binding the
+    cache to the account keeps every listing a live read of the account you are actually
+    signed into. (`rt is None` means a bearer set outside this function - e.g. tests or
+    authorize's warm - which is already the current account, so it is honored.)
+    """
+    now = time.time()
     refresh = _refresh_token()
     if not refresh:
         raise DropboxAuthError("not signed in to Dropbox")
+    if (
+        not force
+        and _cache["bearer"]
+        and now < (_cache["exp"] - 300)
+        and _cache.get("rt") in (None, refresh)
+    ):
+        return _cache["bearer"]
     key = _key()
     if not key:
         raise DropboxAuthError("Dropbox app key missing")
@@ -311,6 +327,7 @@ def _access_token(force=False):
     if not bearer:
         raise DropboxAuthError("token refresh returned no access_token")
     _cache["bearer"] = bearer
+    _cache["rt"] = refresh
     _cache["exp"] = now + int(data.get("expires_in", 14400))
     return bearer
 

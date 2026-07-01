@@ -23,7 +23,7 @@ import urllib
 import re
 import time
 import zipfile
-from resources.lib.modules import control, maintenance, tools
+from resources.lib.modules import control, maintenance, tools, ui
 from datetime import datetime
 from resources.lib.modules.backtothefuture import unicode, PY2
 
@@ -45,14 +45,11 @@ AddonTitle = "EZ Maintenance++"
 AddonID = "script.ezmaintenanceplusplus"
 
 
-class VfsCopyError(Exception):
-    """Raised when shipping the finished zip to a VFS destination fails.
-
-    Lets backup() tell a FAILED copy apart from a user CANCEL: a cancel returns
-    canceled=True (delete temp, no rotation), while a copy failure raises this
-    so backup() can report an error and SKIP rotation - the prior good backup
-    is never pruned behind a ship that never landed.
-    """
+# VfsCopyError now lives in ui.py (one definition for the whole add-on); alias it here so
+# `wiz.VfsCopyError` and `except VfsCopyError` keep working. A FAILED ship raises this so
+# backup() reports an error and SKIPS rotation (a cancel instead returns canceled=True),
+# and the prior good backup is never pruned behind a ship that never landed.
+VfsCopyError = ui.VfsCopyError
 
 
 # Backup filenames carry a trailing _YYYYMMDDHHMM stamp before ".zip".
@@ -644,86 +641,64 @@ def CreateZip(
             os.path.join("special://temp", os.path.basename(target))
         )
     abs_src = os.path.abspath(folder)
-    for_progress = []
-    ITEM = []
-    dp = xbmcgui.DialogProgress()
-    dp.create(message_header, message1)
     try:
         os.remove(zip_filename)
-    except:
+    except Exception:
         pass
-    for base, dirs, files in os.walk(folder):
-        for file in files:
-            ITEM.append(file)
-    N_ITEM = len(ITEM)
-    count = 0
+
     canceled = False
-    zip_file = zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED, allowZip64=True)
-    for dirpath, dirnames, filenames in os.walk(folder):
-        if canceled:
-            break
+    # ONE uniform gauge (percent + count). The divide-by-zero guard lives INSIDE
+    # ui.Progress.items(), so an empty backup folder (0 files) no longer raises, and the
+    # context manager guarantees the dialog is closed - the old DialogProgress leaked.
+    with ui.Progress(message1, heading=message_header) as p:
+        ITEM = []
+        for _base, _dirs, files in os.walk(folder):
+            ITEM.extend(files)
+        n_item = len(ITEM)
+        count = 0
+        zip_file = zipfile.ZipFile(
+            zip_filename, "w", zipfile.ZIP_DEFLATED, allowZip64=True
+        )
         try:
-            dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
-            filenames[:] = [f for f in filenames if f not in exclude_files]
-
-            for file in filenames:
-                if dp.iscanceled():
-                    canceled = True
+            for dirpath, dirnames, filenames in os.walk(folder):
+                if canceled:
                     break
-                count += 1
-                for_progress.append(file)
-                progress = len(for_progress) / float(N_ITEM) * 100
-                if PY2:
-                    dp.update(
-                        int(progress),
-                        "Backing Up",
-                        "FILES: "
-                        + str(count)
-                        + "/"
-                        + str(N_ITEM)
-                        + "   [COLOR lime]"
-                        + str(file)
-                        + "[/COLOR]",
-                        "Please Wait",
-                    )
-                else:
-                    dp.update(
-                        int(progress),
-                        "Backing Up"
-                        + "\n"
-                        + "FILES: "
-                        + str(count)
-                        + "/"
-                        + str(N_ITEM)
-                        + "   [COLOR lime]"
-                        + str(file)
-                        + "[/COLOR]"
-                        + "\n"
-                        + "Please Wait",
-                    )
-                file = os.path.join(dirpath, file)
-                file = os.path.normpath(file)
-                arcname = file[len(abs_src) + 1 :]
-                zip_file.write(file, arcname)
-        except:
-            pass
-    zip_file.close()
+                try:
+                    dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
+                    filenames[:] = [f for f in filenames if f not in exclude_files]
+                    for fname in filenames:
+                        if p.cancelled():
+                            canceled = True
+                            break
+                        count += 1
+                        p.items(count, n_item, note="[COLOR lime]%s[/COLOR]" % fname)
+                        fpath = os.path.normpath(os.path.join(dirpath, fname))
+                        zip_file.write(fpath, fpath[len(abs_src) + 1 :])
+                except Exception:
+                    pass
+        finally:
+            zip_file.close()
 
-    # EZ Maintenance++ : if the destination was a VFS path, the zip was built in
-    # special://temp - ship the finished file to the share/cloud, then drop the temp.
-    copy_ok = True
+    # If the destination was a VFS path, the zip was built in special://temp - ship the
+    # finished file to the share/cloud with a gauge, then drop the staged temp.
     if remote:
-        if not canceled:
-            # xbmcvfs.copy returns False on failure (share offline, no space,
-            # permission). Capture it - a discarded False let a failed ship look
-            # like success, so backup() rotated and pruned a good old backup.
-            copy_ok = bool(xbmcvfs.copy(zip_filename, target))
         try:
-            os.remove(zip_filename)
-        except:
-            pass
-        if not canceled and not copy_ok:
-            raise VfsCopyError("VFS copy to %s failed" % target)
+            if not canceled:
+                # Chunked, gauged, ATOMIC copy. It raises VfsCopyError on a definitive
+                # failure (share offline / no space / permission) so backup() reports the
+                # error and SKIPS rotation - a discarded failure used to look like success
+                # and prune a good old backup. A cancel mid-ship returns COPY_CANCELLED.
+                with ui.Progress(
+                    "Copying to the backup location", heading=message_header
+                ) as sp:
+                    result = ui.copy_with_progress(zip_filename, target, progress=sp)
+                if result == ui.COPY_CANCELLED:
+                    canceled = True
+        finally:
+            try:
+                os.remove(zip_filename)
+            except Exception:
+                pass
 
     return canceled
 

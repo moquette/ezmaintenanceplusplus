@@ -140,6 +140,19 @@ def _install_stub_modules(monkeypatch, settings):
     b.unicode = str
     monkeypatch.setitem(sys.modules, "resources.lib.modules.backtothefuture", b)
 
+    # Load the REAL ui.py (the uniform dialog/progress/copy library) under the fake kodi
+    # modules already installed, so wiz's `from resources.lib.modules import ui` resolves
+    # to the shipped code (not a stub). ui imports only xbmc*/xbmcvfs.
+    sys.modules.pop("resources.lib.modules.ui", None)
+    ui_spec = importlib.util.spec_from_file_location(
+        "resources.lib.modules.ui",
+        ADDON_ROOT / "resources" / "lib" / "modules" / "ui.py",
+    )
+    ui_mod = importlib.util.module_from_spec(ui_spec)
+    monkeypatch.setitem(sys.modules, "resources.lib.modules.ui", ui_mod)
+    ui_spec.loader.exec_module(ui_mod)
+    sys.modules["resources.lib.modules"].ui = ui_mod
+
     control = types.ModuleType("resources.lib.modules.control")
     control.HOME = "/home"
     control.USERDATA = "/home/userdata"
@@ -472,6 +485,24 @@ def test_create_zip_ok_when_vfs_copy_succeeds(monkeypatch, tmp_path):
     canceled = wiz.CreateZip(str(src), target, "h", "m", [""], [".log"])
     assert canceled is False
     assert copy_calls["n"] == 1
+
+
+def test_create_zip_empty_folder_no_zerodiv(monkeypatch, tmp_path):
+    """An empty backup folder (0 files) must NOT raise ZeroDivisionError and must produce
+    a valid (empty) zip, reporting completion honestly. The divide-by-zero guard now lives
+    inside ui.Progress.items(), and the context-managed gauge is always closed (the old
+    hand-rolled DialogProgress divided by float(N_ITEM) and leaked its dialog)."""
+    import zipfile as _zip
+
+    wiz, _ = _import_wiz(monkeypatch, {})
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    out = tmp_path / "out.zip"
+    # local target (no "://") so there is no VFS ship - just the file-walk gauge path
+    canceled = wiz.CreateZip(str(empty), str(out), "h", "m", ["temp"], [".log"])
+    assert canceled is False
+    assert out.exists()
+    assert _zip.is_zipfile(str(out))  # honestly a valid, empty-but-real zip
 
 
 def test_backup_vfs_copy_failure_no_success_no_rotation(monkeypatch, tmp_path):

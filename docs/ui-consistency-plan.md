@@ -1,7 +1,23 @@
 # Master Plan: one universal UI/feedback library (`ui.py`)
 
-Status: **APPROVED by QA + Architecture (both APPROVE-WITH-CHANGES). All required changes are
-folded into the "v2" section below - that is the binding coding spec. Cleared to code, Stage A first.**
+Status: **BUILT. Stages A, B, and C are implemented on branch `ui-consistency-stage-a`
+(135 tests green). Stage D (buildInstaller/BUILDS removal) is deferred to a separate PR as
+planned. The "v2" section below is the binding spec that was followed.**
+
+Implemented (branch `ui-consistency-stage-a`, off `main`):
+
+- Stage A: `ui.py` (Progress + copy_with_progress + dialog helpers + one restart) + test_ui.py
+  - write-capable conftest fakes + `dropbox_remote.download` cancel (was a no-op).
+- Stage B: CreateZip file-walk gauge + SMB/NFS **atomic** ship (`copy_with_progress`),
+  VfsCopyError unified into ui, restore extract/staging gauges, Dropbox upload+download
+  gauges via `as_dropbox_callback` (activates download-cancel), maintenance notifications
+  (fixed the `Maintenance` wrong-name), FRESHSTART, control/tools headings; dead code removed
+  (killxbmc, xml_data_advSettings_old/New, orphaned progressDialog).
+- Stage C: `onetap.apply` wipes then restores via `wiz.restore(..., post_wipe=True)` - a single
+  UNINTERRUPTIBLE unit that always reaches the restart prompt (a wiped box is never stranded).
+- Deferred (separate PR): Stage D buildInstaller/BUILDS/install_build removal (live routes,
+  pulls in skinswap/downloader - a feature removal, out of this initiative's no-logic rule).
+- Not migrated (out of scope, unchanged): the Dropbox QR/auth flow and speedtest dialog.
 
 ## Goal
 

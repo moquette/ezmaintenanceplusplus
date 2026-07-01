@@ -24,8 +24,12 @@ import xbmcaddon
 import xbmcgui
 import xbmcvfs
 
+from resources.lib.modules import ui
+
 SLOTS = 10
-ADDON = "EZ Maintenance++"
+# One heading for the whole add-on, sourced from ui (which reads addon.xml's name), so a
+# One-Tap dialog can never drift from the real add-on name.
+ADDON = ui.HEADING
 FIELDS = ("name", "kind", "src", "type", "meta")
 
 
@@ -383,16 +387,18 @@ def _stage(pin, progress=None):
     if pin["kind"] == "dropbox":
         from resources.lib.modules import dropbox_remote
 
-        return xbmcvfs.translatePath(
-            dropbox_remote.download(pin["src"], progress=progress)
-        )
+        cb = progress.as_dropbox_callback() if progress is not None else None
+        return xbmcvfs.translatePath(dropbox_remote.download(pin["src"], progress=cb))
     dest_special = "special://temp/" + basename(pin["src"])
     dest_local = xbmcvfs.translatePath(dest_special)
     try:
         os.remove(dest_local)
     except Exception:
         pass
-    return dest_local if xbmcvfs.copy(pin["src"], dest_special) else None
+    # Gauged, cancelable, atomic VFS copy (was a silent xbmcvfs.copy with no progress).
+    if ui.copy_with_progress(pin["src"], dest_special, progress=progress) == ui.COPY_OK:
+        return dest_local
+    return None
 
 
 def _cleanup(path):
@@ -413,45 +419,29 @@ def apply(slot):
     pin = get_pin(slot)
     ok, msg = verify_pin(pin)
     if not ok:
-        xbmcgui.Dialog().ok(ADDON, msg + "\n\nNothing was changed.")
+        ui.error(msg + "\n\nNothing was changed.")
         return
 
     label = pin["name"] or basename(pin["src"])
-    if not xbmcgui.Dialog().yesno(
-        ADDON,
+    if not ui.confirm(
         "Restore this backup?\n%s\n\nThis WIPES this Kodi, then restores it. Continue?"
         % label,
+        heading=ADDON,
         yeslabel="Wipe + Restore",
         nolabel="Cancel",
     ):
         return
 
-    # Fetch + FULLY validate BEFORE touching the box (the safety invariant).
-    dp = xbmcgui.DialogProgress()
+    # Fetch + FULLY validate BEFORE touching the box (the safety invariant). The fetch has
+    # a real gauge and can be canceled - harmless, because it is BEFORE any wipe.
+    local = None
+    canceled_fetch = False
     try:
-        dp.create(ADDON, "Fetching the backup...\nPlease wait")
-    except Exception:
-        pass
-
-    def _prog(received, total):
-        mb = 1024 * 1024
-        pct = int(received * 100 / total) if total else 0
-        try:
-            dp.update(
-                pct,
-                "Downloading backup...\n%d of %d MB" % (received // mb, total // mb),
-            )
-        except Exception:
-            pass
-
-    try:
-        local = _stage(pin, progress=_prog)
-    except Exception:
+        with ui.Progress("Fetching the backup...", heading=ADDON) as dp:
+            local = _stage(pin, progress=dp)
+    except Exception as e:
         local = None
-    try:
-        dp.close()
-    except Exception:
-        pass
+        canceled_fetch = type(e).__name__ == "DropboxCanceled"
 
     good = False
     if local:
@@ -462,17 +452,18 @@ def apply(slot):
     if not good:
         if local:
             _cleanup(local)
-        xbmcgui.Dialog().ok(
-            ADDON, "Could not fetch a valid backup. Nothing was changed."
-        )
+        if not canceled_fetch:
+            ui.error("Could not fetch a valid backup. Nothing was changed.")
         return
 
     # ---- point of no return: wipe (add-on + deps + temp survive), then restore ----
+    # post_wipe=True makes the restore a single UNINTERRUPTIBLE unit that always reaches
+    # the restart prompt - a wiped box is never left stranded by a cancel or a hiccup.
     from resources.lib.modules import wiz
 
     _wipe(xbmcvfs.translatePath("special://home/"), _wipe_excludes())
     try:
-        wiz.restore(local, confirm=False)
+        wiz.restore(local, confirm=False, post_wipe=True)
     finally:
         _cleanup(local)
 

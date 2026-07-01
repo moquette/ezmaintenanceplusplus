@@ -165,6 +165,18 @@ def ot(monkeypatch):
     sys.modules["resources.lib.modules"].dropbox_remote = dbx
     monkeypatch.setitem(sys.modules, "resources.lib.modules.dropbox_remote", dbx)
 
+    # Load the REAL ui.py (onetap imports it at top-level). It needs only xbmc*/xbmcvfs,
+    # which are already faked above.
+    sys.modules.pop("resources.lib.modules.ui", None)
+    ui_spec = importlib.util.spec_from_file_location(
+        "resources.lib.modules.ui",
+        ADDON_ROOT / "resources" / "lib" / "modules" / "ui.py",
+    )
+    ui_mod = importlib.util.module_from_spec(ui_spec)
+    monkeypatch.setitem(sys.modules, "resources.lib.modules.ui", ui_mod)
+    ui_spec.loader.exec_module(ui_mod)
+    sys.modules["resources.lib.modules"].ui = ui_mod
+
     sys.modules.pop("onetap", None)
     spec = importlib.util.spec_from_file_location(
         "onetap", ADDON_ROOT / "resources" / "lib" / "modules" / "onetap.py"
@@ -427,13 +439,26 @@ def test_wipe_keeps_addon_db_file(ot, tmp_path):
 
 
 def test_stage_dropbox_reports_download_progress(ot):
-    # the One-Tap Dropbox fetch must drive the gauge (was calling download() with no callback)
+    # the One-Tap Dropbox fetch must drive the gauge (was calling download() with no
+    # callback). _stage now takes a ui.Progress and hands download its as_dropbox_callback.
     o = ot.onetap
     ot.settings["dropbox_refresh_token"] = "tok"
     o.save_pin(1, "Base", "dropbox", "Base.zip", "full", "")
-    seen = []
-    local = o._stage(o.get_pin(1), progress=lambda r, t: seen.append((r, t)))
-    assert seen == [(50, 100), (100, 100)]
+
+    class _Prog:
+        def __init__(self):
+            self.seen = []
+
+        def as_dropbox_callback(self):
+            def cb(r, t):
+                self.seen.append((r, t))
+                return True
+
+            return cb
+
+    p = _Prog()
+    local = o._stage(o.get_pin(1), progress=p)
+    assert p.seen == [(50, 100), (100, 100)]
     assert local.endswith("Base.zip")
 
 
@@ -454,11 +479,43 @@ def test_apply_bad_zip_never_wipes(ot, tmp_path):
     ot.file.payloads[path] = b"PK\x03\x04"  # passes the read-only verify (PK header)
     bad = tmp_path / "staged.zip"
     bad.write_text("NOT A ZIP")  # but the fetched file is not a real zip
-    o._stage = lambda pin: str(bad)
+    o._stage = lambda pin, progress=None: str(bad)
     wipes = []
     o._wipe = lambda *a, **k: wipes.append(1)
     o.apply(1)  # is_zipfile(bad) is False -> abort before wipe
     assert wipes == []
+
+
+def test_apply_calls_restore_with_post_wipe(ot, tmp_path, monkeypatch):
+    """Stage C wiring: with a valid staged snapshot, apply wipes and then calls
+    wiz.restore(..., post_wipe=True) so the restore is the uninterruptible, always-restart
+    unit (a wiped box is never stranded)."""
+    import sys as _sys
+    import types as _t
+    import zipfile as _zip
+
+    o = ot.onetap
+    path = "nfs://h/b.zip"
+    o.save_pin(1, "x", "vfs", path, "full", "")
+    ot.vfs._exists[path] = True
+    ot.vfs._sizes[path] = 100
+    ot.file.payloads[path] = b"PK\x03\x04"  # passes the read-only verify
+    good = tmp_path / "staged.zip"
+    with _zip.ZipFile(str(good), "w") as z:
+        z.writestr("a.txt", "hi")  # a real, valid zip so is_zipfile() passes
+    o._stage = lambda pin, progress=None: str(good)
+    o._wipe = lambda *a, **k: None  # do not touch the real filesystem
+
+    calls = []
+    wiz_mod = _t.ModuleType("resources.lib.modules.wiz")
+    wiz_mod.restore = lambda local, confirm=True, post_wipe=False: calls.append(
+        (local, confirm, post_wipe)
+    )
+    monkeypatch.setitem(sys.modules, "resources.lib.modules.wiz", wiz_mod)
+    _sys.modules["resources.lib.modules"].wiz = wiz_mod
+
+    o.apply(1)
+    assert calls == [(str(good), False, True)]
 
 
 # --------------------------- the menu (user-facing entry) ----------------- #

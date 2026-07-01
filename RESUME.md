@@ -18,6 +18,18 @@ repo** (`tony7bones.github.io`, proxy v2.2.2). Part of the **Tony.7.Bones "++" s
 "take a proven app and strengthen it" - alongside **Estuary MOD V2++** and **Tony.7.Bones
 Setup**. See `docs/one-tap-restore.md` for the One-Tap design + as-built notes.
 
+## Known issues (to polish)
+
+- **Advanced Settings (Buffer Size) does not stick.** `tools.advancedSettings()`
+  (`resources/lib/modules/tools.py` ~66-93) writes `special://home/userdata/advancedsettings.xml`
+  with a plain `open(..., "w")`, but the XML uses the **pre-Kodi-19 cache schema**
+  (`<cachemembuffersize>`, `<readbufferfactor>`, `<buffermode>` at the `<advancedsettings>`
+  root). Kodi 21 Omega expects them inside `<cache>` as `<memorysize>` / `<readfactor>` /
+  `<buffermode>`. Symptom (owner-reported): after applying, Kodi pops the "settings changed -
+  keep new or old?" reconcile dialog and the buffer values do not survive a reboot. Fix later:
+  rewrite to the Omega `<cache>` schema, write via `xbmcvfs`, and prompt for a restart (Kodi
+  only reads advancedsettings.xml at startup).
+
 ## Repo / build / test
 
 - Repo: `~/Code/moquette/ezmaintenanceplusplus` (its OWN git repo, NOT tony7bones.github.io), branch `main`.

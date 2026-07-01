@@ -34,42 +34,6 @@ AddonTitle = "EZ Maintenance++"
 AddonID = "script.ezmaintenanceplusplus"
 
 
-def xml_data_advSettings_old(size):
-    xml_data = (
-        """<advancedsettings>
-      <network>
-        <curlclienttimeout>10</curlclienttimeout>
-        <curllowspeedtime>20</curllowspeedtime>
-        <curlretries>2</curlretries>
-        <cachemembuffersize>%s</cachemembuffersize>
-        <buffermode>2</buffermode>
-        <readbufferfactor>20</readbufferfactor>
-      </network>
-</advancedsettings>"""
-        % size
-    )
-    return xml_data
-
-
-def xml_data_advSettings_New(size):
-    xml_data = (
-        """<advancedsettings>
-      <network>
-        <curlclienttimeout>10</curlclienttimeout>
-        <curllowspeedtime>20</curllowspeedtime>
-        <curlretries>2</curlretries>
-      </network>
-      <cache>
-        <memorysize>%s</memorysize>
-        <buffermode>2</buffermode>
-        <readfactor>20</readfactor>
-      </cache>
-</advancedsettings>"""
-        % size
-    )
-    return xml_data
-
-
 ADV_XML = "special://home/userdata/advancedsettings.xml"
 # On Kodi 21 Omega the cache buffer lives in the GUI setting `filecache.memorysize` (in MB);
 # advancedsettings.xml <cache> is DEPRECATED and IGNORED. So we read/write it via JSON-RPC,

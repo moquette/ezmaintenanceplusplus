@@ -49,7 +49,6 @@ backup_zip = translatePath(os.path.join(backupdir, "backup_addon_data.zip"))
 
 # DIALOGS
 dialog = xbmcgui.Dialog()
-progressDialog = xbmcgui.DialogProgress()
 
 AddonTitle = "EZ Maintenance++"
 EXCLUDES = [
@@ -344,21 +343,6 @@ def REMOVE_EMPTY_FOLDERS():
                 used_count += 1  # increment used_count
         except:
             pass
-
-
-def killxbmc():
-    dialog.ok(
-        "PROCESS COMPLETE",
-        "The skin will now be reset"
-        + "\n"
-        + "To start using your new setup please switch the skin System > Appearance > Skin to the desired one... if images are not showing, just restart Kodi"
-        + "\n"
-        + "Click OK to Continue",
-    )
-
-    # xbmc.executebuiltin('Mastermode')
-    xbmc.executebuiltin("LoadProfile(Master user)")
-    # xbmc.executebuiltin('Mastermode')
 
 
 def CreateDir(

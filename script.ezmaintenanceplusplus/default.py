@@ -8,7 +8,7 @@ import sys
 import urllib
 import time
 import requests
-from resources.lib.modules import control, tools
+from resources.lib.modules import control, tools, ui
 from resources.lib.modules.backtothefuture import unicode, PY2
 from resources.lib.modules import maintenance
 
@@ -294,43 +294,37 @@ def FRESHSTART(mode="verbose"):
     # gone. Uses the same hardened wipe as One-Tap Restore (preserves this add-on, its
     # runtime deps, temp/, and backupdir). mode="silent" wipes with no prompts, no restart.
     if mode != "silent":
-        if not xbmcgui.Dialog().yesno(
-            AddonTitle,
+        if not ui.confirm_wipe(
             "Wipe this Kodi to a clean state?\n"
             "All add-ons, skins, and settings are removed (this tool survives). "
             "Kodi restarts afterward.",
-            yeslabel="Wipe",
-            nolabel="Cancel",
+            heading=AddonTitle,
         ):
             return
-    try:
-        progressDialog.create(AddonTitle, "Wiping install..." + "\n" + "Please wait")
-    except Exception:
-        pass
-    try:
-        from resources.lib.modules import onetap
+    # The wipe is a single step (no per-item progress); the context-managed gauge shows a
+    # 'Wiping install...' spinner and is always closed.
+    with ui.Progress("Wiping install...", heading=AddonTitle):
+        try:
+            from resources.lib.modules import onetap
 
-        # keep_addon_db() preserves Kodi's add-on state DB so EZ Maintenance++ comes back
-        # ENABLED after the restart (not disabled/"gone", which was the bad UX).
-        onetap._wipe(HOME, onetap._wipe_excludes(), onetap.keep_addon_db())
-    except Exception:
-        pass
-    try:
-        xbmc.executebuiltin("UpdateLocalAddons")  # reconcile the DB with what's left
-    except Exception:
-        pass
-    try:
-        progressDialog.close()
-    except Exception:
-        pass
+            # keep_addon_db() preserves Kodi's add-on state DB so EZ Maintenance++ comes
+            # back ENABLED after the restart (not disabled/"gone", which was the bad UX).
+            onetap._wipe(HOME, onetap._wipe_excludes(), onetap.keep_addon_db())
+        except Exception:
+            pass
+        try:
+            xbmc.executebuiltin(
+                "UpdateLocalAddons"
+            )  # reconcile the DB with what's left
+        except Exception:
+            pass
     if mode != "silent":
-        dialog.ok(
-            AddonTitle,
+        ui.done(
             "Clean slate ready. Kodi will restart now.\n\n"
             "After it restarts, EZ Maintenance++ is under Add-ons > Program add-ons "
-            "(if it is off, open it there and choose Enable).",
+            "(if it is off, open it there and choose Enable)."
         )
-        xbmc.executebuiltin("Quit")
+        ui.restart()
 
 
 def REMOVE_EMPTY_FOLDERS():

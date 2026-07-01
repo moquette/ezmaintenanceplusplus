@@ -126,7 +126,12 @@ def advancedSettings():
     # yesnocustom returns 1=yes, 0=no, 2=custom, -1=cancelled.
     if hasattr(dialog, "yesnocustom"):
         choice = dialog.yesnocustom(
-            AddonTitle, msg, "Cancel", nolabel="Enter Value", yeslabel="Use Optimal"
+            AddonTitle,
+            msg,
+            "Cancel",
+            nolabel="Enter Value",
+            yeslabel="Use Optimal",
+            defaultbutton=getattr(xbmcgui, "DLG_YESNO_YES_BTN", 1),  # focus Use Optimal
         )
         if choice in (-1, 2):  # Cancel button or ESC/back
             return

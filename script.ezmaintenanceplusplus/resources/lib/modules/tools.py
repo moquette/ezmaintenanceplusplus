@@ -118,14 +118,25 @@ def advancedSettings():
         else "No buffer set yet.\n"
     )
 
-    # Use Optimal (yes) or Enter Value (no). ESC/back -> Enter Value -> keyboard cancel aborts.
-    if dialog.yesno(
-        AddonTitle,
+    msg = (
         "%sOptimal for your free memory: %d MB.\n\nApply the optimal value, or enter your own?"
-        % (header, optimal_mb),
-        yeslabel="Use Optimal",
-        nolabel="Enter Value",
-    ):
+        % (header, optimal_mb)
+    )
+    # Kodi 20+/Omega: a real 3-button dialog (Use Optimal / Enter Value / Cancel).
+    # yesnocustom returns 1=yes, 0=no, 2=custom, -1=cancelled.
+    if hasattr(dialog, "yesnocustom"):
+        choice = dialog.yesnocustom(
+            AddonTitle, msg, "Cancel", nolabel="Enter Value", yeslabel="Use Optimal"
+        )
+        if choice in (-1, 2):  # Cancel button or ESC/back
+            return
+        use_optimal = choice == 1
+    else:  # Kodi 19 fallback: two buttons (ESC -> Enter Value -> keyboard cancel aborts)
+        use_optimal = dialog.yesno(
+            AddonTitle, msg, yeslabel="Use Optimal", nolabel="Enter Value"
+        )
+
+    if use_optimal:
         size = optimal_mb * 1024 * 1024
     else:
         entered = _get_keyboard(

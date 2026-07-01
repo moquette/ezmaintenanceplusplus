@@ -33,6 +33,7 @@ class FakeAddon:
 class FakeDialog:
     select_returns = []
     browse_returns = []
+    input_returns = []
     ok_calls = []
     notifications = []
 
@@ -41,6 +42,9 @@ class FakeDialog:
 
     def browse(self, *a, **k):
         return FakeDialog.browse_returns.pop(0) if FakeDialog.browse_returns else ""
+
+    def input(self, *a, **k):
+        return FakeDialog.input_returns.pop(0) if FakeDialog.input_returns else ""
 
     def ok(self, heading, msg, *a, **k):
         FakeDialog.ok_calls.append((heading, msg))
@@ -108,6 +112,7 @@ def ot(monkeypatch):
     FakeAddon._settings = {}
     FakeDialog.select_returns = []
     FakeDialog.browse_returns = []
+    FakeDialog.input_returns = []
     FakeDialog.ok_calls = []
     FakeDialog.notifications = []
     FakeFile.payloads = {}
@@ -383,14 +388,56 @@ def test_apply_bad_zip_never_wipes(ot, tmp_path):
 
 
 # --------------------------- the menu (user-facing entry) ----------------- #
-def test_menu_taps_set_pin_calls_apply(ot):
+def test_menu_taps_set_pin_opens_actions(ot):
     o = ot.onetap
     o.save_pin(1, "Golden", "vfs", "nfs://h/b.zip", "full", "full . 130 MB")
     ot.dialog.select_returns = [0]  # tap row 0 = slot 1 (set)
     calls = []
-    o.apply = lambda slot: calls.append(slot)
+    o._pin_actions = lambda slot: calls.append(slot)
     o.menu()
     assert calls == [1]
+
+
+def test_pin_actions_restore_dispatch(ot):
+    o = ot.onetap
+    o.save_pin(1, "x", "vfs", "nfs://h/b.zip", "full", "")
+    ot.dialog.select_returns = [0]  # "Restore now"
+    calls = []
+    o.apply = lambda slot: calls.append(slot)
+    o._pin_actions(1)
+    assert calls == [1]
+
+
+def test_rename_sets_name(ot):
+    o = ot.onetap
+    o.save_pin(1, "full-backup.zip  (130 MB)", "vfs", "nfs://h/b.zip", "full", "")
+    ot.dialog.input_returns = ["Golden Snapshot"]
+    o.rename(1)
+    assert o.get_pin(1)["name"] == "Golden Snapshot"
+
+
+def test_rename_cancel_keeps_name(ot):
+    o = ot.onetap
+    o.save_pin(1, "orig", "vfs", "nfs://h/b.zip", "full", "")
+    ot.dialog.input_returns = [""]  # user cancelled
+    o.rename(1)
+    assert o.get_pin(1)["name"] == "orig"
+
+
+def test_pin_actions_rename_dispatch(ot):
+    o = ot.onetap
+    o.save_pin(1, "x", "vfs", "nfs://h/b.zip", "full", "")
+    ot.dialog.select_returns = [1]  # "Rename"
+    ot.dialog.input_returns = ["New Name"]
+    o._pin_actions(1)
+    assert o.get_pin(1)["name"] == "New Name"
+
+
+def test_remove_clears_pin(ot):
+    o = ot.onetap
+    o.save_pin(1, "x", "vfs", "nfs://h/b.zip", "full", "")
+    o.remove(1)  # FakeDialog.yesno -> True
+    assert not o.is_set(o.get_pin(1))
 
 
 def test_menu_empty_slot_calls_pick(ot):

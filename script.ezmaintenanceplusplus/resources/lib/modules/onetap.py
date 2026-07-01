@@ -437,7 +437,7 @@ def menu():
         return
     chosen = pins[idx]
     if is_set(chosen):
-        apply(chosen["slot"])  # restore (apply verifies + confirms + wipes + restores)
+        _pin_actions(chosen["slot"])  # Restore / Rename / Verify / Change / Remove
     else:
         pick(chosen["slot"])  # empty slot tapped -> pin one
 
@@ -450,3 +450,44 @@ def menu_pick():
     idx = xbmcgui.Dialog().select("Pin a backup to which slot?", opts)
     if idx != -1:
         pick(idx + 1)
+
+
+def _pin_actions(slot):
+    """Tapping a pinned backup: choose what to do with it."""
+    pin = get_pin(slot)
+    name = pin["name"] or basename(pin["src"])
+    idx = xbmcgui.Dialog().select(
+        name,
+        ["Restore now", "Rename", "Verify", "Change backup (re-pick)", "Remove pin"],
+    )
+    if idx == 0:
+        apply(slot)
+    elif idx == 1:
+        rename(slot)
+    elif idx == 2:
+        verify(slot)
+    elif idx == 3:
+        pick(slot)
+    elif idx == 4:
+        remove(slot)
+
+
+def rename(slot):
+    pin = get_pin(slot)
+    if not is_set(pin):
+        return
+    current = pin["name"] or basename(pin["src"])
+    new = xbmcgui.Dialog().input("Rename this backup", current)
+    if new and new.strip():
+        _set(slot, "name", new.strip())
+        xbmcgui.Dialog().notification(ADDON, "Renamed to: %s" % new.strip())
+
+
+def remove(slot):
+    if not is_set(get_pin(slot)):
+        return
+    if xbmcgui.Dialog().yesno(
+        ADDON, "Remove this pin?\nThe backup file itself is NOT deleted."
+    ):
+        clear_pin(slot)
+        xbmcgui.Dialog().notification(ADDON, "Pin removed")

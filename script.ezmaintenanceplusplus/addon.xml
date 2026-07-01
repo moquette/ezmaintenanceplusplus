@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.17" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.18" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,10 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+2026.06.30.18
+ - One-Tap Restore pin management: tap a pinned backup to get Restore / Rename / Verify /
+   Change / Remove. You can now give a pin a friendly name (e.g. "Golden Full") instead of
+   the raw zip file name.
 2026.06.30.17
  - One-Tap Restore is now a proper menu item, not buried in Settings. Open the add-on and
    choose ONE-TAP RESTORE: pick a pinned backup to restore it, or pin a new one. Restoring

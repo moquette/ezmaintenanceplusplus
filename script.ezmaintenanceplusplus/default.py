@@ -480,6 +480,8 @@ if _script_arg == "onetap":
             onetap.pick(_slot)
         elif _verb == "verify":
             onetap.verify(_slot)
+        elif _verb == "apply":
+            onetap.apply(_slot)
     sys.exit(0)
 
 params = dict(parse_qsl(sys.argv[2].replace("?", "")))

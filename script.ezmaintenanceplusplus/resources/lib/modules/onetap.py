@@ -163,7 +163,7 @@ def _pick_vfs(slot):
     ptype = infer_type(name)
     save_pin(
         slot,
-        _keep_or(slot, name),
+        "%s  (%s)" % (name, fmt_size(size)),
         "vfs",
         path,
         ptype,
@@ -195,7 +195,7 @@ def _pick_dropbox(slot):
     chosen = names[idx]
     ptype = infer_type(chosen)
     save_pin(
-        slot, _keep_or(slot, chosen), "dropbox", chosen, ptype, "%s . Dropbox" % ptype
+        slot, "%s  (Dropbox)" % chosen, "dropbox", chosen, ptype, "%s . Dropbox" % ptype
     )
     xbmcgui.Dialog().notification(ADDON, "Pinned: %s" % chosen)
     _log("pinned dropbox slot %d: %s" % (slot, chosen))
@@ -275,3 +275,145 @@ def _verify_dropbox(name):
     if name in names:
         return True, "Valid (present in Dropbox):\n%s" % name
     return False, "Not in Dropbox anymore:\n%s" % name
+
+
+# --------------------------------------------------------------------------- #
+# Apply a pin: verify -> fetch + FULLY validate -> confirm -> WIPE -> restore.
+#
+# Safety invariant: the box is NEVER wiped until the snapshot has been fetched to
+# local disk AND confirmed a valid zip. A missing/corrupt/unreachable pin can never
+# strand a wiped box. The wipe preserves this add-on, its runtime deps, and the staged
+# snapshot (special://temp), so restore has everything it needs afterward.
+# --------------------------------------------------------------------------- #
+_ADDON_ID = "script.ezmaintenanceplusplus"
+
+
+def _wipe_excludes():
+    keep = {
+        "temp",  # the staged, already-validated snapshot lives here - must survive
+        "backupdir",
+        "backup.zip",
+        "script.module.requests",
+        "script.module.urllib3",
+        "script.module.chardet",
+        "script.module.idna",
+        "script.module.certifi",
+    }
+    try:
+        keep.add(xbmcaddon.Addon().getAddonInfo("id") or _ADDON_ID)
+    except Exception:
+        keep.add(_ADDON_ID)
+    return keep
+
+
+def _wipe(home, excludes):
+    """Remove everything under `home` except any entry named in `excludes` (matched at
+    any depth - protects addons/<this add-on> and temp/). Returns files removed."""
+    import os
+
+    removed = 0
+    for root, dirs, files in os.walk(home, topdown=True):
+        dirs[:] = [d for d in dirs if d not in excludes]
+        for fname in files:
+            try:
+                os.remove(os.path.join(root, fname))
+                removed += 1
+            except Exception:
+                pass
+    for root, dirs, _files in os.walk(home, topdown=False):
+        for dname in dirs:
+            if dname in excludes:
+                continue
+            try:
+                os.rmdir(os.path.join(root, dname))  # only removes if now empty
+            except Exception:
+                pass
+    return removed
+
+
+def _stage(pin):
+    """Fetch the pinned snapshot into special://temp (preserved by the wipe) and return
+    its local path, or None. Runs BEFORE any wipe."""
+    import os
+
+    if pin["kind"] == "dropbox":
+        from resources.lib.modules import dropbox_remote
+
+        return xbmcvfs.translatePath(dropbox_remote.download(pin["src"]))
+    dest_special = "special://temp/" + basename(pin["src"])
+    dest_local = xbmcvfs.translatePath(dest_special)
+    try:
+        os.remove(dest_local)
+    except Exception:
+        pass
+    return dest_local if xbmcvfs.copy(pin["src"], dest_special) else None
+
+
+def _cleanup(path):
+    import os
+
+    try:
+        os.remove(path)
+    except Exception:
+        pass
+
+
+def apply(slot):
+    """One-tap restore of a pinned backup: wipe-then-restore, but only after the snapshot
+    is fetched and confirmed a valid zip locally (never wipe on a bad pin)."""
+    import os
+    import zipfile
+
+    pin = get_pin(slot)
+    ok, msg = verify_pin(pin)
+    if not ok:
+        xbmcgui.Dialog().ok(ADDON, msg + "\n\nNothing was changed.")
+        return
+
+    label = pin["name"] or basename(pin["src"])
+    if not xbmcgui.Dialog().yesno(
+        ADDON,
+        "Restore this backup?\n%s\n\nThis WIPES this Kodi, then restores it. Continue?"
+        % label,
+        yeslabel="Wipe + Restore",
+        nolabel="Cancel",
+    ):
+        return
+
+    # Fetch + FULLY validate BEFORE touching the box (the safety invariant).
+    dp = xbmcgui.DialogProgress()
+    try:
+        dp.create(ADDON, "Fetching the backup...\nPlease wait")
+    except Exception:
+        pass
+    try:
+        local = _stage(pin)
+    except Exception:
+        local = None
+    try:
+        dp.close()
+    except Exception:
+        pass
+
+    good = False
+    if local:
+        try:
+            good = os.path.getsize(local) > 0 and zipfile.is_zipfile(local)
+        except Exception:
+            good = False
+    if not good:
+        if local:
+            _cleanup(local)
+        xbmcgui.Dialog().ok(
+            ADDON, "Could not fetch a valid backup. Nothing was changed."
+        )
+        return
+
+    # ---- point of no return: wipe (add-on + deps + temp survive), then restore ----
+    from resources.lib.modules import wiz
+
+    _wipe(xbmcvfs.translatePath("special://home/"), _wipe_excludes())
+    try:
+        wiz.restore(local, confirm=False)
+    finally:
+        _cleanup(local)

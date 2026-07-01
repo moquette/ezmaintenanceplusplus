@@ -53,6 +53,20 @@ class FakeDialog:
         return True
 
 
+class FakeDialogProgress:
+    def create(self, *a, **k):
+        pass
+
+    def update(self, *a, **k):
+        pass
+
+    def close(self, *a, **k):
+        pass
+
+    def iscanceled(self):
+        return False
+
+
 class FakeStat:
     def __init__(self, size):
         self._s = size
@@ -108,6 +122,7 @@ def ot(monkeypatch):
 
     xbmcgui = types.ModuleType("xbmcgui")
     xbmcgui.Dialog = FakeDialog
+    xbmcgui.DialogProgress = FakeDialogProgress
 
     xbmcvfs = _make_xbmcvfs()
 
@@ -309,3 +324,59 @@ def test_verify_silent_returns_bool_no_dialog(ot):
     o = ot.onetap
     assert o.verify(5, silent=True) is False
     assert ot.dialog.ok_calls == []
+
+
+# --------------------------- apply: the safety invariant ------------------- #
+def test_wipe_protects_addon_deps_and_temp(ot, tmp_path):
+    o = ot.onetap
+    (tmp_path / "addons" / "script.ezmaintenanceplusplus").mkdir(parents=True)
+    (tmp_path / "addons" / "script.ezmaintenanceplusplus" / "default.py").write_text(
+        "x"
+    )
+    (tmp_path / "addons" / "script.module.requests").mkdir(parents=True)
+    (tmp_path / "addons" / "script.module.requests" / "__init__.py").write_text("x")
+    (tmp_path / "addons" / "plugin.video.other").mkdir(parents=True)
+    (tmp_path / "addons" / "plugin.video.other" / "x.py").write_text("x")
+    (tmp_path / "temp").mkdir()
+    (tmp_path / "temp" / "staged.zip").write_text("PKstaged")
+    (tmp_path / "userdata").mkdir()
+    (tmp_path / "userdata" / "guisettings.xml").write_text("x")
+
+    o._wipe(
+        str(tmp_path),
+        {"script.ezmaintenanceplusplus", "temp", "script.module.requests"},
+    )
+
+    # preserved: the add-on, its dep, and the staged snapshot
+    assert (
+        tmp_path / "addons" / "script.ezmaintenanceplusplus" / "default.py"
+    ).exists()
+    assert (tmp_path / "addons" / "script.module.requests" / "__init__.py").exists()
+    assert (tmp_path / "temp" / "staged.zip").exists()
+    # wiped: everything else
+    assert not (tmp_path / "addons" / "plugin.video.other" / "x.py").exists()
+    assert not (tmp_path / "userdata" / "guisettings.xml").exists()
+
+
+def test_apply_empty_slot_never_wipes(ot):
+    o = ot.onetap
+    wipes = []
+    o._wipe = lambda *a, **k: wipes.append(1)
+    o.apply(2)  # empty slot -> verify fails -> abort before wipe
+    assert wipes == []
+
+
+def test_apply_bad_zip_never_wipes(ot, tmp_path):
+    o = ot.onetap
+    path = "nfs://h/b.zip"
+    o.save_pin(1, "x", "vfs", path, "full", "")
+    ot.vfs._exists[path] = True
+    ot.vfs._sizes[path] = 100
+    ot.file.payloads[path] = b"PK\x03\x04"  # passes the read-only verify (PK header)
+    bad = tmp_path / "staged.zip"
+    bad.write_text("NOT A ZIP")  # but the fetched file is not a real zip
+    o._stage = lambda pin: str(bad)
+    wipes = []
+    o._wipe = lambda *a, **k: wipes.append(1)
+    o.apply(1)  # is_zipfile(bad) is False -> abort before wipe
+    assert wipes == []

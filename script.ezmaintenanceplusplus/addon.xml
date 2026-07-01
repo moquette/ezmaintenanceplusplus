@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.15" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.16" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,11 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+2026.06.30.16
+ - One-Tap Restore now RESTORES. Each pinned slot has a RESTORE action: it fetches and
+   validates the pinned backup, and only after you confirm does it wipe this Kodi and
+   restore it. The box is never wiped until the backup is downloaded and confirmed a valid
+   zip. Slots now show the pinned zip name and size.
 2026.06.30.15
  - One-Tap Restore (foundation): a new Settings tab to pin a specific backup (a
    network/local file or a Dropbox backup) to a slot and verify it still exists and is a

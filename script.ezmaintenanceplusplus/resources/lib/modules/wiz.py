@@ -526,15 +526,16 @@ def _restore_dropbox():
             pass
 
 
-def restore(zipFile):
-    yesDialog = dialog.yesno(
-        AddonTitle,
-        "This will overwrite all your current settings ... Are you sure?",
-        yeslabel="Yes",
-        nolabel="No",
-    )
-    if not yesDialog:
-        return
+def restore(zipFile, confirm=True):
+    if confirm:
+        yesDialog = dialog.yesno(
+            AddonTitle,
+            "This will overwrite all your current settings ... Are you sure?",
+            yeslabel="Yes",
+            nolabel="No",
+        )
+        if not yesDialog:
+            return
 
     # Stage a remote (VFS) zip locally first; a plain local path extracts directly.
     local = zipFile

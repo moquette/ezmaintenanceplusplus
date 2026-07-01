@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.01.0" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.01.1" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,16 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+2026.07.01.1
+ - IMPORTANT data-loss fix: "Keep how many backups" (rotation) no longer deletes a backup
+   you renamed. It now only prunes the tool's own automatic backups (the ones ending in a
+   date stamp); any backup you renamed, or a "keep" in the name, is protected and never
+   auto-deleted. Renaming a backup used to make it the FIRST one deleted; now it is the
+   safest. Applies to Dropbox and Network/Local.
+ - "Pick a Dropbox backup" is now a live read of the account you are actually signed into.
+   If you switch Dropbox accounts, the list updates to the new account instead of showing
+   the old account's files until the token refreshed.
+ - Menu tidy: the "[ + ]" prefix on empty One-Tap Restore slots is gone.
 2026.07.01.0
  - Consistency overhaul: every backup and restore path now shares one progress + cancel
    system. Network (SMB/NFS) backups AND restores now show a real progress bar and can be

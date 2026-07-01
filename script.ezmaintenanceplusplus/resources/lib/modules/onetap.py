@@ -374,15 +374,18 @@ def keep_addon_db():
         return set()
 
 
-def _stage(pin):
-    """Fetch the pinned snapshot into special://temp (preserved by the wipe) and return
-    its local path, or None. Runs BEFORE any wipe."""
+def _stage(pin, progress=None):
+    """Fetch the pinned snapshot into special://temp (preserved by the wipe) and return its
+    local path, or None. Runs BEFORE any wipe. `progress(received, total)` drives the download
+    gauge for Dropbox pins."""
     import os
 
     if pin["kind"] == "dropbox":
         from resources.lib.modules import dropbox_remote
 
-        return xbmcvfs.translatePath(dropbox_remote.download(pin["src"]))
+        return xbmcvfs.translatePath(
+            dropbox_remote.download(pin["src"], progress=progress)
+        )
     dest_special = "special://temp/" + basename(pin["src"])
     dest_local = xbmcvfs.translatePath(dest_special)
     try:
@@ -429,8 +432,20 @@ def apply(slot):
         dp.create(ADDON, "Fetching the backup...\nPlease wait")
     except Exception:
         pass
+
+    def _prog(received, total):
+        mb = 1024 * 1024
+        pct = int(received * 100 / total) if total else 0
+        try:
+            dp.update(
+                pct,
+                "Downloading backup...\n%d of %d MB" % (received // mb, total // mb),
+            )
+        except Exception:
+            pass
+
     try:
-        local = _stage(pin)
+        local = _stage(pin, progress=_prog)
     except Exception:
         local = None
     try:

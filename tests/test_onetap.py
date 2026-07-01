@@ -142,6 +142,14 @@ def ot(monkeypatch):
 
     dbx.list_backups = list_backups
 
+    def download(name, dest_dir=None, progress=None):
+        if progress:
+            progress(50, 100)
+            progress(100, 100)
+        return "special://temp/" + name
+
+    dbx.download = download
+
     for name, mod in {
         "xbmc": xbmc,
         "xbmcaddon": xbmcaddon,
@@ -416,6 +424,17 @@ def test_wipe_keeps_addon_db_file(ot, tmp_path):
     assert not (
         tmp_path / "userdata" / "guisettings.xml"
     ).exists()  # everything else wiped
+
+
+def test_stage_dropbox_reports_download_progress(ot):
+    # the One-Tap Dropbox fetch must drive the gauge (was calling download() with no callback)
+    o = ot.onetap
+    ot.settings["dropbox_refresh_token"] = "tok"
+    o.save_pin(1, "Base", "dropbox", "Base.zip", "full", "")
+    seen = []
+    local = o._stage(o.get_pin(1), progress=lambda r, t: seen.append((r, t)))
+    assert seen == [(50, 100), (100, 100)]
+    assert local.endswith("Base.zip")
 
 
 def test_apply_empty_slot_never_wipes(ot):

@@ -20,15 +20,16 @@ Setup**. See `docs/one-tap-restore.md` for the One-Tap design + as-built notes.
 
 ## Known issues (to polish)
 
-- **Advanced Settings (Buffer Size) does not stick.** `tools.advancedSettings()`
-  (`resources/lib/modules/tools.py` ~66-93) writes `special://home/userdata/advancedsettings.xml`
-  with a plain `open(..., "w")`, but the XML uses the **pre-Kodi-19 cache schema**
-  (`<cachemembuffersize>`, `<readbufferfactor>`, `<buffermode>` at the `<advancedsettings>`
-  root). Kodi 21 Omega expects them inside `<cache>` as `<memorysize>` / `<readfactor>` /
-  `<buffermode>`. Symptom (owner-reported): after applying, Kodi pops the "settings changed -
-  keep new or old?" reconcile dialog and the buffer values do not survive a reboot. Fix later:
-  rewrite to the Omega `<cache>` schema, write via `xbmcvfs`, and prompt for a restart (Kodi
-  only reads advancedsettings.xml at startup).
+- **Advanced Settings (Buffer Size)** - reworked in **2026.06.30.21**. Correction to an
+  earlier note in this file: `tools.advancedSettings()` already emitted the correct Kodi
+  19+/Omega `<cache>` schema (`<memorysize>`/`<buffermode>`/`<readfactor>`) - it was NOT the
+  pre-19 layout. The real weaknesses were a bare `open()` write with no verification, no way to
+  see the already-saved value (so you could not tell whether a prior change stuck), and only a
+  passive "please restart" message. It now shows the current buffer, writes via `xbmcvfs`
+  (robust on tvOS) and verifies the file landed, always uses the Omega schema, and offers to
+  restart. NOTE: the owner-reported "settings changed - keep new or old?" prompt was NOT
+  reproduced off-device; if it persists after .21, it needs on-device investigation (likely a
+  Kodi runtime-reload behavior, not the file content).
 
 ## Repo / build / test
 

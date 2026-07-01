@@ -1,25 +1,23 @@
 """
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
-import xbmc, xbmcaddon, xbmcgui, xbmcplugin, xbmcvfs,os,sys
-import urllib
+
+import xbmc
+import xbmcaddon
+import xbmcgui
+import xbmcvfs
 import re
-import time
-import zipfile
-from math import trunc
-from resources.lib.modules import control
-from datetime import datetime
 from resources.lib.modules.backtothefuture import unicode, PY2
 
 if PY2:
@@ -27,16 +25,17 @@ if PY2:
 else:
     translatePath = xbmcvfs.translatePath
 
-dp           = xbmcgui.DialogProgress()
-dialog       = xbmcgui.Dialog()
-addonInfo    = xbmcaddon.Addon().getAddonInfo
+dp = xbmcgui.DialogProgress()
+dialog = xbmcgui.Dialog()
+addonInfo = xbmcaddon.Addon().getAddonInfo
 
-AddonTitle="EZ Maintenance++"
-AddonID ='script.ezmaintenanceplusplus'
+AddonTitle = "EZ Maintenance++"
+AddonID = "script.ezmaintenanceplusplus"
 
 
 def xml_data_advSettings_old(size):
-    xml_data="""<advancedsettings>
+    xml_data = (
+        """<advancedsettings>
       <network>
         <curlclienttimeout>10</curlclienttimeout>
         <curllowspeedtime>20</curllowspeedtime>
@@ -45,11 +44,15 @@ def xml_data_advSettings_old(size):
         <buffermode>2</buffermode>
         <readbufferfactor>20</readbufferfactor>
       </network>
-</advancedsettings>""" % size
+</advancedsettings>"""
+        % size
+    )
     return xml_data
 
+
 def xml_data_advSettings_New(size):
-    xml_data="""<advancedsettings>
+    xml_data = (
+        """<advancedsettings>
       <network>
         <curlclienttimeout>10</curlclienttimeout>
         <curllowspeedtime>20</curllowspeedtime>
@@ -60,51 +63,110 @@ def xml_data_advSettings_New(size):
         <buffermode>2</buffermode>
         <readfactor>20</readfactor>
       </cache>
-</advancedsettings>""" % size
+</advancedsettings>"""
+        % size
+    )
     return xml_data
 
+
+ADV_XML = "special://home/userdata/advancedsettings.xml"
+
+
+def _current_buffer_mb():
+    """The buffer size already in advancedsettings.xml (MB), or None if not set. Lets us
+    SHOW the current value so the user can tell whether a previous change actually stuck."""
+    try:
+        if not xbmcvfs.exists(ADV_XML):
+            return None
+        with xbmcvfs.File(ADV_XML) as f:
+            data = f.read()
+        m = re.search(r"<memorysize>\s*(\d+)", data) or re.search(
+            r"<cachemembuffersize>\s*(\d+)", data
+        )
+        if m:
+            return int(m.group(1)) // (1024 * 1024)
+    except Exception:
+        pass
+    return None
+
+
+def _write_advancedsettings(xml_data):
+    """Write advancedsettings.xml through Kodi VFS (robust on tvOS, where a plain open() can
+    land in the wrong sandbox path); verify it exists afterward. Returns True on success."""
+    try:
+        with xbmcvfs.File(ADV_XML, "w") as f:
+            f.write(bytearray(xml_data, "utf-8"))
+        if xbmcvfs.exists(ADV_XML):
+            return True
+    except Exception:
+        pass
+    try:  # fallback: plain write to the translated path
+        with open(translatePath(ADV_XML), "w") as fh:
+            fh.write(xml_data)
+        return True
+    except Exception:
+        return False
+
+
 def advancedSettings():
-    XML_FILE   =  translatePath(os.path.join('special://home/userdata' , 'advancedsettings.xml'))
-    MEM        =  xbmc.getInfoLabel("System.Memory(total)")
-    FREEMEM    =  xbmc.getInfoLabel("System.FreeMemory")
-    BUFFER_F   =  re.sub('[^0-9]','',FREEMEM)
-    BUFFER_F   = int(BUFFER_F) / 3
-    BUFFERSIZE = trunc(BUFFER_F * 1024 * 1024)
-    try: KODIV        =  float(xbmc.getInfoLabel("System.BuildVersion")[:4])
-    except: KODIV = 16
+    free_mb = int(re.sub("[^0-9]", "", xbmc.getInfoLabel("System.FreeMemory")) or "0")
+    optimal_mb = max(20, free_mb // 3)
+    current = _current_buffer_mb()
+    header = (
+        "Current buffer: %d MB\n" % current
+        if current is not None
+        else "No buffer set yet.\n"
+    )
 
+    # Use Optimal (yes) or Enter Value (no). ESC/back -> Enter Value -> keyboard cancel aborts.
+    if dialog.yesno(
+        AddonTitle,
+        "%sOptimal for your free memory: %d MB.\n\nApply the optimal value, or enter your own?"
+        % (header, optimal_mb),
+        yeslabel="Use Optimal",
+        nolabel="Enter Value",
+    ):
+        size = optimal_mb * 1024 * 1024
+    else:
+        entered = _get_keyboard(
+            default=str(optimal_mb * 1024 * 1024),
+            heading="Buffer size in BYTES (Cancel to abort)",
+            cancel="-",
+        )
+        if not entered or entered == "-" or not str(entered).isdigit():
+            return
+        size = int(entered)
 
-    """,customlabel='Cancel'"""
-    choice = dialog.yesno(AddonTitle, 'Based on your free Memory your optimal buffersize is: \n' + str(BUFFERSIZE) + ' Bytes' + ' ('  + str(round(BUFFER_F)) + ' MB)' + '\n' + 'Note that your current advanced settings will be overwritten!' + '\n' + 'Choose an Option below or press ESC ESC to abort.', yeslabel='Use Optimal',nolabel='Input a Value' )
-    if choice == 1:
-        with open(XML_FILE, "w") as f:
-            if KODIV >= 17: xml_data = xml_data_advSettings_New(str(BUFFERSIZE))
-            else: xml_data = xml_data_advSettings_old(str(BUFFERSIZE))
+    # Kodi 19+/Omega schema (<cache><memorysize>/<buffermode>/<readfactor>); this add-on
+    # requires xbmc.python 3.0.0, so we never need the pre-19 layout.
+    if not _write_advancedsettings(xml_data_advSettings_New(str(size))):
+        dialog.ok(
+            AddonTitle, "Could not write advancedsettings.xml. Nothing was changed."
+        )
+        return
 
-            f.write(xml_data)
-            dialog.ok(AddonTitle,'Buffer Size Set to: ' + str(BUFFERSIZE) + '\n' + 'Please restart Kodi for settings to apply.')
-
-    elif choice == 0:
-        BUFFERSIZE = _get_keyboard( default=str(BUFFERSIZE), heading="INPUT BUFFER SIZE (Bytes) or ESC/Cancel to abort", cancel="-")
-        if BUFFERSIZE != "-":
-            with open(XML_FILE, "w") as f:
-                if KODIV >= 17: xml_data = xml_data_advSettings_New(str(BUFFERSIZE))
-                else: xml_data = xml_data_advSettings_old(str(BUFFERSIZE))
-                f.write(xml_data)
-                dialog.ok(AddonTitle,'Buffer Size Set to: ' + str(BUFFERSIZE) + '\n' + 'Please restart Kodi for settings to apply.')
+    if dialog.yesno(
+        AddonTitle,
+        "Buffer size set to %d MB.\n\nKodi only reads advancedsettings.xml at startup, so it "
+        "must RESTART for this to take effect. Restart now?" % (size // (1024 * 1024)),
+        yeslabel="Restart now",
+        nolabel="Later",
+    ):
+        xbmc.executebuiltin("Quit")
 
 
 def open_Settings():
     open_Settings = xbmcaddon.Addon(id=AddonID).openSettings()
 
-def _get_keyboard( default="", heading="", hidden=False, cancel="" ):
-    """ shows a keyboard and returns a value """
+
+def _get_keyboard(default="", heading="", hidden=False, cancel=""):
+    """shows a keyboard and returns a value"""
     if cancel == "":
-        cancel=default
-    keyboard = xbmc.Keyboard( default, heading, hidden )
+        cancel = default
+    keyboard = xbmc.Keyboard(default, heading, hidden)
     keyboard.doModal()
-    if ( keyboard.isConfirmed() ):
-        return unicode( keyboard.getText())
+    if keyboard.isConfirmed():
+        return unicode(keyboard.getText())
     return cancel
 
 

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.20" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.21" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,10 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+2026.06.30.21
+ - Advanced Settings (Buffer Size) reworked: it now shows your current buffer, writes
+   advancedsettings.xml through Kodi VFS and verifies it saved, uses the correct Kodi
+   19+/Omega cache schema, and offers to restart so the change actually takes effect.
 2026.06.30.20
  - Fresh Start no longer leaves EZ Maintenance++ disabled or looking "gone" after a wipe.
    It now preserves Kodi's add-on state so the tool comes back ENABLED, re-scans add-ons,

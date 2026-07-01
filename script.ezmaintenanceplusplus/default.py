@@ -84,7 +84,7 @@ def ENABLE_WIZARD():
 # ######################### CATEGORIES ################################
 def CATEGORIES():
     CreateDir(
-        "[COLOR red][B]FRESH START[/B][/COLOR]",
+        "[COLOR white][B]FRESH START[/B][/COLOR]",
         "url",
         "fresh_start",
         ADDON_ICON,
@@ -92,7 +92,7 @@ def CATEGORIES():
         "",
     )
     CreateDir(
-        "[COLOR lime][B]ONE-TAP RESTORE[/B][/COLOR]",
+        "[COLOR white][B]ONE-TAP RESTORE[/B][/COLOR]",
         "ur",
         "onetap_menu",
         ADDON_ICON,

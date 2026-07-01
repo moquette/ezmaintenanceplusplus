@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.26" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.27" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,8 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+2026.06.30.27
+ - Menu tidy: FRESH START and ONE-TAP RESTORE are now white like the rest of the menu.
 2026.06.30.26
  - Video cache buffer fixed properly for Kodi 21 Omega. Omega ignores the old
    advancedsettings.xml cache tags, so the tool now sets Kodi's live cache setting directly

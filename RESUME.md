@@ -18,18 +18,19 @@ repo** (`tony7bones.github.io`, proxy v2.2.2). Part of the **Tony.7.Bones "++" s
 "take a proven app and strengthen it" - alongside **Estuary MOD V2++** and **Tony.7.Bones
 Setup**. See `docs/one-tap-restore.md` for the One-Tap design + as-built notes.
 
-## Known issues (to polish)
+## Recently fixed
 
-- **Advanced Settings (Buffer Size)** - reworked in **2026.06.30.21**. Correction to an
-  earlier note in this file: `tools.advancedSettings()` already emitted the correct Kodi
-  19+/Omega `<cache>` schema (`<memorysize>`/`<buffermode>`/`<readfactor>`) - it was NOT the
-  pre-19 layout. The real weaknesses were a bare `open()` write with no verification, no way to
-  see the already-saved value (so you could not tell whether a prior change stuck), and only a
-  passive "please restart" message. It now shows the current buffer, writes via `xbmcvfs`
-  (robust on tvOS) and verifies the file landed, always uses the Omega schema, and offers to
-  restart. NOTE: the owner-reported "settings changed - keep new or old?" prompt was NOT
-  reproduced off-device; if it persists after .21, it needs on-device investigation (likely a
-  Kodi runtime-reload behavior, not the file content).
+- **Advanced Settings (Buffer Size)** - properly FIXED in **2026.06.30.26** after a two-agent
+  research pass (Kodi Omega source + v21 wiki). Real root cause: on **Kodi 21 Omega the
+  `advancedsettings.xml` `<cache>` tags are DEPRECATED and IGNORED** - the cache moved to the
+  GUI setting `filecache.memorysize` (in MB). So EVERY prior version (which wrote
+  advancedsettings.xml, including the .21 "rework") had **no effect** - that is why it "never
+  survived a reboot" and threw Kodi's reconcile prompt. `.26` sets `filecache.memorysize` via
+  **JSON-RPC** (applies live, no restart), recommends a **stable** value from **total RAM** (the
+  old `free/3` used `System.FreeMemory` = `Total - Used`, which over-reports and drifts upward
+  every boot - the 172->193->241 the owner saw), warns on huge values, shows the current value,
+  and adds **Reset to Kodi default (20 MB)**. Also learned: the "3x RAM" rule is folklore -
+  Omega allocates ~1x `memorysize` per stream (a single ring buffer, 75% forward / 25% back).
 
 ## Repo / build / test
 

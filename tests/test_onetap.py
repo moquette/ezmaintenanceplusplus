@@ -221,6 +221,48 @@ def test_label_for_empty_and_set(ot):
     assert "Golden" in lbl and "Dropbox" in lbl
 
 
+def test_label_dropbox_no_double_no_unknown(ot):
+    o = ot.onetap
+    # reported bug: unknown type + dropbox rendered "Base - unknown . Dropbox Dropbox"
+    o.save_pin(1, "Base", "dropbox", "Base.zip", "unknown", "unknown . Dropbox")
+    lbl = o.label_for(o.get_pin(1))
+    assert lbl == "Base  -  Dropbox"
+    assert lbl.lower().count("dropbox") == 1 and "unknown" not in lbl.lower()
+
+
+def test_label_dropbox_with_type(ot):
+    o = ot.onetap
+    o.save_pin(1, "Golden", "dropbox", "full_2026.zip", "full", "")
+    assert o.label_for(o.get_pin(1)) == "Golden  -  full . Dropbox"
+
+
+def test_label_vfs_type_and_size(ot):
+    o = ot.onetap
+    o.save_pin(1, "backup.zip", "vfs", "nfs://h/backup.zip", "full", "130 MB")
+    assert o.label_for(o.get_pin(1)) == "backup.zip  -  full . 130 MB"
+
+
+def test_label_vfs_tolerates_old_meta(ot):
+    o = ot.onetap
+    o.save_pin(1, "backup.zip", "vfs", "nfs://h/backup.zip", "full", "full . 130 MB")
+    assert o.label_for(o.get_pin(1)) == "backup.zip  -  full . 130 MB"
+
+
+def test_pick_dropbox_asks_type_when_unknown(ot):
+    o = ot.onetap
+    ot.settings["dropbox_refresh_token"] = "tok"
+    ot.dialog.select_returns = [
+        1,
+        0,
+        0,
+    ]  # Dropbox source -> first file -> "Full backup"
+    ot.dbx._list = ["Base.zip"]  # infer_type -> unknown -> _ask_type
+    o.pick(4)
+    p = o.get_pin(4)
+    assert p["type"] == "full" and p["kind"] == "dropbox"
+    assert o.label_for(p) == "Base.zip  -  full . Dropbox"
+
+
 # --------------------------- verify (read-only) --------------------------- #
 def test_verify_empty_slot(ot):
     ok, msg = ot.onetap.verify_pin(ot.onetap.get_pin(2))

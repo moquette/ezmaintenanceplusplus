@@ -120,17 +120,36 @@ def basename(path):
     return (path or "").replace("\\", "/").rstrip("/").split("/")[-1]
 
 
+def _size_from_meta(meta):
+    """Pull a human size (e.g. '130 MB') out of a pin's meta, tolerating the older
+    'type . size' format. Returns None when there is no size."""
+    if not meta:
+        return None
+    for part in reversed(meta.split(" . ")):
+        part = part.strip()
+        if any(c.isdigit() for c in part) and (
+            part[-2:] in ("KB", "MB", "GB") or part.endswith(" B")
+        ):
+            return part
+    return None
+
+
 def label_for(pin):
-    """One-line label for a pin row: 'Name  -  meta' (or 'Empty slot N')."""
+    """One-line label for a pin row, rebuilt from fields so it never doubles up the source
+    or shows a raw 'unknown': 'Name  -  type . size/Dropbox'."""
     if not is_set(pin):
         return "Pin %d: (empty)" % pin["slot"]
     name = pin["name"] or basename(pin["src"]) or "Pin %d" % pin["slot"]
-    bits = [
-        b
-        for b in (pin.get("meta"), "Dropbox" if pin["kind"] == "dropbox" else None)
-        if b
-    ]
-    return "%s  -  %s" % (name, "  ".join(bits)) if bits else name
+    bits = []
+    if pin.get("type") and pin["type"] != "unknown":
+        bits.append(pin["type"])
+    if pin["kind"] == "dropbox":
+        bits.append("Dropbox")
+    else:
+        size = _size_from_meta(pin.get("meta"))
+        if size:
+            bits.append(size)
+    return "%s  -  %s" % (name, " . ".join(bits)) if bits else name
 
 
 # --------------------------------------------------------------------------- #
@@ -161,14 +180,9 @@ def _pick_vfs(slot):
         pass
     name = basename(path)
     ptype = infer_type(name)
-    save_pin(
-        slot,
-        "%s  (%s)" % (name, fmt_size(size)),
-        "vfs",
-        path,
-        ptype,
-        "%s . %s" % (ptype, fmt_size(size)),
-    )
+    if ptype == "unknown":
+        ptype = _ask_type()
+    save_pin(slot, name, "vfs", path, ptype, fmt_size(size))
     xbmcgui.Dialog().notification(ADDON, "Pinned: %s" % name)
     _log("pinned vfs slot %d: %s" % (slot, path))
 
@@ -194,11 +208,20 @@ def _pick_dropbox(slot):
         return
     chosen = names[idx]
     ptype = infer_type(chosen)
-    save_pin(
-        slot, "%s  (Dropbox)" % chosen, "dropbox", chosen, ptype, "%s . Dropbox" % ptype
-    )
+    if ptype == "unknown":
+        ptype = _ask_type()
+    save_pin(slot, chosen, "dropbox", chosen, ptype, "")
     xbmcgui.Dialog().notification(ADDON, "Pinned: %s" % chosen)
     _log("pinned dropbox slot %d: %s" % (slot, chosen))
+
+
+def _ask_type():
+    """When the backup type can't be inferred from the file name, ask the owner."""
+    i = xbmcgui.Dialog().select(
+        "What kind of backup is this?",
+        ["Full backup", "Userdata only (settings)", "Not sure"],
+    )
+    return {0: "full", 1: "userdata"}.get(i, "unknown")
 
 
 def _keep_or(slot, fallback):

@@ -70,105 +70,121 @@ def xml_data_advSettings_New(size):
 
 
 ADV_XML = "special://home/userdata/advancedsettings.xml"
+# On Kodi 21 Omega the cache buffer lives in the GUI setting `filecache.memorysize` (in MB);
+# advancedsettings.xml <cache> is DEPRECATED and IGNORED. So we read/write it via JSON-RPC,
+# which is what actually takes effect. (Confirmed from the Omega source + v21 wiki.)
+CACHE_SETTING = "filecache.memorysize"
+KODI_DEFAULT_MB = 20  # Kodi's factory-default cache buffer
 
 
-def _current_buffer_mb():
-    """The buffer size already in advancedsettings.xml (MB), or None if not set. Lets us
-    SHOW the current value so the user can tell whether a previous change actually stuck."""
+def _jsonrpc(method, params):
+    import json
+
     try:
-        if not xbmcvfs.exists(ADV_XML):
-            return None
-        with xbmcvfs.File(ADV_XML) as f:
-            data = f.read()
-        m = re.search(r"<memorysize>\s*(\d+)", data) or re.search(
-            r"<cachemembuffersize>\s*(\d+)", data
+        resp = xbmc.executeJSONRPC(
+            json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
         )
-        if m:
-            return int(m.group(1)) // (1024 * 1024)
+        return json.loads(resp)
     except Exception:
-        pass
-    return None
+        return {}
 
 
-def _write_advancedsettings(xml_data):
-    """Write advancedsettings.xml through Kodi VFS (robust on tvOS, where a plain open() can
-    land in the wrong sandbox path); verify it exists afterward. Returns True on success."""
+def _get_cache_mb():
+    """Kodi's current cache buffer in MB from the live GUI setting (the one Omega uses)."""
+    r = _jsonrpc("Settings.GetSettingValue", {"setting": CACHE_SETTING})
     try:
-        with xbmcvfs.File(ADV_XML, "w") as f:
-            f.write(bytearray(xml_data, "utf-8"))
+        return int(r["result"]["value"])
+    except Exception:
+        return None
+
+
+def _set_cache_mb(mb):
+    """Set Kodi's cache buffer (MB) via the live GUI setting. Returns True on success."""
+    r = _jsonrpc(
+        "Settings.SetSettingValue", {"setting": CACHE_SETTING, "value": int(mb)}
+    )
+    return bool(r.get("result"))
+
+
+def _total_ram_mb():
+    try:
+        digits = re.sub("[^0-9]", "", xbmc.getInfoLabel("System.Memory(total)"))
+        return int(digits) if digits else 0
+    except Exception:
+        return 0
+
+
+def _recommended_mb():
+    """A STABLE recommendation off TOTAL RAM (a constant) - never the drifting free memory.
+    The buffer is ~1x RAM per stream on Omega, so ~10% of total is safe; clamp to 50-200 MB."""
+    total = _total_ram_mb()
+    if total <= 0:
+        return 100
+    return max(50, min(200, int(total * 0.10)))
+
+
+def _clean_stale_advancedsettings():
+    """Best-effort removal of a stale advancedsettings.xml <cache> written by older versions
+    (Omega ignores it, but it can confuse). Only deletes if it contains a cache block."""
+    try:
         if xbmcvfs.exists(ADV_XML):
-            return True
+            with xbmcvfs.File(ADV_XML) as f:
+                data = f.read()
+            if "<cache>" in data or "cachemembuffersize" in data:
+                xbmcvfs.delete(ADV_XML)
     except Exception:
         pass
-    try:  # fallback: plain write to the translated path
-        with open(translatePath(ADV_XML), "w") as fh:
-            fh.write(xml_data)
-        return True
-    except Exception:
-        return False
 
 
 def advancedSettings():
-    free_mb = int(re.sub("[^0-9]", "", xbmc.getInfoLabel("System.FreeMemory")) or "0")
-    optimal_mb = max(20, free_mb // 3)
-    current = _current_buffer_mb()
-    header = (
-        "Current buffer: %d MB\n" % current
-        if current is not None
-        else "No buffer set yet.\n"
+    current = _get_cache_mb()
+    rec = _recommended_mb()
+    cur_txt = "%d MB" % current if current is not None else "unknown"
+    idx = dialog.select(
+        "Video cache buffer  (current: %s . Kodi default %d MB)"
+        % (cur_txt, KODI_DEFAULT_MB),
+        [
+            "Use recommended for this device:  %d MB" % rec,
+            "Enter a value (MB)...",
+            "Reset to Kodi default (%d MB)" % KODI_DEFAULT_MB,
+        ],
     )
+    if idx == -1:
+        return  # cancel / back
 
-    msg = (
-        "%sOptimal for your free memory: %d MB.\n\nApply the optimal value, or enter your own?"
-        % (header, optimal_mb)
-    )
-    # Kodi 20+/Omega: a real 3-button dialog (Use Optimal / Enter Value / Cancel).
-    # yesnocustom returns 1=yes, 0=no, 2=custom, -1=cancelled.
-    if hasattr(dialog, "yesnocustom"):
-        choice = dialog.yesnocustom(
-            AddonTitle,
-            msg,
-            "Cancel",
-            nolabel="Enter Value",
-            yeslabel="Use Optimal",
-            defaultbutton=getattr(xbmcgui, "DLG_YESNO_YES_BTN", 1),  # focus Use Optimal
-        )
-        if choice in (-1, 2):  # Cancel button or ESC/back
-            return
-        use_optimal = choice == 1
-    else:  # Kodi 19 fallback: two buttons (ESC -> Enter Value -> keyboard cancel aborts)
-        use_optimal = dialog.yesno(
-            AddonTitle, msg, yeslabel="Use Optimal", nolabel="Enter Value"
-        )
-
-    if use_optimal:
-        size = optimal_mb * 1024 * 1024
-    else:
+    if idx == 0:
+        mb = rec
+    elif idx == 1:
         entered = _get_keyboard(
-            default=str(optimal_mb * 1024 * 1024),
-            heading="Buffer size in BYTES (Cancel to abort)",
+            default=str(rec),
+            heading="Cache size in MEGABYTES (Cancel to abort)",
             cancel="-",
         )
         if not entered or entered == "-" or not str(entered).isdigit():
             return
-        size = int(entered)
+        mb = int(entered)
+        if mb > 400 and not dialog.yesno(
+            AddonTitle,
+            "%d MB is very large. Kodi buffers up to ~500 MB and a big buffer can make "
+            "playback fail on low-memory devices. Use it anyway?" % mb,
+            yeslabel="Use it",
+            nolabel="Cancel",
+        ):
+            return
+    else:  # Reset to Kodi default
+        mb = KODI_DEFAULT_MB
+        _clean_stale_advancedsettings()
 
-    # Kodi 19+/Omega schema (<cache><memorysize>/<buffermode>/<readfactor>); this add-on
-    # requires xbmc.python 3.0.0, so we never need the pre-19 layout.
-    if not _write_advancedsettings(xml_data_advSettings_New(str(size))):
+    if _set_cache_mb(mb):
         dialog.ok(
-            AddonTitle, "Could not write advancedsettings.xml. Nothing was changed."
+            AddonTitle,
+            "Cache buffer set to %d MB.\n"
+            "Applies to the next video you play - no restart needed." % mb,
         )
-        return
-
-    if dialog.yesno(
-        AddonTitle,
-        "Buffer size set to %d MB.\n\nKodi only reads advancedsettings.xml at startup, so it "
-        "must RESTART for this to take effect. Restart now?" % (size // (1024 * 1024)),
-        yeslabel="Restart now",
-        nolabel="Later",
-    ):
-        xbmc.executebuiltin("Quit")
+    else:
+        dialog.ok(
+            AddonTitle, "Could not change the cache setting. Nothing was changed."
+        )
 
 
 def open_Settings():

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.25" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.06.30.26" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,12 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+2026.06.30.26
+ - Video cache buffer fixed properly for Kodi 21 Omega. Omega ignores the old
+   advancedsettings.xml cache tags, so the tool now sets Kodi's live cache setting directly
+   (no restart needed), recommends a STABLE value from total RAM (the old "free memory / 3"
+   drifted every reboot and could suggest dangerously large values), warns on huge values,
+   shows the current value, and adds Reset to Kodi default (20 MB).
 2026.06.30.25
  - One-Tap Restore is cleaner: the redundant "Pin or change a backup" row is gone (tap
    an empty slot to pin, tap a filled one for actions), and there are now 10 slots.

@@ -1,0 +1,2059 @@
+- generic [active] [ref=f16e1]:
+  - main [ref=f16e5]:
+    - heading "advancedsettings.xml" [level=1] [ref=f16e6]
+    - generic [ref=f16e7]:
+      - link "Jump to navigation" [ref=f16e8] [cursor=pointer]:
+        - /url: "#mw-head"
+      - link "Jump to search" [ref=f16e9] [cursor=pointer]:
+        - /url: "#searchInput"
+      - generic [ref=f16e11]:
+        - navigation "Contents" [ref=f16e13]:
+          - button "hide" [ref=f16e14]
+          - generic [ref=f16e15]:
+            - heading "Contents" [level=2] [ref=f16e16]
+            - generic [ref=f16e17]:
+              - text: "["
+              - generic [ref=f16e18] [cursor=pointer]: hide
+              - text: "]"
+          - list [ref=f16e19]:
+            - listitem [ref=f16e20]:
+              - link "1 Layout" [ref=f16e21] [cursor=pointer]:
+                - /url: "#Layout"
+                - generic [ref=f16e22]: "1"
+                - generic [ref=f16e23]: Layout
+            - listitem [ref=f16e24]:
+              - link "2 List of available settings" [ref=f16e25] [cursor=pointer]:
+                - /url: "#List_of_available_settings"
+                - generic [ref=f16e26]: "2"
+                - generic [ref=f16e27]: List of available settings
+              - list [ref=f16e28]:
+                - listitem [ref=f16e29]:
+                  - link "2.1 Troubleshooting settings" [ref=f16e30] [cursor=pointer]:
+                    - /url: "#Troubleshooting_settings"
+                    - generic [ref=f16e31]: "2.1"
+                    - generic [ref=f16e32]: Troubleshooting settings
+                  - list [ref=f16e33]:
+                    - listitem [ref=f16e34]:
+                      - link "2.1.1 loglevel" [ref=f16e35] [cursor=pointer]:
+                        - /url: "#loglevel"
+                        - generic [ref=f16e36]: 2.1.1
+                        - generic [ref=f16e37]: loglevel
+                    - listitem [ref=f16e38]:
+                      - link "2.1.2 jsonrpc" [ref=f16e39] [cursor=pointer]:
+                        - /url: "#jsonrpc"
+                        - generic [ref=f16e40]: 2.1.2
+                        - generic [ref=f16e41]: jsonrpc
+                - listitem [ref=f16e42]:
+                  - link "2.2 Audio/video playback settings" [ref=f16e43] [cursor=pointer]:
+                    - /url: "#Audio/video_playback_settings"
+                    - generic [ref=f16e44]: "2.2"
+                    - generic [ref=f16e45]: Audio/video playback settings
+                  - list [ref=f16e46]:
+                    - listitem [ref=f16e47]:
+                      - link "2.2.1 skiploopfilter" [ref=f16e48] [cursor=pointer]:
+                        - /url: "#skiploopfilter"
+                        - generic [ref=f16e49]: 2.2.1
+                        - generic [ref=f16e50]: skiploopfilter
+                    - listitem [ref=f16e51]:
+                      - link "2.2.2 video" [ref=f16e52] [cursor=pointer]:
+                        - /url: "#video"
+                        - generic [ref=f16e53]: 2.2.2
+                        - generic [ref=f16e54]: video
+                    - listitem [ref=f16e55]:
+                      - link "2.2.3 audio" [ref=f16e56] [cursor=pointer]:
+                        - /url: "#audio"
+                        - generic [ref=f16e57]: 2.2.3
+                        - generic [ref=f16e58]: audio
+                    - listitem [ref=f16e59]:
+                      - link "2.2.4 forcedswaptime" [ref=f16e60] [cursor=pointer]:
+                        - /url: "#forcedswaptime"
+                        - generic [ref=f16e61]: 2.2.4
+                        - generic [ref=f16e62]: forcedswaptime
+                    - listitem [ref=f16e63]:
+                      - link "2.2.5 edl" [ref=f16e64] [cursor=pointer]:
+                        - /url: "#edl"
+                        - generic [ref=f16e65]: 2.2.5
+                        - generic [ref=f16e66]: edl
+                - listitem [ref=f16e67]:
+                  - link "2.3 PVR & Live TV" [ref=f16e68] [cursor=pointer]:
+                    - /url: "#PVR_&_Live_TV"
+                    - generic [ref=f16e69]: "2.3"
+                    - generic [ref=f16e70]: PVR & Live TV
+                  - list [ref=f16e71]:
+                    - listitem [ref=f16e72]:
+                      - link "2.3.1 pvr" [ref=f16e73] [cursor=pointer]:
+                        - /url: "#pvr"
+                        - generic [ref=f16e74]: 2.3.1
+                        - generic [ref=f16e75]: pvr
+                      - list [ref=f16e76]:
+                        - listitem [ref=f16e77]:
+                          - link "2.3.1.1 pvrrecordings" [ref=f16e78] [cursor=pointer]:
+                            - /url: "#pvrrecordings"
+                            - generic [ref=f16e79]: 2.3.1.1
+                            - generic [ref=f16e80]: pvrrecordings
+                    - listitem [ref=f16e81]:
+                      - link "2.3.2 epg" [ref=f16e82] [cursor=pointer]:
+                        - /url: "#epg"
+                        - generic [ref=f16e83]: 2.3.2
+                        - generic [ref=f16e84]: epg
+                - listitem [ref=f16e85]:
+                  - link "2.4 Video library settings" [ref=f16e86] [cursor=pointer]:
+                    - /url: "#Video_library_settings"
+                    - generic [ref=f16e87]: "2.4"
+                    - generic [ref=f16e88]: Video library settings
+                  - list [ref=f16e89]:
+                    - listitem [ref=f16e90]:
+                      - link "2.4.1 videoextensions" [ref=f16e91] [cursor=pointer]:
+                        - /url: "#videoextensions"
+                        - generic [ref=f16e92]: 2.4.1
+                        - generic [ref=f16e93]: videoextensions
+                    - listitem [ref=f16e94]:
+                      - link "2.4.2 discstubextensions" [ref=f16e95] [cursor=pointer]:
+                        - /url: "#discstubextensions"
+                        - generic [ref=f16e96]: 2.4.2
+                        - generic [ref=f16e97]: discstubextensions
+                    - listitem [ref=f16e98]:
+                      - link "2.4.3 languagecodes" [ref=f16e99] [cursor=pointer]:
+                        - /url: "#languagecodes"
+                        - generic [ref=f16e100]: 2.4.3
+                        - generic [ref=f16e101]: languagecodes
+                    - listitem [ref=f16e102]:
+                      - link "2.4.4 moviestacking" [ref=f16e103] [cursor=pointer]:
+                        - /url: "#moviestacking"
+                        - generic [ref=f16e104]: 2.4.4
+                        - generic [ref=f16e105]: moviestacking
+                    - listitem [ref=f16e106]:
+                      - link "2.4.5 folderstacking" [ref=f16e107] [cursor=pointer]:
+                        - /url: "#folderstacking"
+                        - generic [ref=f16e108]: 2.4.5
+                        - generic [ref=f16e109]: folderstacking
+                    - listitem [ref=f16e110]:
+                      - link "2.4.6 cleandatetime" [ref=f16e111] [cursor=pointer]:
+                        - /url: "#cleandatetime"
+                        - generic [ref=f16e112]: 2.4.6
+                        - generic [ref=f16e113]: cleandatetime
+                    - listitem [ref=f16e114]:
+                      - link "2.4.7 cleanstrings" [ref=f16e115] [cursor=pointer]:
+                        - /url: "#cleanstrings"
+                        - generic [ref=f16e116]: 2.4.7
+                        - generic [ref=f16e117]: cleanstrings
+                    - listitem [ref=f16e118]:
+                      - link "2.4.8 tvshowmatching" [ref=f16e119] [cursor=pointer]:
+                        - /url: "#tvshowmatching"
+                        - generic [ref=f16e120]: 2.4.8
+                        - generic [ref=f16e121]: tvshowmatching
+                      - list [ref=f16e122]:
+                        - listitem [ref=f16e123]:
+                          - link "2.4.8.1 Filenames without Season" [ref=f16e124] [cursor=pointer]:
+                            - /url: "#Filenames_without_Season"
+                            - generic [ref=f16e125]: 2.4.8.1
+                            - generic [ref=f16e126]: Filenames without Season
+                    - listitem [ref=f16e127]:
+                      - link "2.4.9 tvmultipartmatching" [ref=f16e128] [cursor=pointer]:
+                        - /url: "#tvmultipartmatching"
+                        - generic [ref=f16e129]: 2.4.9
+                        - generic [ref=f16e130]: tvmultipartmatching
+                    - listitem [ref=f16e131]:
+                      - link "2.4.10 excludefromscan" [ref=f16e132] [cursor=pointer]:
+                        - /url: "#excludefromscan"
+                        - generic [ref=f16e133]: 2.4.10
+                        - generic [ref=f16e134]: excludefromscan
+                    - listitem [ref=f16e135]:
+                      - link "2.4.11 excludefromlisting" [ref=f16e136] [cursor=pointer]:
+                        - /url: "#excludefromlisting"
+                        - generic [ref=f16e137]: 2.4.11
+                        - generic [ref=f16e138]: excludefromlisting
+                    - listitem [ref=f16e139]:
+                      - link "2.4.12 excludetvshowsfromscan" [ref=f16e140] [cursor=pointer]:
+                        - /url: "#excludetvshowsfromscan"
+                        - generic [ref=f16e141]: 2.4.12
+                        - generic [ref=f16e142]: excludetvshowsfromscan
+                    - listitem [ref=f16e143]:
+                      - link "2.4.13 trailermatching" [ref=f16e144] [cursor=pointer]:
+                        - /url: "#trailermatching"
+                        - generic [ref=f16e145]: 2.4.13
+                        - generic [ref=f16e146]: trailermatching
+                    - listitem [ref=f16e147]:
+                      - link "2.4.14 videolibrary" [ref=f16e148] [cursor=pointer]:
+                        - /url: "#videolibrary"
+                        - generic [ref=f16e149]: 2.4.14
+                        - generic [ref=f16e150]: videolibrary
+                    - listitem [ref=f16e151]:
+                      - link "2.4.15 videoscanner" [ref=f16e152] [cursor=pointer]:
+                        - /url: "#videoscanner"
+                        - generic [ref=f16e153]: 2.4.15
+                        - generic [ref=f16e154]: videoscanner
+                - listitem [ref=f16e155]:
+                  - link "2.5 Library artwork" [ref=f16e156] [cursor=pointer]:
+                    - /url: "#Library_artwork"
+                    - generic [ref=f16e157]: "2.5"
+                    - generic [ref=f16e158]: Library artwork
+                  - list [ref=f16e159]:
+                    - listitem [ref=f16e160]:
+                      - link "2.5.1 imageres" [ref=f16e161] [cursor=pointer]:
+                        - /url: "#imageres"
+                        - generic [ref=f16e162]: 2.5.1
+                        - generic [ref=f16e163]: imageres
+                    - listitem [ref=f16e164]:
+                      - link "2.5.2 fanartres" [ref=f16e165] [cursor=pointer]:
+                        - /url: "#fanartres"
+                        - generic [ref=f16e166]: 2.5.2
+                        - generic [ref=f16e167]: fanartres
+                    - listitem [ref=f16e168]:
+                      - link "2.5.3 imagescalingalgorithm" [ref=f16e169] [cursor=pointer]:
+                        - /url: "#imagescalingalgorithm"
+                        - generic [ref=f16e170]: 2.5.3
+                        - generic [ref=f16e171]: imagescalingalgorithm
+                    - listitem [ref=f16e172]:
+                      - link "2.5.4 imagequalityjpeg" [ref=f16e173] [cursor=pointer]:
+                        - /url: "#imagequalityjpeg"
+                        - generic [ref=f16e174]: 2.5.4
+                        - generic [ref=f16e175]: imagequalityjpeg
+                - listitem [ref=f16e176]:
+                  - link "2.6 Video and music library settings" [ref=f16e177] [cursor=pointer]:
+                    - /url: "#Video_and_music_library_settings"
+                    - generic [ref=f16e178]: "2.6"
+                    - generic [ref=f16e179]: Video and music library settings
+                  - list [ref=f16e180]:
+                    - listitem [ref=f16e181]:
+                      - link "2.6.1 playlistasfolders" [ref=f16e182] [cursor=pointer]:
+                        - /url: "#playlistasfolders"
+                        - generic [ref=f16e183]: 2.6.1
+                        - generic [ref=f16e184]: playlistasfolders
+                    - listitem [ref=f16e185]:
+                      - link "2.6.2 playlistretries" [ref=f16e186] [cursor=pointer]:
+                        - /url: "#playlistretries"
+                        - generic [ref=f16e187]: 2.6.2
+                        - generic [ref=f16e188]: playlistretries
+                    - listitem [ref=f16e189]:
+                      - link "2.6.3 playlisttimeout" [ref=f16e190] [cursor=pointer]:
+                        - /url: "#playlisttimeout"
+                        - generic [ref=f16e191]: 2.6.3
+                        - generic [ref=f16e192]: playlisttimeout
+                    - listitem [ref=f16e193]:
+                      - link "2.6.4 sorttokens" [ref=f16e194] [cursor=pointer]:
+                        - /url: "#sorttokens"
+                        - generic [ref=f16e195]: 2.6.4
+                        - generic [ref=f16e196]: sorttokens
+                    - listitem [ref=f16e197]:
+                      - link "2.6.5 musicdatabase/videodatabase" [ref=f16e198] [cursor=pointer]:
+                        - /url: "#musicdatabase/videodatabase"
+                        - generic [ref=f16e199]: 2.6.5
+                        - generic [ref=f16e200]: musicdatabase/videodatabase
+                    - listitem [ref=f16e201]:
+                      - link "2.6.6 externalplayer" [ref=f16e202] [cursor=pointer]:
+                        - /url: "#externalplayer"
+                        - generic [ref=f16e203]: 2.6.6
+                        - generic [ref=f16e204]: externalplayer
+                - listitem [ref=f16e205]:
+                  - link "2.7 Music settings" [ref=f16e206] [cursor=pointer]:
+                    - /url: "#Music_settings"
+                    - generic [ref=f16e207]: "2.7"
+                    - generic [ref=f16e208]: Music settings
+                  - list [ref=f16e209]:
+                    - listitem [ref=f16e210]:
+                      - link "2.7.1 musicextensions" [ref=f16e211] [cursor=pointer]:
+                        - /url: "#musicextensions"
+                        - generic [ref=f16e212]: 2.7.1
+                        - generic [ref=f16e213]: musicextensions
+                    - listitem [ref=f16e214]:
+                      - link "2.7.2 cddbaddress" [ref=f16e215] [cursor=pointer]:
+                        - /url: "#cddbaddress"
+                        - generic [ref=f16e216]: 2.7.2
+                        - generic [ref=f16e217]: cddbaddress
+                    - listitem [ref=f16e218]:
+                      - link "2.7.3 songinfoduration" [ref=f16e219] [cursor=pointer]:
+                        - /url: "#songinfoduration"
+                        - generic [ref=f16e220]: 2.7.3
+                        - generic [ref=f16e221]: songinfoduration
+                    - listitem [ref=f16e222]:
+                      - link "2.7.4 musicfilenamefilters" [ref=f16e223] [cursor=pointer]:
+                        - /url: "#musicfilenamefilters"
+                        - generic [ref=f16e224]: 2.7.4
+                        - generic [ref=f16e225]: musicfilenamefilters
+                    - listitem [ref=f16e226]:
+                      - link "2.7.5 musiclibrary" [ref=f16e227] [cursor=pointer]:
+                        - /url: "#musiclibrary"
+                        - generic [ref=f16e228]: 2.7.5
+                        - generic [ref=f16e229]: musiclibrary
+                - listitem [ref=f16e230]:
+                  - link "2.8 Photos settings" [ref=f16e231] [cursor=pointer]:
+                    - /url: "#Photos_settings"
+                    - generic [ref=f16e232]: "2.8"
+                    - generic [ref=f16e233]: Photos settings
+                  - list [ref=f16e234]:
+                    - listitem [ref=f16e235]:
+                      - link "2.8.1 pictureextensions" [ref=f16e236] [cursor=pointer]:
+                        - /url: "#pictureextensions"
+                        - generic [ref=f16e237]: 2.8.1
+                        - generic [ref=f16e238]: pictureextensions
+                    - listitem [ref=f16e239]:
+                      - link "2.8.2 pictureexcludes" [ref=f16e240] [cursor=pointer]:
+                        - /url: "#pictureexcludes"
+                        - generic [ref=f16e241]: 2.8.2
+                        - generic [ref=f16e242]: pictureexcludes
+                    - listitem [ref=f16e243]:
+                      - link "2.8.3 slideshow" [ref=f16e244] [cursor=pointer]:
+                        - /url: "#slideshow"
+                        - generic [ref=f16e245]: 2.8.3
+                        - generic [ref=f16e246]: slideshow
+                - listitem [ref=f16e247]:
+                  - link "2.9 Network settings" [ref=f16e248] [cursor=pointer]:
+                    - /url: "#Network_settings"
+                    - generic [ref=f16e249]: "2.9"
+                    - generic [ref=f16e250]: Network settings
+                  - list [ref=f16e251]:
+                    - listitem [ref=f16e252]:
+                      - link "2.9.1 ftp" [ref=f16e253] [cursor=pointer]:
+                        - /url: "#ftp"
+                        - generic [ref=f16e254]: 2.9.1
+                        - generic [ref=f16e255]: ftp
+                    - listitem [ref=f16e256]:
+                      - link "2.9.2 samba" [ref=f16e257] [cursor=pointer]:
+                        - /url: "#samba"
+                        - generic [ref=f16e258]: 2.9.2
+                        - generic [ref=f16e259]: samba
+                    - listitem [ref=f16e260]:
+                      - link "2.9.3 hosts" [ref=f16e261] [cursor=pointer]:
+                        - /url: "#hosts"
+                        - generic [ref=f16e262]: 2.9.3
+                        - generic [ref=f16e263]: hosts
+                    - listitem [ref=f16e264]:
+                      - link "2.9.4 network" [ref=f16e265] [cursor=pointer]:
+                        - /url: "#network"
+                        - generic [ref=f16e266]: 2.9.4
+                        - generic [ref=f16e267]: network
+                    - listitem [ref=f16e268]:
+                      - link "2.9.5 cache" [ref=f16e269] [cursor=pointer]:
+                        - /url: "#cache"
+                        - generic [ref=f16e270]: 2.9.5
+                        - generic [ref=f16e271]: cache
+                    - listitem [ref=f16e272]:
+                      - link "2.9.6 airtunesport" [ref=f16e273] [cursor=pointer]:
+                        - /url: "#airtunesport"
+                        - generic [ref=f16e274]: 2.9.6
+                        - generic [ref=f16e275]: airtunesport
+                    - listitem [ref=f16e276]:
+                      - link "2.9.7 airplayport" [ref=f16e277] [cursor=pointer]:
+                        - /url: "#airplayport"
+                        - generic [ref=f16e278]: 2.9.7
+                        - generic [ref=f16e279]: airplayport
+                - listitem [ref=f16e280]:
+                  - link "2.10 File system settings" [ref=f16e281] [cursor=pointer]:
+                    - /url: "#File_system_settings"
+                    - generic [ref=f16e282]: "2.10"
+                    - generic [ref=f16e283]: File system settings
+                  - list [ref=f16e284]:
+                    - listitem [ref=f16e285]:
+                      - link "2.10.1 packagefoldersize" [ref=f16e286] [cursor=pointer]:
+                        - /url: "#packagefoldersize"
+                        - generic [ref=f16e287]: 2.10.1
+                        - generic [ref=f16e288]: packagefoldersize
+                    - listitem [ref=f16e289]:
+                      - link "2.10.2 detectasudf" [ref=f16e290] [cursor=pointer]:
+                        - /url: "#detectasudf"
+                        - generic [ref=f16e291]: 2.10.2
+                        - generic [ref=f16e292]: detectasudf
+                    - listitem [ref=f16e293]:
+                      - link "2.10.3 handlemounting" [ref=f16e294] [cursor=pointer]:
+                        - /url: "#handlemounting"
+                        - generic [ref=f16e295]: 2.10.3
+                        - generic [ref=f16e296]: handlemounting
+                    - listitem [ref=f16e297]:
+                      - link "2.10.4 automountopticalmedia" [ref=f16e298] [cursor=pointer]:
+                        - /url: "#automountopticalmedia"
+                        - generic [ref=f16e299]: 2.10.4
+                        - generic [ref=f16e300]: automountopticalmedia
+                    - listitem [ref=f16e301]:
+                      - link "2.10.5 pathsubstitution" [ref=f16e302] [cursor=pointer]:
+                        - /url: "#pathsubstitution"
+                        - generic [ref=f16e303]: 2.10.5
+                        - generic [ref=f16e304]: pathsubstitution
+                - listitem [ref=f16e305]:
+                  - link "2.11 Input control settings" [ref=f16e306] [cursor=pointer]:
+                    - /url: "#Input_control_settings"
+                    - generic [ref=f16e307]: "2.11"
+                    - generic [ref=f16e308]: Input control settings
+                  - list [ref=f16e309]:
+                    - listitem [ref=f16e310]:
+                      - link "2.11.1 remotedelay" [ref=f16e311] [cursor=pointer]:
+                        - /url: "#remotedelay"
+                        - generic [ref=f16e312]: 2.11.1
+                        - generic [ref=f16e313]: remotedelay
+                    - listitem [ref=f16e314]:
+                      - link "2.11.2 controllerdeadzone" [ref=f16e315] [cursor=pointer]:
+                        - /url: "#controllerdeadzone"
+                        - generic [ref=f16e316]: 2.11.2
+                        - generic [ref=f16e317]: controllerdeadzone
+                    - listitem [ref=f16e318]:
+                      - link "2.11.3 enablemultimediakeys" [ref=f16e319] [cursor=pointer]:
+                        - /url: "#enablemultimediakeys"
+                        - generic [ref=f16e320]: 2.11.3
+                        - generic [ref=f16e321]: enablemultimediakeys
+                    - listitem [ref=f16e322]:
+                      - link "2.11.4 seeksteps" [ref=f16e323] [cursor=pointer]:
+                        - /url: "#seeksteps"
+                        - generic [ref=f16e324]: 2.11.4
+                        - generic [ref=f16e325]: seeksteps
+                    - listitem [ref=f16e326]:
+                      - link "2.11.5 touchscreen" [ref=f16e327] [cursor=pointer]:
+                        - /url: "#touchscreen"
+                        - generic [ref=f16e328]: 2.11.5
+                        - generic [ref=f16e329]: touchscreen
+                    - listitem [ref=f16e330]:
+                      - link "2.11.6 scanirserver" [ref=f16e331] [cursor=pointer]:
+                        - /url: "#scanirserver"
+                        - generic [ref=f16e332]: 2.11.6
+                        - generic [ref=f16e333]: scanirserver
+                - listitem [ref=f16e334]:
+                  - link "2.12 Other interface settings" [ref=f16e335] [cursor=pointer]:
+                    - /url: "#Other_interface_settings"
+                    - generic [ref=f16e336]: "2.12"
+                    - generic [ref=f16e337]: Other interface settings
+                  - list [ref=f16e338]:
+                    - listitem [ref=f16e339]:
+                      - link "2.12.1 window" [ref=f16e340] [cursor=pointer]:
+                        - /url: "#window"
+                        - generic [ref=f16e341]: 2.12.1
+                        - generic [ref=f16e342]: window
+                    - listitem [ref=f16e343]:
+                      - link "2.12.2 restrictcapsmask" [ref=f16e344] [cursor=pointer]:
+                        - /url: "#restrictcapsmask"
+                        - generic [ref=f16e345]: 2.12.2
+                        - generic [ref=f16e346]: restrictcapsmask
+                    - listitem [ref=f16e347]:
+                      - link "2.12.3 algorithmdirtyregions" [ref=f16e348] [cursor=pointer]:
+                        - /url: "#algorithmdirtyregions"
+                        - generic [ref=f16e349]: 2.12.3
+                        - generic [ref=f16e350]: algorithmdirtyregions
+                    - listitem [ref=f16e351]:
+                      - link "2.12.4 visualizedirtyregions" [ref=f16e352] [cursor=pointer]:
+                        - /url: "#visualizedirtyregions"
+                        - generic [ref=f16e353]: 2.12.4
+                        - generic [ref=f16e354]: visualizedirtyregions
+                    - listitem [ref=f16e355]:
+                      - link "2.12.5 smartredraw" [ref=f16e356] [cursor=pointer]:
+                        - /url: "#smartredraw"
+                        - generic [ref=f16e357]: 2.12.5
+                        - generic [ref=f16e358]: smartredraw
+                    - listitem [ref=f16e359]:
+                      - link "2.12.6 showexitbutton" [ref=f16e360] [cursor=pointer]:
+                        - /url: "#showexitbutton"
+                        - generic [ref=f16e361]: 2.12.6
+                        - generic [ref=f16e362]: showexitbutton
+                    - listitem [ref=f16e363]:
+                      - link "2.12.7 fullscreen" [ref=f16e364] [cursor=pointer]:
+                        - /url: "#fullscreen"
+                        - generic [ref=f16e365]: 2.12.7
+                        - generic [ref=f16e366]: fullscreen
+                    - listitem [ref=f16e367]:
+                      - link "2.12.8 splash" [ref=f16e368] [cursor=pointer]:
+                        - /url: "#splash"
+                        - generic [ref=f16e369]: 2.12.8
+                        - generic [ref=f16e370]: splash
+                    - listitem [ref=f16e371]:
+                      - link "2.12.9 cputempcommand" [ref=f16e372] [cursor=pointer]:
+                        - /url: "#cputempcommand"
+                        - generic [ref=f16e373]: 2.12.9
+                        - generic [ref=f16e374]: cputempcommand
+                    - listitem [ref=f16e375]:
+                      - link "2.12.10 gputempcommand" [ref=f16e376] [cursor=pointer]:
+                        - /url: "#gputempcommand"
+                        - generic [ref=f16e377]: 2.12.10
+                        - generic [ref=f16e378]: gputempcommand
+                    - listitem [ref=f16e379]:
+                      - link "2.12.11 glrectanglehack" [ref=f16e380] [cursor=pointer]:
+                        - /url: "#glrectanglehack"
+                        - generic [ref=f16e381]: 2.12.11
+                        - generic [ref=f16e382]: glrectanglehack
+                    - listitem [ref=f16e383]:
+                      - link "2.12.12 alwaysontop" [ref=f16e384] [cursor=pointer]:
+                        - /url: "#alwaysontop"
+                        - generic [ref=f16e385]: 2.12.12
+                        - generic [ref=f16e386]: alwaysontop
+                    - listitem [ref=f16e387]:
+                      - link "2.12.13 minimizetotray" [ref=f16e388] [cursor=pointer]:
+                        - /url: "#minimizetotray"
+                        - generic [ref=f16e389]: 2.12.13
+                        - generic [ref=f16e390]: minimizetotray
+            - listitem [ref=f16e391]:
+              - link "3 Removed tags" [ref=f16e392] [cursor=pointer]:
+                - /url: "#Removed_tags"
+                - generic [ref=f16e393]: "3"
+                - generic [ref=f16e394]: Removed tags
+            - listitem [ref=f16e395]:
+              - link "4 guisettings.xml Setting Conversion" [ref=f16e396] [cursor=pointer]:
+                - /url: "#guisettings.xml_Setting_Conversion"
+                - generic [ref=f16e397]: "4"
+                - generic [ref=f16e398]: guisettings.xml Setting Conversion
+            - listitem [ref=f16e399]:
+              - link "5 References" [ref=f16e400] [cursor=pointer]:
+                - /url: "#References"
+                - generic [ref=f16e401]: "5"
+                - generic [ref=f16e402]: References
+        - table [ref=f16e403]:
+          - rowgroup [ref=f16e404]:
+            - row "Home icon grey.png ▶ Settings ▶ advancedsettings.xml" [ref=f16e405]:
+              - cell "Home icon grey.png" [ref=f16e406]:
+                - link "Home icon grey.png" [ref=f16e407] [cursor=pointer]:
+                  - /url: /web/20240101191552/https://kodi.wiki/view/Main_Page
+                  - img "Home icon grey.png" [ref=f16e408]
+              - cell [ref=f16e409]
+              - cell
+              - cell "▶ Settings" [ref=f16e410]:
+                - img "▶" [ref=f16e411]
+                - link "Settings" [ref=f16e412] [cursor=pointer]:
+                  - /url: /web/20240101191552/https://kodi.wiki/view/Settings
+              - cell "▶ advancedsettings.xml" [ref=f16e413]:
+                - img "▶" [ref=f16e414]
+                - text: advancedsettings.xml
+        - paragraph [ref=f16e415]:
+          - generic [ref=f16e417]: "Note: The advancedsettings.xml file does not exist by default. You have to create it first!"
+        - paragraph [ref=f16e418]:
+          - text: The advancedsettings.xml file, which does not exist by default, can be created by a user in their
+          - link "userdata folder" [ref=f16e420] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Userdata
+          - text: .
+        - paragraph [ref=f16e421]: This file is used for advanced settings and options that do not have GUI controls inside of Kodi. Some settings are experimental or very rarely set, so they can only be used via the advancedsettings.xml file. The file is simply a plain text file and can be edited by various text editors, so long as the name is "advancedsettings.xml". These advanced settings can be used to tweak various things such as episode naming patterns, special network ports, special behaviors, and more.
+        - paragraph [ref=f16e422]: The following page will describe the structure of the advancedsettings.xml file and the various individual settings.
+        - paragraph [ref=f16e423]:
+          - generic [ref=f16e424]: "Note:"
+        - list [ref=f16e425]:
+          - listitem [ref=f16e426]: All XML tags must be lowercase. The start and end of the advancedsettings.xml file must have the <advancedsettings> and </advancedsettings> tags.
+          - listitem [ref=f16e427]: Kodi will only read the advancedsettings.xml file when it starts up. If you make changes while it is running then you must restart Kodi.
+          - listitem [ref=f16e428]:
+            - text: For some Windows versions, Kodi has two
+            - code [ref=f16e429]: \userdata\
+            - text: folders. The correct one to put the advancedsettings.xml file in is not the one in Program Files, but in
+            - code [ref=f16e430]: "%appdata%\\Kodi\\userdata\\."
+        - heading "Layout" [level=2] [ref=f16e431]
+        - paragraph [ref=f16e432]:
+          - text: The layout of
+          - code [ref=f16e433]: advancedsettings.xml
+          - text: "is as follows:"
+        - generic [ref=f16e434]: <advancedsettings version="1.0"> <setting>value</setting> ... <setting>value</setting> </advancedsettings>
+        - paragraph [ref=f16e435]: where "setting" gives the name of the setting, and "value" gives its value.
+        - paragraph [ref=f16e436]: A list of the available "setting" strings and their values is given below.
+        - heading "List of available settings" [level=1] [ref=f16e437]
+        - paragraph [ref=f16e438]:
+          - text: List of available settings that are recognised in the advancedsettings.xml file
+          - superscript [ref=f16e439]:
+            - link "[1]" [ref=f16e440] [cursor=pointer]:
+              - /url: "#cite_note-1"
+        - paragraph [ref=f16e441]: "Recommended: Use the table of contents or the search function in your browser to locate items."
+        - paragraph [ref=f16e442]
+        - heading "Troubleshooting settings" [level=2] [ref=f16e443]
+        - heading "loglevel" [level=3] [ref=f16e444]
+        - paragraph
+        - paragraph [ref=f16e445]: Sets the logging level used to log errors and information. The "hide" attribute is optional.
+        - generic [ref=f16e446]: <loglevel hide="attribute">options</loglevel>
+        - table [ref=f16e447]:
+          - rowgroup [ref=f16e448]:
+            - row "Attribute [Expand] Action" [ref=f16e449]:
+              - columnheader "Attribute" [ref=f16e450]
+              - columnheader "[Expand] Action" [ref=f16e451]
+        - table [ref=f16e452]:
+          - rowgroup [ref=f16e453]:
+            - row "Option [Expand] Action" [ref=f16e454]:
+              - columnheader "Option" [ref=f16e455]
+              - columnheader "[Expand] Action" [ref=f16e456]
+        - table [ref=f16e457]:
+          - rowgroup [ref=f16e458]:
+            - row "Example" [ref=f16e459]:
+              - columnheader "Example" [ref=f16e460]
+              - columnheader [ref=f16e461]
+            - 'row "Example 1: <advancedsettings version=\"1.0\"> <loglevel>2</loglevel> </advancedsettings>" [ref=f16e462]':
+              - rowheader "Example 1:" [ref=f16e463]
+              - cell "<advancedsettings version=\"1.0\"> <loglevel>2</loglevel> </advancedsettings>" [ref=f16e464]:
+                - generic [ref=f16e465]: <advancedsettings version="1.0"> <loglevel>2</loglevel> </advancedsettings>
+            - 'row "Example 2: <advancedsettings version=\"1.0\"> <loglevel hide=\"true\">2</loglevel> </advancedsettings>" [ref=f16e466]':
+              - rowheader "Example 2:" [ref=f16e467]
+              - cell "<advancedsettings version=\"1.0\"> <loglevel hide=\"true\">2</loglevel> </advancedsettings>" [ref=f16e468]:
+                - generic [ref=f16e469]: <advancedsettings version="1.0"> <loglevel hide="true">2</loglevel> </advancedsettings>
+        - paragraph [ref=f16e470]:
+          - text: "Note: The setting is persistent through shutdown and restarts."
+          - text: "Note: If debugging is enabled in the GUI, loglevel will be set to 2. This will over-ride the"
+          - code [ref=f16e471]: advancedsettings.xml
+          - text: setting. You must disable the GUI Setting before adding the entry to
+          - code [ref=f16e472]: advancedsettings.xml
+          - text: .
+        - definition [ref=f16e474]:
+          - generic [ref=f16e476]:
+            - text: "See also:"
+            - link "Debug Log" [ref=f16e478] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Log_file
+        - heading "jsonrpc" [level=3] [ref=f16e479]
+        - paragraph [ref=f16e480]:
+          - text: To make it easier for developers using the
+          - link "JSON-RPC_API" [ref=f16e481] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/JSON-RPC_API
+          - text: API in their (third party) applications to debug during development the json output of Kodi can be prettified by setting compactoutput to false. Default json output mode is a compact print which does not contain any unnecessary whitespaces and therefore is difficult to read for humans. Furthermore using the tcpport setting it is possible to change the default TCP port used by Kodi for JSON RPC (which is 9090) to any other valid port.
+        - paragraph [ref=f16e482]: "Example:"
+        - generic [ref=f16e483]: <jsonrpc> <compactoutput>false</compactoutput> <tcpport>9999</tcpport> </jsonrpc>
+        - heading "Audio/video playback settings" [level=2] [ref=f16e484]: Audio/video playback settings
+        - heading "skiploopfilter" [level=3] [ref=f16e485]
+        - paragraph [ref=f16e486]: The amount of the loop filter to skip on h.264 decoding. This can help the performance of slower machines when decoding h264 content. Values, in decreasing CPU usage (and decreasing quality)
+        - list [ref=f16e487]:
+          - listitem [ref=f16e488]: "-16 None"
+          - listitem [ref=f16e489]: 0 Skip only empty frames (default)
+          - listitem [ref=f16e490]: 8 Skip non-reference frames
+          - listitem [ref=f16e491]: 16 Skip bi-dir frames
+          - listitem [ref=f16e492]: 32 Skip all non-key frames
+          - listitem [ref=f16e493]: 48 Skip all frames
+        - paragraph [ref=f16e494]: "Example:"
+        - generic [ref=f16e495]: <skiploopfilter>8</skiploopfilter>
+        - heading "video" [level=3] [ref=f16e496]
+        - paragraph
+        - paragraph [ref=f16e497]: "The <video> section also includes the following child-tags, which have their own sections:"
+        - list [ref=f16e498]:
+          - listitem [ref=f16e499]:
+            - link "#cleandatetime" [ref=f16e500] [cursor=pointer]:
+              - /url: "#cleandatetime"
+          - listitem [ref=f16e501]:
+            - link "#cleanstrings" [ref=f16e502] [cursor=pointer]:
+              - /url: "#cleanstrings"
+          - listitem [ref=f16e503]:
+            - link "#excludefromscan" [ref=f16e504] [cursor=pointer]:
+              - /url: "#excludefromscan"
+          - listitem [ref=f16e505]:
+            - link "#excludefromlisting" [ref=f16e506] [cursor=pointer]:
+              - /url: "#excludefromlisting"
+          - listitem [ref=f16e507]:
+            - link "#excludetvshowsfromscan" [ref=f16e508] [cursor=pointer]:
+              - /url: "#excludetvshowsfromscan"
+        - paragraph [ref=f16e509]:
+          - generic [ref=f16e510]: "Note: Some tags that have a \"third-level\" and are grouped together are highlighted in color."
+        - table [ref=f16e511]:
+          - rowgroup [ref=f16e512]:
+            - row "Tag Description" [ref=f16e513]:
+              - columnheader "Tag" [ref=f16e514]
+              - columnheader "Description" [ref=f16e515]
+            - row "<video> Parent tag that all other child tags need to be placed inside of. Do not use more than one <video> tag, but instead place all other child-tags within a single <video></video> set." [ref=f16e516]:
+              - cell "<video>" [ref=f16e517]:
+                - generic [ref=f16e518]: <video>
+              - cell "Parent tag that all other child tags need to be placed inside of. Do not use more than one <video> tag, but instead place all other child-tags within a single <video></video> set." [ref=f16e519]:
+                - text: Parent tag that all other child tags need to be placed inside of. Do not use more than one
+                - code [ref=f16e521]: <video>
+                - text: tag, but instead place all other child-tags within a single
+                - code [ref=f16e523]: <video></video>
+                - text: set.
+            - row "<subsdelayrange>10</subsdelayrange> Delay range for subtitles, in seconds." [ref=f16e524]:
+              - cell "<subsdelayrange>10</subsdelayrange>" [ref=f16e525]:
+                - generic [ref=f16e526]: <subsdelayrange>10</subsdelayrange>
+              - cell "Delay range for subtitles, in seconds." [ref=f16e527]
+            - row "<maxtempo>2.1</maxtempo> Allow further increase of playback speed over the default of 1.5 maxtempo must be in the range of 1.5 to 2.1 Be aware of the limitations of your platform / hardware as not all are capable of the increased maxtempo [2]" [ref=f16e528]:
+              - cell "<maxtempo>2.1</maxtempo>" [ref=f16e529]:
+                - generic [ref=f16e530]: <maxtempo>2.1</maxtempo>
+              - cell "Allow further increase of playback speed over the default of 1.5 maxtempo must be in the range of 1.5 to 2.1 Be aware of the limitations of your platform / hardware as not all are capable of the increased maxtempo [2]" [ref=f16e531]:
+                - text: Allow further increase of playback speed over the default of 1.5
+                - paragraph [ref=f16e532]:
+                  - text: maxtempo must be in the range of 1.5 to 2.1
+                  - text: Be aware of the limitations of your platform / hardware as not all are capable of the increased maxtempo
+                  - superscript [ref=f16e533]:
+                    - link "[2]" [ref=f16e534] [cursor=pointer]:
+                      - /url: "#cite_note-2"
+            - row "<audiodelayrange>10</audiodelayrange> Delay range for audio/video sync, in seconds." [ref=f16e535]:
+              - cell "<audiodelayrange>10</audiodelayrange>" [ref=f16e536]:
+                - generic [ref=f16e537]: <audiodelayrange>10</audiodelayrange>
+              - cell "Delay range for audio/video sync, in seconds." [ref=f16e538]
+            - 'row "<usetimeseeking>true</usetimeseeking> Whether to use time based or percentage based seeking. See also: Skip steps" [ref=f16e539]':
+              - cell "<usetimeseeking>true</usetimeseeking>" [ref=f16e540]:
+                - generic [ref=f16e541]: <usetimeseeking>true</usetimeseeking>
+              - 'cell "Whether to use time based or percentage based seeking. See also: Skip steps" [ref=f16e542]':
+                - text: Whether to use time based or percentage based seeking.
+                - generic [ref=f16e543]:
+                  - text: "See also:"
+                  - link "Skip steps" [ref=f16e545] [cursor=pointer]:
+                    - /url: /web/20240101191552/https://kodi.wiki/view/Skip_steps
+            - 'row "<timeseekforwardbig>600</timeseekforwardbig> <timeseekbackwardbig>-600</timeseekbackwardbig> Time to seek forward in seconds when doing a long seek. Defaults to 600 (10 minutes) and -600 (-10 minutes) respectively. See also: Skip steps" [ref=f16e546]':
+              - cell "<timeseekforwardbig>600</timeseekforwardbig> <timeseekbackwardbig>-600</timeseekbackwardbig>" [ref=f16e547]:
+                - generic [ref=f16e548]: <timeseekforwardbig>600</timeseekforwardbig> <timeseekbackwardbig>-600</timeseekbackwardbig>
+              - 'cell "Time to seek forward in seconds when doing a long seek. Defaults to 600 (10 minutes) and -600 (-10 minutes) respectively. See also: Skip steps" [ref=f16e549]':
+                - text: Time to seek forward in seconds when doing a long seek. Defaults to 600 (10 minutes) and -600 (-10 minutes) respectively.
+                - generic [ref=f16e551]:
+                  - text: "See also:"
+                  - link "Skip steps" [ref=f16e552] [cursor=pointer]:
+                    - /url: /web/20240101191552/https://kodi.wiki/view/Skip_steps
+            - 'row "<percentseekforward>2</percentseekforward> <percentseekbackward>-2</percentseekbackward> Amount to seek forward as a percentage, when doing a short seek. Defaults to 2 (2%) and -2 (2%) respectively. See also: Skip steps" [ref=f16e553]':
+              - cell "<percentseekforward>2</percentseekforward> <percentseekbackward>-2</percentseekbackward>" [ref=f16e554]:
+                - generic [ref=f16e555]: <percentseekforward>2</percentseekforward> <percentseekbackward>-2</percentseekbackward>
+              - 'cell "Amount to seek forward as a percentage, when doing a short seek. Defaults to 2 (2%) and -2 (2%) respectively. See also: Skip steps" [ref=f16e556]':
+                - text: Amount to seek forward as a percentage, when doing a short seek. Defaults to 2 (2%) and -2 (2%) respectively.
+                - generic [ref=f16e558]:
+                  - text: "See also:"
+                  - link "Skip steps" [ref=f16e559] [cursor=pointer]:
+                    - /url: /web/20240101191552/https://kodi.wiki/view/Skip_steps
+            - 'row "<percentseekforwardbig>10</percentseekforwardbig> <percentseekbackwardbig>-10</percentseekbackwardbig> Amount to seek forward as a percentage, when doing a long seek. Defaults to 10 (10%) and -10 (10%) respectively. See also: Skip steps" [ref=f16e560]':
+              - cell "<percentseekforwardbig>10</percentseekforwardbig> <percentseekbackwardbig>-10</percentseekbackwardbig>" [ref=f16e561]:
+                - generic [ref=f16e562]: <percentseekforwardbig>10</percentseekforwardbig> <percentseekbackwardbig>-10</percentseekbackwardbig>
+              - 'cell "Amount to seek forward as a percentage, when doing a long seek. Defaults to 10 (10%) and -10 (10%) respectively. See also: Skip steps" [ref=f16e563]':
+                - text: Amount to seek forward as a percentage, when doing a long seek. Defaults to 10 (10%) and -10 (10%) respectively.
+                - generic [ref=f16e565]:
+                  - text: "See also:"
+                  - link "Skip steps" [ref=f16e566] [cursor=pointer]:
+                    - /url: /web/20240101191552/https://kodi.wiki/view/Skip_steps
+            - row "<fullscreenonmoviestart>true</fullscreenonmoviestart> Whether to go to fullscreen or not when starting a movie. Defaults to true." [ref=f16e567]:
+              - cell "<fullscreenonmoviestart>true</fullscreenonmoviestart>" [ref=f16e568]:
+                - generic [ref=f16e569]: <fullscreenonmoviestart>true</fullscreenonmoviestart>
+              - cell "Whether to go to fullscreen or not when starting a movie. Defaults to true." [ref=f16e570]
+            - 'row "<defaultplayer>VideoPlayer</defaultplayer> Set the default video player: VideoPlayer or an external player. See External players for more info." [ref=f16e571]':
+              - cell "<defaultplayer>VideoPlayer</defaultplayer>" [ref=f16e572]:
+                - generic [ref=f16e573]: <defaultplayer>VideoPlayer</defaultplayer>
+              - 'cell "Set the default video player: VideoPlayer or an external player. See External players for more info." [ref=f16e574]':
+                - text: "Set the default video player: VideoPlayer or an external player. See"
+                - link "External players" [ref=f16e576] [cursor=pointer]:
+                  - /url: /web/20240101191552/https://kodi.wiki/view/External_players
+                - text: for more info.
+            - row "<excludefromscan> <regexp>[-\\._ ](sample|trailer)[-\\._ ]</regexp> </excludefromscan> Regular expressions that if evaluated to true won't be added to library. It is possible to add multiple <regexp> tags to match multiple patterns" [ref=f16e577]:
+              - cell "<excludefromscan> <regexp>[-\\._ ](sample|trailer)[-\\._ ]</regexp> </excludefromscan>" [ref=f16e578]:
+                - generic [ref=f16e579]: <excludefromscan> <regexp>[-\._ ](sample|trailer)[-\._ ]</regexp> </excludefromscan>
+              - cell "Regular expressions that if evaluated to true won't be added to library. It is possible to add multiple <regexp> tags to match multiple patterns" [ref=f16e580]:
+                - text: Regular expressions that if evaluated to true won't be added to library. It is possible to add multiple
+                - code [ref=f16e581]: <regexp>
+                - text: tags to match multiple patterns
+            - row "<excludefromlisting> <regexp>[-\\._ ](sample|trailer)[-\\._ ]</regexp> </excludefromlisting> Regular expressions that if evaluated to true won't be displayed in files view." [ref=f16e582]:
+              - cell "<excludefromlisting> <regexp>[-\\._ ](sample|trailer)[-\\._ ]</regexp> </excludefromlisting>" [ref=f16e583]:
+                - generic [ref=f16e584]: <excludefromlisting> <regexp>[-\._ ](sample|trailer)[-\._ ]</regexp> </excludefromlisting>
+              - cell "Regular expressions that if evaluated to true won't be displayed in files view." [ref=f16e585]
+            - 'row "<playcountminimumpercent>90</playcountminimumpercent> Minimum percentage that has to be played before it is marked as watched. Set to 101 to never auto-mark items as watched. See also: HOW-TO:Modify automatic watch and resume points" [ref=f16e586]':
+              - cell "<playcountminimumpercent>90</playcountminimumpercent>" [ref=f16e587]:
+                - generic [ref=f16e588]: <playcountminimumpercent>90</playcountminimumpercent>
+              - 'cell "Minimum percentage that has to be played before it is marked as watched. Set to 101 to never auto-mark items as watched. See also: HOW-TO:Modify automatic watch and resume points" [ref=f16e589]':
+                - text: Minimum percentage that has to be played before it is marked as watched. Set to 101 to never auto-mark items as watched.
+                - generic [ref=f16e591]:
+                  - text: "See also:"
+                  - link "HOW-TO:Modify automatic watch and resume points" [ref=f16e592] [cursor=pointer]:
+                    - /url: /web/20240101191552/https://kodi.wiki/view/HOW-TO:Modify_automatic_watch_and_resume_points
+            - 'row "<ignoresecondsatstart>180</ignoresecondsatstart> Number of seconds to ignore at video start after which a resume point is created. See also: HOW-TO:Modify automatic watch and resume points" [ref=f16e593]':
+              - cell "<ignoresecondsatstart>180</ignoresecondsatstart>" [ref=f16e594]:
+                - generic [ref=f16e595]: <ignoresecondsatstart>180</ignoresecondsatstart>
+              - 'cell "Number of seconds to ignore at video start after which a resume point is created. See also: HOW-TO:Modify automatic watch and resume points" [ref=f16e596]':
+                - text: Number of seconds to ignore at video start after which a resume point is created.
+                - generic [ref=f16e598]:
+                  - text: "See also:"
+                  - link "HOW-TO:Modify automatic watch and resume points" [ref=f16e599] [cursor=pointer]:
+                    - /url: /web/20240101191552/https://kodi.wiki/view/HOW-TO:Modify_automatic_watch_and_resume_points
+            - 'row "<ignorepercentatend>8</ignorepercentatend> Percentage of video to ignore at the end. If you stop watching the video here no resume point is created. Set to 101 to never save a resume point. The video is already marked as watched at 90%, see above. See also: HOW-TO:Modify automatic watch and resume points" [ref=f16e600]':
+              - cell "<ignorepercentatend>8</ignorepercentatend>" [ref=f16e601]:
+                - generic [ref=f16e602]: <ignorepercentatend>8</ignorepercentatend>
+              - 'cell "Percentage of video to ignore at the end. If you stop watching the video here no resume point is created. Set to 101 to never save a resume point. The video is already marked as watched at 90%, see above. See also: HOW-TO:Modify automatic watch and resume points" [ref=f16e603]':
+                - text: Percentage of video to ignore at the end. If you stop watching the video here no resume point is created. Set to 101 to never save a resume point. The video is already marked as watched at 90%, see above.
+                - generic [ref=f16e605]:
+                  - text: "See also:"
+                  - link "HOW-TO:Modify automatic watch and resume points" [ref=f16e606] [cursor=pointer]:
+                    - /url: /web/20240101191552/https://kodi.wiki/view/HOW-TO:Modify_automatic_watch_and_resume_points
+            - row "<vdpauscaling>true</vdpauscaling> Scales with vdpau instead of opengl and turns on its HQ scaler when available, enabling this might slow down rendering and cause framedrops especially on ION systems, this setting requires a vdpau feature set C GPU." [ref=f16e607]:
+              - cell "<vdpauscaling>true</vdpauscaling>" [ref=f16e608]:
+                - generic [ref=f16e609]: <vdpauscaling>true</vdpauscaling>
+              - cell "Scales with vdpau instead of opengl and turns on its HQ scaler when available, enabling this might slow down rendering and cause framedrops especially on ION systems, this setting requires a vdpau feature set C GPU." [ref=f16e610]
+            - row "<ppffmpegdeinterlacing>linblenddeint</ppffmpegdeinterlacing> Override the deinterlacing options passed to libpostproc." [ref=f16e611]:
+              - cell "<ppffmpegdeinterlacing>linblenddeint</ppffmpegdeinterlacing>" [ref=f16e612]:
+                - generic [ref=f16e613]: <ppffmpegdeinterlacing>linblenddeint</ppffmpegdeinterlacing>
+              - cell "Override the deinterlacing options passed to libpostproc." [ref=f16e614]
+            - row "<ppffmpegpostprocessing>ha:128:7,va,dr</ppffmpegpostprocessing> Override the post processing options passed to libpostproc when 'Video post-processing' is activated in GUI Videos-Settings-Playback." [ref=f16e615]:
+              - cell "<ppffmpegpostprocessing>ha:128:7,va,dr</ppffmpegpostprocessing>" [ref=f16e616]:
+                - generic [ref=f16e617]: <ppffmpegpostprocessing>ha:128:7,va,dr</ppffmpegpostprocessing>
+              - cell "Override the post processing options passed to libpostproc when 'Video post-processing' is activated in GUI Videos-Settings-Playback." [ref=f16e618]
+            - row "<autoscalemaxfps>30</autoscalemaxfps> When scaling method is set to auto, bilinear is chosen when the fps is higher than this limit, the default is 30." [ref=f16e619]:
+              - cell "<autoscalemaxfps>30</autoscalemaxfps>" [ref=f16e620]:
+                - generic [ref=f16e621]: <autoscalemaxfps>30</autoscalemaxfps>
+              - cell "When scaling method is set to auto, bilinear is chosen when the fps is higher than this limit, the default is 30." [ref=f16e622]
+            - row "<adjustrefreshrate> Settings for when \"Adjust refreshrate to match video fps\" is enabled in the video playback GUI settings." [ref=f16e623]:
+              - cell "<adjustrefreshrate>" [ref=f16e624]:
+                - generic [ref=f16e625]: <adjustrefreshrate>
+              - cell "Settings for when \"Adjust refreshrate to match video fps\" is enabled in the video playback GUI settings." [ref=f16e626]
+            - row "<override> <fps>23.976</fps> <refresh>60.0</refresh> </override> Example - \"Adjust refreshrate to match video fps\" will try to select the best refreshrate for the video fps but it doesn't always get it right, for example it might switch to an unsupported refreshrate. You can add overrides here to switch to a certain refreshrate based on video fps. It's possible to add as many overrides as you need. Overrides are processed in order, if the first one doesn't match the fps or no refreshrates match that override, it will try the next one until no overrides are left. fps - if the fps is between 23.966 and 23.986 refresh - switch to the first found refreshrate that is between 59.99 and 60.01" [ref=f16e627]:
+              - cell "<override> <fps>23.976</fps> <refresh>60.0</refresh> </override>" [ref=f16e628]:
+                - generic [ref=f16e629]: <override> <fps>23.976</fps> <refresh>60.0</refresh> </override>
+              - cell "Example - \"Adjust refreshrate to match video fps\" will try to select the best refreshrate for the video fps but it doesn't always get it right, for example it might switch to an unsupported refreshrate. You can add overrides here to switch to a certain refreshrate based on video fps. It's possible to add as many overrides as you need. Overrides are processed in order, if the first one doesn't match the fps or no refreshrates match that override, it will try the next one until no overrides are left. fps - if the fps is between 23.966 and 23.986 refresh - switch to the first found refreshrate that is between 59.99 and 60.01" [ref=f16e630]:
+                - text: Example - "Adjust refreshrate to match video fps" will try to select the best refreshrate for the video fps but it doesn't always get it right, for example it might switch to an unsupported refreshrate. You can add overrides here to switch to a certain refreshrate based on video fps. It's possible to add as many overrides as you need. Overrides are processed in order, if the first one doesn't match the fps or no refreshrates match that override, it will try the next one until no overrides are left.
+                - list [ref=f16e631]:
+                  - listitem [ref=f16e632]: fps - if the fps is between 23.966 and 23.986
+                  - listitem [ref=f16e633]: refresh - switch to the first found refreshrate that is between 59.99 and 60.01
+            - row "<override> <fpsmin>29.96</fpsmin> <fpsmax>30.01</fpsmax> <refreshmin>59.0</refreshmin> <refreshmax>61.0</refreshmax> </override> Example - fpsmin / fpsmin - You can also specify the fps range yourself. refreshmin / refreshmax - Same for the refreshrate" [ref=f16e634]:
+              - cell "<override> <fpsmin>29.96</fpsmin> <fpsmax>30.01</fpsmax> <refreshmin>59.0</refreshmin> <refreshmax>61.0</refreshmax> </override>" [ref=f16e635]:
+                - generic [ref=f16e636]: <override> <fpsmin>29.96</fpsmin> <fpsmax>30.01</fpsmax> <refreshmin>59.0</refreshmin> <refreshmax>61.0</refreshmax> </override>
+              - cell "Example - fpsmin / fpsmin - You can also specify the fps range yourself. refreshmin / refreshmax - Same for the refreshrate" [ref=f16e637]:
+                - text: Example -
+                - list [ref=f16e638]:
+                  - listitem [ref=f16e639]: fpsmin / fpsmin - You can also specify the fps range yourself.
+                  - listitem [ref=f16e640]: refreshmin / refreshmax - Same for the refreshrate
+            - row "<fallback> <refresh>50.0</refresh> </fallback> Example - If none of the overrides match, or none of the refreshrates match any of the fps matching overrides, it will choose a fallback refreshrate. Fallbacks are process in order, if the first fallback doesn't match any refreshrate, it will try the next one until no fallbacks are left. refresh - Switch to the first found refreshrate that is between 49.99 and 50.01." [ref=f16e641]:
+              - cell "<fallback> <refresh>50.0</refresh> </fallback>" [ref=f16e642]:
+                - generic [ref=f16e643]: <fallback> <refresh>50.0</refresh> </fallback>
+              - cell "Example - If none of the overrides match, or none of the refreshrates match any of the fps matching overrides, it will choose a fallback refreshrate. Fallbacks are process in order, if the first fallback doesn't match any refreshrate, it will try the next one until no fallbacks are left. refresh - Switch to the first found refreshrate that is between 49.99 and 50.01." [ref=f16e644]:
+                - text: Example - If none of the overrides match, or none of the refreshrates match any of the fps matching overrides, it will choose a fallback refreshrate. Fallbacks are process in order, if the first fallback doesn't match any refreshrate, it will try the next one until no fallbacks are left.
+                - list [ref=f16e645]:
+                  - listitem [ref=f16e646]: refresh - Switch to the first found refreshrate that is between 49.99 and 50.01.
+            - row "<fallback> <refreshmin>49.0</refreshmin> <refreshmax>51.0</refreshmax> </fallback> Example - You can also specify the range for the fallback yourself. If none of the overrides match the video fps, or no refreshrates match any of the fps matching overrides, and no fallbacks are specified or no refreshrates match any fallbacks, it will automatically choose the best refreshrate (same as having no overrides and fallbacks)." [ref=f16e647]:
+              - cell "<fallback> <refreshmin>49.0</refreshmin> <refreshmax>51.0</refreshmax> </fallback>" [ref=f16e648]:
+                - generic [ref=f16e649]: <fallback> <refreshmin>49.0</refreshmin> <refreshmax>51.0</refreshmax> </fallback>
+              - cell "Example - You can also specify the range for the fallback yourself. If none of the overrides match the video fps, or no refreshrates match any of the fps matching overrides, and no fallbacks are specified or no refreshrates match any fallbacks, it will automatically choose the best refreshrate (same as having no overrides and fallbacks)." [ref=f16e650]:
+                - text: Example - You can also specify the range for the fallback yourself.
+                - paragraph [ref=f16e651]: If none of the overrides match the video fps, or no refreshrates match any of the fps matching overrides, and no fallbacks are specified or no refreshrates match any fallbacks, it will automatically choose the best refreshrate (same as having no overrides and fallbacks).
+            - row "</adjustrefreshrate>" [ref=f16e652]:
+              - cell "</adjustrefreshrate>" [ref=f16e653]:
+                - generic [ref=f16e654]: </adjustrefreshrate>
+              - cell [ref=f16e655]
+            - 'row "<checkdxvacompatibility>value</checkdxvacompatibility> Advanced setting not present: let Kodi autodetect cards that support H.264 profile > L4.1. Set value to false to enable DXVA no matter what. Set value to true if Kodi doesn''t autodetect that the graphics card doesn''t support > L4.1." [ref=f16e656]':
+              - cell "<checkdxvacompatibility>value</checkdxvacompatibility>" [ref=f16e657]:
+                - generic [ref=f16e658]: <checkdxvacompatibility>value</checkdxvacompatibility>
+              - 'cell "Advanced setting not present: let Kodi autodetect cards that support H.264 profile > L4.1. Set value to false to enable DXVA no matter what. Set value to true if Kodi doesn''t autodetect that the graphics card doesn''t support > L4.1." [ref=f16e659]'
+            - row "<useocclusionquery>-1</useocclusionquery> Use an occlusion query when capturing videoframes, -1 means auto detect, 0 means disabled, 1 means enabled, the default is -1." [ref=f16e660]:
+              - cell "<useocclusionquery>-1</useocclusionquery>" [ref=f16e661]:
+                - generic [ref=f16e662]: <useocclusionquery>-1</useocclusionquery>
+              - cell "Use an occlusion query when capturing videoframes, -1 means auto detect, 0 means disabled, 1 means enabled, the default is -1." [ref=f16e663]
+            - row "<fpsdetect>1</fpsdetect> FPS detection for video playback 0 = trust codec fps 1 = recalculate from video timestamps with uniform spacing 2 = recalculate from video timestamps always" [ref=f16e664]:
+              - cell "<fpsdetect>1</fpsdetect>" [ref=f16e665]:
+                - generic [ref=f16e666]: <fpsdetect>1</fpsdetect>
+              - cell "FPS detection for video playback 0 = trust codec fps 1 = recalculate from video timestamps with uniform spacing 2 = recalculate from video timestamps always" [ref=f16e667]:
+                - text: FPS detection for video playback
+                - list [ref=f16e668]:
+                  - listitem [ref=f16e669]: 0 = trust codec fps
+                  - listitem [ref=f16e670]: 1 = recalculate from video timestamps with uniform spacing
+                  - listitem [ref=f16e671]: 2 = recalculate from video timestamps always
+            - row "<latency> Start of latency tags. Display latency (video lag). Latency is given in msecs." [ref=f16e672]:
+              - cell "<latency>" [ref=f16e673]:
+                - generic [ref=f16e674]: <latency>
+              - cell "Start of latency tags. Display latency (video lag). Latency is given in msecs." [ref=f16e675]
+            - row "<delay>0</delay> Global default display latency." [ref=f16e676]:
+              - cell "<delay>0</delay>" [ref=f16e677]:
+                - generic [ref=f16e678]: <delay>0</delay>
+              - cell "Global default display latency." [ref=f16e679]
+            - 'row "<refresh></refresh> Override latency for given display (not video) refresh rates. When Kodi is in windowed mode, override is ignored. Multiple overrides are allowed. Syntax of an override entry: <refresh> <min>, <max> refresh rate range, OR <rate> exact refresh rate <delay> display latency for the given refresh rate </refresh>" [ref=f16e680]':
+              - cell "<refresh></refresh>" [ref=f16e681]:
+                - generic [ref=f16e682]: <refresh></refresh>
+              - 'cell "Override latency for given display (not video) refresh rates. When Kodi is in windowed mode, override is ignored. Multiple overrides are allowed. Syntax of an override entry: <refresh> <min>, <max> refresh rate range, OR <rate> exact refresh rate <delay> display latency for the given refresh rate </refresh>" [ref=f16e683]':
+                - text: Override latency for given display (not video) refresh rates. When Kodi is in windowed mode, override is ignored. Multiple overrides are allowed.
+                - paragraph [ref=f16e684]: "Syntax of an override entry:"
+                - generic [ref=f16e685]: <refresh> <min>, <max> refresh rate range, OR <rate> exact refresh rate <delay> display latency for the given refresh rate </refresh>
+            - 'row "<refresh> <min>23</min> <max>24</max> <delay>125</delay> </refresh> Example: display has 125 msec latency at 23-24 Hz" [ref=f16e686]':
+              - cell "<refresh> <min>23</min> <max>24</max> <delay>125</delay> </refresh>" [ref=f16e687]:
+                - generic [ref=f16e688]: <refresh> <min>23</min> <max>24</max> <delay>125</delay> </refresh>
+              - 'cell "Example: display has 125 msec latency at 23-24 Hz" [ref=f16e689]'
+            - 'row "<refresh> <rate>50</rate> <delay>50</delay> </refresh> Example: display has 50 msec latency at 50 (+/-0.01) Hz" [ref=f16e690]':
+              - cell "<refresh> <rate>50</rate> <delay>50</delay> </refresh>" [ref=f16e691]:
+                - generic [ref=f16e692]: <refresh> <rate>50</rate> <delay>50</delay> </refresh>
+              - 'cell "Example: display has 50 msec latency at 50 (+/-0.01) Hz" [ref=f16e693]'
+            - row "</latency>" [ref=f16e694]:
+              - cell "</latency>" [ref=f16e695]:
+                - generic [ref=f16e696]: </latency>
+              - cell [ref=f16e697]
+            - row "<stereoscopicregex3d>[-. _]3d[-. _]</stereoscopicregex3d> <stereoscopicregexsbs>[-. _]h?sbs[-. _]</stereoscopicregexsbs> <stereoscopicregextab>[-. _]h?tab[-. _]</stereoscopicregextab> Filename triggers for 3D (stereoscopic) mode." [ref=f16e698]:
+              - cell "<stereoscopicregex3d>[-. _]3d[-. _]</stereoscopicregex3d> <stereoscopicregexsbs>[-. _]h?sbs[-. _]</stereoscopicregexsbs> <stereoscopicregextab>[-. _]h?tab[-. _]</stereoscopicregextab>" [ref=f16e699]:
+                - generic [ref=f16e700]: <stereoscopicregex3d>[-. _]3d[-. _]</stereoscopicregex3d> <stereoscopicregexsbs>[-. _]h?sbs[-. _]</stereoscopicregexsbs> <stereoscopicregextab>[-. _]h?tab[-. _]</stereoscopicregextab>
+              - cell "Filename triggers for 3D (stereoscopic) mode." [ref=f16e701]
+            - 'row "<assfixedworks>false</assfixedworks> Position behavior of ass subtitiles when setting \"subtitle position on screen\" set to \"fixed\". True to show at the fixed position set in video calibration. False to show at the bottom of video (default). Note: Removed in Kodi v20." [ref=f16e702]':
+              - cell "<assfixedworks>false</assfixedworks>" [ref=f16e703]:
+                - generic [ref=f16e704]: <assfixedworks>false</assfixedworks>
+              - 'cell "Position behavior of ass subtitiles when setting \"subtitle position on screen\" set to \"fixed\". True to show at the fixed position set in video calibration. False to show at the bottom of video (default). Note: Removed in Kodi v20." [ref=f16e705]':
+                - text: Position behavior of ass subtitiles when setting "subtitle position on screen" set to "fixed". True to show at the fixed position set in video calibration. False to show at the bottom of video (default).
+                - generic [ref=f16e706]: "Note: Removed in Kodi v20."
+            - 'row "<subtitleverticalmargin>120</subtitleverticalmargin> Allows to customise the vertical margin of text based subtitles, which will be applied to each type of subtitle position in subtitle settings. Note: Available in Kodi v20 and above." [ref=f16e707]':
+              - cell "<subtitleverticalmargin>120</subtitleverticalmargin>" [ref=f16e708]:
+                - generic [ref=f16e709]: <subtitleverticalmargin>120</subtitleverticalmargin>
+              - 'cell "Allows to customise the vertical margin of text based subtitles, which will be applied to each type of subtitle position in subtitle settings. Note: Available in Kodi v20 and above." [ref=f16e710]':
+                - text: Allows to customise the vertical margin of text based subtitles, which will be applied to each type of subtitle position in subtitle settings.
+                - generic [ref=f16e711]: "Note: Available in Kodi v20 and above."
+            - row "</video>" [ref=f16e712]:
+              - cell "</video>" [ref=f16e713]:
+                - generic [ref=f16e714]: </video>
+              - cell [ref=f16e715]
+        - heading "audio" [level=3] [ref=f16e716]
+        - paragraph
+        - generic [ref=f16e717]: "<audio> <!-- Amount of headroom Kodi should use above the maximum volume level, in decibels. Defaults to 0, valid values 0, 6, 12. --> <headroom>0</headroom> <!-- Default audio player: paplayer or videoplayer --> <defaultplayer>paplayer</defaultplayer> <!-- Regular expressions that if evaluated to true won't be added to library. --> <excludefromscan> <regexp>[-\\._ ](podcast)[-\\._ ]</regexp> </excludefromscan> <!-- Regular expressions that if evaluated to true won't be displayed in Files View --> <excludefromlisting> <regexp>[-\\._ ](podcast)[-\\._ ]</regexp> </excludefromlisting> <!-- Amount of gain (dB) to be applied to AC3 streams that have been mixed-down to 2 channels. Default is 12.0. Valid values are: -96.0 to 96.0. --> <ac3downmixgain>12.0</ac3downmixgain> <!-- Whether to use time based or percentage based seeking. --> <usetimeseeking>true</usetimeseeking> <!-- Time to seek forward in seconds when doing a long seek. Defaults to 600 (10 minutes) and -600 (-10 minutes) respectively. --> <timeseekforwardbig>600</timeseekfowardbig> <!-- Time to seek backward in seconds when doing a long seek back. Defaults to 600 (10 minutes) and -600 (-10 minutes) respectively. --> <timeseekbackwardbig>-600</timeseekbackward> <!-- Minimum percentage that has to be played before it is considered for incrementing in the Top 100 database view, or for last.fm submittal --> <playcountminimumpercent>99</playcountminimumpercent> <!-- Whether to use Dynamic Range Compression (DRC) on AC3 streams. 1.0 is \"full\" compression, as defined by the audio track's metadata, which is recommended for \"basic\" sound systems such as the internal speakers on a TV. 0.0 is no compression at all, which is recommended for people with nice multi-speaker sound systems. -1.0 (default) defaults to whatever ffmpeg uses, which is currently the same as 1.0. This has no effect if passthrough is enabled for AC3. --> <applydrc>-1.0</applydrc> <!-- default values for limiter/compressor --> <limiterhold>0.025</limiterhold> <!-- default values for limiter/compressor --> <limiterrelease>0.1</limiterrelease> <!-- This setting is only relevant for Passthrough in the context of resyncing, e.g.; when there is no resampling possible. This value decides after which amount of discontinuity in milliseconds VideoPlayer will ErrorAdjust the Clock. On platforms like Android where the sink delay is just a non exact interpolation, a too small value might cause rare image stutter. The maximum value is 100 ms. A higher value makes no sense cause of A/V issues. This is a last-resort workaround as the root-cause cannot be mitigated 100% [Available from Kodi v20] --> <maxpassthroughoffsyncduration>10</maxpassthroughoffsyncduration> </audio>"
+        - heading "forcedswaptime" [level=3] [ref=f16e718]
+        - paragraph [ref=f16e719]: Use to force a backbuffer->frontbuffer swap while vsync is enabled. Set to the time (in ms) to allow for the swap (e.g. <forcedswaptime>1</forcedswaptime> is typical).
+        - paragraph [ref=f16e720]: "Default: Off"
+        - paragraph [ref=f16e721]
+        - heading "edl" [level=3] [ref=f16e722]
+        - paragraph
+        - generic [ref=f16e724]:
+          - text: "Main page:"
+          - link "Edit_decision_list" [ref=f16e726] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Edit_decision_list
+        - paragraph [ref=f16e727]: Commercial break detection not as good you think it could be? Are some commercial breaks in a series of adverts not being skipped? Are some parts being skipped that are clearly not commercials? Does the end of the previous recording still show? The following advanced settings can be used to better identify full commercial break sequences, remove incorrectly flagged commercial breaks, and have playback start at the actual beginning of the recording.
+        - paragraph [ref=f16e728]
+        - generic [ref=f16e729]: "<edl> <!-- if true, commercial breaks will be merged according to the remaining options. --> <mergeshortcommbreaks>false</mergeshortcommbreaks> <!-- Commercial breaks won't be merged if the total length of the commercial break would be greater than this (seconds) --> <maxcommbreaklength>250</maxcommbreaklength> <!-- After merging, commercial breaks shorter than this will be removed (seconds) --> <mincommbreaklength>90</mincommbreaklength> <!-- Commercial breaks that are further apart than this won't be merged (seconds) --> <maxcommbreakgap>120</maxcommbreakgap> <!-- How long to wait before automatically skipping when the start of a commercial break reached (seconds). Possible values: from -60 to 60--> <commbreakautowait>0</commbreakautowait> <!-- How long to rewind after automatically skipping to the end of the commercial break (seconds). Possible values: from -60 to 60 --> <commbreakautowind>0</commbreakautowind> <!-- Avoid showing the edl commbreak notifications. These are displayed by default --> <displaycommbreaknotifications>false</displaycommbreaknotifications> </edl>"
+        - paragraph [ref=f16e730]: "Notes:"
+        - list [ref=f16e731]:
+          - listitem [ref=f16e732]:
+            - text: displaycommbreaknotifications
+            - superscript [ref=f16e733]:
+              - link "[3]" [ref=f16e734] [cursor=pointer]:
+                - /url: "#cite_note-3"
+        - heading "PVR & Live TV" [level=2] [ref=f16e735]: PVR & Live TV
+        - paragraph [ref=f16e736]: Settings available for PVR, EPG and Live TV. Edit Decision List settings are located in the previous section.
+        - paragraph [ref=f16e737]
+        - heading "pvr" [level=3] [ref=f16e738]
+        - generic [ref=f16e739]: <pvr> <timecorrection>0</timecorrection> <!-- Correct all times (epg tags, timer tags, recording tags) by this amount of minutes. --> <infotoggleinterval>3000</infotoggleinterval> <!-- If there is more than one pvr gui info item available (e.g. multiple recordings active at the same time), use this toggle delay in milliseconds. --> <channeliconsautoscan>true</channeliconsautoscan> <!-- Automatically scan user defined folder for channel icons when loading internal channel groups. --> <autoscaniconsuserset>false</autoscaniconsuserset> <!-- Mark channel icons populated by auto scan as "user set". --> <numericchannelswitchtimeout>1000</numericchannelswitchtimeout> <!-- Time in ms before the numeric dialog auto closes when confirmchannelswitch is disabled. --> </pvr>
+        - paragraph [ref=f16e740]
+        - heading "pvrrecordings" [level=4] [ref=f16e741]
+        - paragraph [ref=f16e742]:
+          - text: In v19 and later, allows users to modify sort type and order of pvr recordings.
+          - superscript [ref=f16e743]:
+            - link "[4]" [ref=f16e744] [cursor=pointer]:
+              - /url: "#cite_note-4"
+        - term [ref=f16e746]: Note- These settings are child tags to the <pvr> tag in the previous section.
+        - generic [ref=f16e747]: <pvr> <pvrrecordings> <sortmethod>2</sortmethod> <!-- 1=Name 2=Date 3=Size 4=File --> <sortorder>2</sortorder> <!-- 1=Ascending 2=Descending --> </pvrrecordings> </pvr>
+        - heading "epg" [level=3] [ref=f16e748]
+        - paragraph
+        - generic [ref=f16e749]: "<epg> <updatecheckinterval>300</updatecheckinterval> <!-- Check every X seconds, if EPG data need to be updated. This does not mean that every X seconds an EPG update is actually triggered, it's just the interval how often to check whether an update should be triggered. If this value is greater than GUI setting 'epg.epgupdate' value, then EPG updates will done with the value specified for 'updatecheckinterval', effectively overriding the GUI setting's value. --> <updateemptytagsinterval>60</updateemptytagsinterval> <!-- If a TV channel has no EPG data, try to obtain data for that channel every X seconds. This overrides the GUI setting 'epg.epgupdate' value, but only for channels without EPG data. If this value is less than 'updatecheckinterval' value, then data update will be done with the interval specified by 'updatecheckinterval'. Example 1: epg.epgupdate = 120 (minutes!), updatecheckinterval = 300, updateemptytagsinterval = 60 => trigger an EPG update for every channel without EPG data every 5 minutes and trigger an EPG update for every channel with EPG data every 2 hours. Example 2: epg.epgupdate = 120 (minutes!), updatecheckinterval = 300, updateemptytagsinterval = 3600 => trigger an EPG update for every channel without EPG data every 2 hours and trigger an EPG update for every channel with EPG data every 1 hour. --> <cleanupinterval>900</cleanupinterval> <!-- remove old entries from the EPG every X seconds --> <activetagcheckinterval>60</activetagcheckinterval> <!-- check for updated active tags every X seconds --> <retryinterruptedupdateinterval>60</retryinterruptedupdateinterval> <!-- retry an interrupted EPG update after X seconds --> <displayupdatepopup>true</displayupdatepopup> <!-- display a progress popup while updating EPG data from clients --> <displayincrementalupdatepopup>false</displayincrementalupdatepopup> <!-- also display a progress popup while doing incremental EPG updates --> </epg>"
+        - paragraph [ref=f16e750]
+        - heading "Video library settings" [level=2] [ref=f16e751]
+        - heading "videoextensions" [level=3] [ref=f16e752]
+        - paragraph [ref=f16e753]: A list of additional file-extensions to allow (add) or exclude (remove) in the My Video windows.
+        - paragraph [ref=f16e754]: "Default extensions for VIDEOS:"
+        - generic [ref=f16e755]: .m4v .3g2 .3gp .nsv .tp .ts .ty .strm .pls .rm .rmvb .mpd .m3u .m3u8 .ifo .mov .qt .divx .xvid .bivx .vob .nrg .img .iso .udf .pva .wmv .asf .asx .ogm .m2v .avi .bin .dat .mpg .mpeg .mp4 .mkv .mk3d .avc .vp3 .svq3 .nuv .viv .dv .fli .flv .001 .wpl .xspf .zip .vdr .dvr-ms .xsp .mts .m2t .m2ts .evo .ogv .sdp .avs .rec .url .pxml .vc1 .h264 .rcv .rss .mpls .mpl .webm .bdmv .bdm .wtv .trp .f4v
+        - paragraph [ref=f16e756]: "Examples:"
+        - generic [ref=f16e757]: <videoextensions> <add>.ex1|.ex2</add> <remove>.ex3|.ex4</remove> </videoextensions>
+        - paragraph [ref=f16e758]
+        - heading "discstubextensions" [level=3] [ref=f16e759]
+        - generic [ref=f16e761]:
+          - text: "Main page:"
+          - link "Media stubs" [ref=f16e763] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Media_stubs
+        - paragraph [ref=f16e764]: "The default filename extension for Disc Stubs is:"
+        - generic [ref=f16e765]: .disc
+        - paragraph [ref=f16e766]: Using the following tags, it is possible to <add> additional or <remove> existing disc stub extensions to better suit your requirements.
+        - generic [ref=f16e767]: <discstubextensions> <add>.disk|.stub</add> <remove>.disc</remove> </discstubextensions>
+        - paragraph [ref=f16e768]
+        - heading "languagecodes" [level=3] [ref=f16e769]
+        - paragraph [ref=f16e770]: User-defined translation table for language codes used in subtitles and audio. It can be used to add, extend or override Kodi's language codes.
+        - paragraph [ref=f16e771]: "How to add a new language code:"
+        - generic [ref=f16e772]: <languagecodes> <code> <short>alt</short> <long>Alternate</long> </code> </languagecodes>
+        - paragraph [ref=f16e773]:
+          - text: "How to add a new language code with subtag (e.g. pt-BR):"
+          - generic [ref=f16e774]: "Note: This support is available from Kodi v20"
+        - generic [ref=f16e775]: <languagecodes> <code> <short>pt-BR</short> <long>Portuguese - Brazil</long> </code> </languagecodes>
+        - paragraph [ref=f16e776]:
+          - text: "NOTE FOR MKV FILES:"
+          - text: MKV files that contain audio/subtitle tracks with language codes with subtags are not yet supported, but from
+          - code [ref=f16e777]: Kodi v21
+          - text: "a workaround was introduced that allows Kodi to recognize language codes with subtags. To use the workaround, you must open the MKV file with an editor and in the metadata of the desired audio/subtitle track, edit the track Name (or Title field) by adding the language code wrapped in curly brackets, as in following example:"
+          - code [ref=f16e778]: "Original track name: Audio portuguese/brazil"
+          - code [ref=f16e779]: "Modified track name: Audio portuguese/brazil {pt-BR}"
+        - paragraph [ref=f16e780]: "How to extend an existing language code:"
+        - paragraph [ref=f16e781]: "Set the same \"long\" description of the existing language, for example we reuse the Portughese language for another language code:"
+        - generic [ref=f16e782]: <languagecodes> <code> <short>pt-BR</short> <long>Portuguese</long> </code> </languagecodes>
+        - paragraph [ref=f16e783]: In this case when in Kodi settings you set the "Portuguese" language, when in playing according to availability the track "pt" or "pt-BR" will be chosen.
+        - paragraph [ref=f16e784]: "How to override an existing language code:"
+        - paragraph [ref=f16e785]: This allow you to rename an existing language. Set to an existing language code your preferred "long" name description.
+        - paragraph [ref=f16e786]: "WARNING: This can cause problems with add-ons, so do not override languages if you are not aware of the side effects."
+        - generic [ref=f16e787]: <languagecodes> <code> <short>en</short> <long>English example</long> </code> <code> <short>en-GB</short> <long>English example</long> </code> </languagecodes>
+        - heading "moviestacking" [level=3] [ref=f16e788]
+        - paragraph
+        - generic [ref=f16e790]:
+          - text: "Main page:"
+          - link "Naming_video_files/Movies" [ref=f16e792] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Naming_video_files/Movies
+        - paragraph [ref=f16e793]:
+          - text: This is used by the
+          - link "file stacking" [ref=f16e794] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Naming_video_files/Movies#Split_Video_Files
+          - text: algorithm to combine multi-part files and contains a list of regular expressions. For stacking videos that are contained in folders, such as VIDEO_TS folders, see
+          - link "<folderstacking>" [ref=f16e796] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Advancedsettings.xml#folderstacking
+        - paragraph [ref=f16e797]: As of v9.11, video stacking regular expressions must contain exactly four (4) capture expressions.
+        - paragraph [ref=f16e798]: "Default:"
+        - generic [ref=f16e799]: <moviestacking> <!-- <cd/dvd/part/pt/disk/disc> <0-N> --> <regexp>(.*?)([ _.-]*(?:cd|dvd|p(?:ar)?t|dis[ck])[ _.-]*[0-9]+)(.*?)(\.[^.]+)$</regexp> <!-- <cd/dvd/part/pt/disk/disc> <a-d> --> <regexp>(.*?)([ _.-]*(?:cd|dvd|p(?:ar)?t|dis[ck])[ _.-]*[a-d])(.*?)(\.[^.]+)$</regexp> <!-- movienamea-xvid.avi, movienameb-xvid.avi --> <regexp>(.*?)([ ._-]*[a-d])(.*?)(\.[^.]+)$</regexp> </moviestacking>
+        - paragraph [ref=f16e800]: If the argument action="append" or append="yes" is supplied, the default moviestacking regular expressions will remain intact and the user specified ones will be added to the end.
+        - paragraph [ref=f16e801]: "Example:"
+        - generic [ref=f16e802]: <moviestacking action="append"> <!-- This expression will match movename1-xvid.avi, moviename2-xvid.avi. Be warned that it will likely stack sequels in a flat directory layout, so it is only recommend in a dir-per-video layout. --> <regexp>(.*?)([ ._-]*[0-9])(.*?)(\.[^.]+)$</regexp> </moviestacking>
+        - paragraph [ref=f16e803]: If the argument action="prepend" is supplied, the default moviestacking regular expressions will remain intact and the user specified ones will be added to the beginning.
+        - paragraph [ref=f16e804]: "Example:"
+        - generic [ref=f16e805]: <moviestacking action="prepend"> <regexp>(Title)(Volume)(Ignore)(Extension)</regexp> </moviestacking>
+        - paragraph [ref=f16e806]: If no argument is supplied, or the argument append="no" is supplied, the default moviestacking regular expressions are overwritten by the user specified ones.
+        - paragraph [ref=f16e807]
+        - heading "folderstacking" [level=3] [ref=f16e808]
+        - generic [ref=f16e810]:
+          - text: "Main page:"
+          - link "Naming_video_files/Movies" [ref=f16e812] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Naming_video_files/Movies
+        - paragraph [ref=f16e813]:
+          - text: This is similar to
+          - link "<moviestacking>" [ref=f16e815] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Advancedsettings.xml#moviestacking
+          - text: ", but is used for videos that are contained in folders that use the folder names to stack, such as VIDEO_TS folders (DVD rips that are not in ISO format)."
+        - paragraph [ref=f16e816]: "Default:"
+        - generic [ref=f16e817]: <folderstacking> <!-- <cd/dvd/disk/disc> <0-N> --> <regexp>((cd|dvd|dis[ck])[0-9]+)$</regexp> </folderstacking>
+        - heading "cleandatetime" [level=3] [ref=f16e818]
+        - paragraph [ref=f16e819]: Matches a year number in a string using a Regular Expression
+        - paragraph [ref=f16e820]: "Default expression:"
+        - generic [ref=f16e821]: <video> <cleandatetime>(.*[^ _\,\.\(\)\[\]\-])[ _\.\(\)\[\]\-]+(19[0-9][0-9]|20[0-9][0-9])([ _\,\.\(\)\[\]\-]|[^0-9]$)?</cleandatetime> </video>
+        - definition [ref=f16e823]:
+          - list [ref=f16e824]:
+            - listitem [ref=f16e825]: The string found before will be used as basis string getting cleaned by the cleanstrings expressions.
+            - listitem [ref=f16e826]: By default date formats like MM:YY are ignored.
+        - heading "cleanstrings" [level=3] [ref=f16e827]
+        - paragraph [ref=f16e828]: Clean unwanted characters from filenames or folders by using a list of Regular Expressions. Please note that everything right of the match (at the end of the file name) is removed, so if you would have a file named Super movie.mp4 and would add <regexp> </regexp> (only a space), the only thing that would be left is Super, which is probably not what you want.
+        - table [ref=f16e829]:
+          - rowgroup [ref=f16e830]:
+            - row "Github Logo.png Code in Github" [ref=f16e831]:
+              - cell "Github Logo.png" [ref=f16e832]:
+                - img "Github Logo.png" [ref=f16e833]
+              - cell "Code in Github" [ref=f16e834]:
+                - link "Code in Github" [ref=f16e837] [cursor=pointer]:
+                  - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/blob/Nexus/xbmc/settings/AdvancedSettings.cpp#L201-L211
+        - paragraph [ref=f16e838]: "Default expressions:"
+        - generic [ref=f16e839]: <video> <cleanstrings> <regexp>([ _\\,\\.\\(\\)\\[\\]\\-](10bit|480p|480i|576p|576i|720p|720i|1080p|1080i|2160p|3d|aac|ac3|aka|atmos|avi|bd5|bdrip|bluray|brrip|cam|cd[1-9]|custom|dc|ddp|divx|divx5|dolbydigital|dolbyvision|dsr|dsrip|dts|dts-hdma|dts-hra|dts-x|dv|dvd|dvd5|dvd9|dvdivx|dvdrip|dvdscr|dvdscreener|extended|fragment|fs|h264|h265|hdr|hdr10|hevc|hddvd|hdrip|hdtv|hdtvrip|hrhd|hrhdtv|internal|limited|multisubs|nfofix|ntsc|ogg|ogm|pal|pdtv|proper|r3|r5|read.nfo|remastered|remux|repack|rerip|retail|screener|se|svcd|tc|telecine|telesync|truehd|ts|uhd|unrated|ws|x264|x265|xvid|xvidvd|xxx|web-dl|webrip|www.www|\\[.*\\])([ _\\,\\.\\(\\)\\[\\]\\-]|$)");</regexp> <regexp>(\[.*\])</regexp> </cleanstrings> </video>
+        - paragraph [ref=f16e840]:
+          - text: Updated in v20
+          - superscript [ref=f16e841]:
+            - link "[5]" [ref=f16e842] [cursor=pointer]:
+              - /url: "#cite_note-5"
+        - definition [ref=f16e844]:
+          - list [ref=f16e845]:
+            - listitem [ref=f16e846]:
+              - text: Arguments action="append" or action="prepend" will insert user specified expressions after, or before, the defaults above. (Further details in
+              - link "moviestacking" [ref=f16e847] [cursor=pointer]:
+                - /url: /web/20240101191552/https://kodi.wiki/view/Advancedsettings.xml#.3Cmoviestacking.3E
+              - text: section)
+        - heading "tvshowmatching" [level=3] [ref=f16e848]
+        - paragraph [ref=f16e849]: Matches the season and episode numbers in file paths by using a list of Regular Expressions
+        - table [ref=f16e850]:
+          - rowgroup [ref=f16e851]:
+            - row "Github Logo.png Code in Github" [ref=f16e852]:
+              - cell "Github Logo.png" [ref=f16e853]:
+                - img "Github Logo.png" [ref=f16e854]
+              - cell "Code in Github" [ref=f16e855]:
+                - link "Code in Github" [ref=f16e858] [cursor=pointer]:
+                  - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/blob/Matrix/xbmc/settings/AdvancedSettings.cpp#L232
+        - paragraph [ref=f16e859]: "Defaults:"
+        - generic [ref=f16e860]: "<tvshowmatching> <regexp>s([0-9]+)[ ._x-]*e([0-9]+(?:(?:[a-i]|\\\\.[1-9])(?![0-9]))?)([^\\\\\\\\/]*)$</regexp> <!-- foo.s01.e01, foo.s01_e01, S01E02 foo, S01 - E02, S01xE02 --> <regexp>[\\._ -]()[Ee][Pp]_?([0-9]+)([^\\\\/]*)$</regexp> <!-- foo.ep01, foo.EP_01 --> <regexp>([0-9]{4})[\\.-]([0-9]{2})[\\.-]([0-9]{2})</regexp> <!-- foo.yyyy.mm.dd.* (byDate=true) --> <regexp>([0-9]{2})[\\.-]([0-9]{2})[\\.-]([0-9]{4})</regexp> <!-- foo.mm.dd.yyyy.* (byDate=true) --> <regexp>[\\\\/\\._ \\[\\(-]([0-9]+)x([0-9]+)([^\\\\/]*)$</regexp> <!-- foo.1x09* or just /1x09* --> <regexp>[\\\\/\\._ -]([0-9]+)([0-9][0-9])([\\._ -][^\\\\/]*)$</regexp> <!-- foo.103*, 103 foo --> <regexp>[\\/._ -]p(?:ar)?t[_. -]()([ivx]+)([._ -][^\\/]*)$</regexp> <!-- Part I, Pt.VI --> </tvshowmatching>"
+        - definition [ref=f16e862]:
+          - list [ref=f16e863]:
+            - listitem [ref=f16e864]:
+              - text: Arguments action="append" or action="prepend" will insert user specified expressions after, or before, the defaults above. (Further details in
+              - link "moviestacking" [ref=f16e865] [cursor=pointer]:
+                - /url: /web/20240101191552/https://kodi.wiki/view/Advancedsettings.xml#.3Cmoviestacking.3E
+              - text: section)
+            - listitem [ref=f16e866]: Paths are converted to lower case before matching.
+            - listitem [ref=f16e867]: For multi-episode matching to work, there needs to be a third set of parentheses '()' at the end, this part is fed back into the regexp engine.
+            - listitem [ref=f16e868]:
+              - text: A
+              - link "forum thread" [ref=f16e869] [cursor=pointer]:
+                - /url: https://web.archive.org/web/20240101191552/https://forum.kodi.tv/showthread.php?tid=51614
+              - text: has a discussion of pre-made regex lists to match common names. These might improve Kodi's ability to match TV show names in some situations, at the risk of additional false positives.
+        - heading "Filenames without Season" [level=4] [ref=f16e870]
+        - paragraph [ref=f16e871]: There are two methods to add episodes without a season in their file path. Both ways will force the season to '1' by default, so that you can use the 'Use Absolute Ordering (Single Season)' setting from the TheTvDb.com scraper.
+        - generic [ref=f16e872]:
+          - term [ref=f16e873]: Simple Method (XBMC v9.11 onwards and Kodi)
+          - definition [ref=f16e874]: Use only one pair of parentheses
+        - generic [ref=f16e875]: <regexp>[/\._ \-]([0-9]+)</regexp>
+        - generic [ref=f16e876]:
+          - term [ref=f16e877]: Advanced Method (XBMC v10.05 onwards and Kodi)
+          - definition [ref=f16e878]: Supports multi-episode files without season
+          - definition [ref=f16e879]: Use an empty pair of parentheses for the season
+        - generic [ref=f16e880]: <regexp>[/\._ \-]()([0-9]+)(-[0-9]+)?</regexp>
+        - term [ref=f16e882]: Specifying Default Season (XBMC v12.0 onwards and Kodi)
+        - paragraph [ref=f16e883]: It is possible to set the default season for specific regular expressions by setting the 'defaultseason' attribute.
+        - generic [ref=f16e884]:
+          - definition [ref=f16e885]: Works with both the simple method and advanced method
+          - definition [ref=f16e886]: If not used, the season will be set to '1'
+          - definition [ref=f16e887]: Useful for setting specials to season '0'
+        - generic [ref=f16e888]: <regexp defaultseason="0">[/\._ \-]X()([0-9]+)(-[0-9]+)?</regexp> <regexp defaultseason="1">[/\._ \-]E()([0-9]+)(-[0-9]+)?</regexp>
+        - heading "tvmultipartmatching" [level=3] [ref=f16e889]
+        - paragraph [ref=f16e890]: Matches a multipart episode number based on a previously identified episode file, using a list of Regular Expressions.
+        - paragraph [ref=f16e891]: "Default:"
+        - generic [ref=f16e892]: <tvmultipartmatching>^[-_ex]+([0-9]+(?:(?:[a-i]|\\.[1-9])(?![0-9]))?)</tvmultipartmatching>
+        - definition [ref=f16e894]:
+          - list [ref=f16e895]:
+            - listitem [ref=f16e896]: Text matching is compared case-insensitive.
+            - listitem [ref=f16e897]: Specifying this option replaces the default value
+        - heading "excludefromscan" [level=3] [ref=f16e898]
+        - paragraph [ref=f16e899]: Matches filenames or folders which should be excluded from a library scan (except tvshows) using a list of Regular Expressions. This can be for both Video or Audio sections of advancedsettings.xml.
+        - paragraph [ref=f16e900]: "Defaults:"
+        - generic [ref=f16e901]: <video> <excludefromscan> <regexp>-trailer</regexp> <regexp>[!-._ \\/]sample[-._ \\/]</regexp> </excludefromscan> </video>
+        - definition [ref=f16e903]:
+          - list [ref=f16e904]:
+            - listitem [ref=f16e905]:
+              - text: Arguments action="append" or action="prepend" will insert user specified expressions after, or before, the defaults above. (Further details in
+              - link "moviestacking" [ref=f16e906] [cursor=pointer]:
+                - /url: /web/20240101191552/https://kodi.wiki/view/Advancedsettings.xml#.3Cmoviestacking.3E
+              - text: section)
+        - heading "excludefromlisting" [level=3] [ref=f16e907]
+        - paragraph
+        - generic [ref=f16e908]: <video> <excludefromlisting> <!-- Regular expressions that if evaluated to true won't be displayed in Files View --> <regexp>[-\._ ](sample|trailer)[-\._ ]</regexp> </excludefromlisting> </video>
+        - heading "excludetvshowsfromscan" [level=3] [ref=f16e909]
+        - paragraph [ref=f16e910]: Matches filenames or folders which should be excluded from a tvshow library scan using a list of Regular Expressions
+        - paragraph [ref=f16e911]: "Defaults:"
+        - generic [ref=f16e912]: <video> <excludetvshowsfromscan> <regexp>[!-._ \\/]sample[-._ \\/]</regexp> </excludetvshowsfromscan> </video>
+        - definition [ref=f16e914]:
+          - list [ref=f16e915]:
+            - listitem [ref=f16e916]:
+              - text: Arguments action="append" or action="prepend" will insert user specified expressions after, or before, the defaults above. (Further details in
+              - link "moviestacking" [ref=f16e917] [cursor=pointer]:
+                - /url: /web/20240101191552/https://kodi.wiki/view/Advancedsettings.xml#.3Cmoviestacking.3E
+              - text: section)
+        - heading "trailermatching" [level=3] [ref=f16e918]
+        - paragraph [ref=f16e919]: Contains Regular Expression syntax to match the locally stored trailers to movies in the library.
+        - generic [ref=f16e920]: <trailermatching> <!-- This regexp will match moviename_Trailer.avi --> <regexp>(.*?)(_Trailer)(\.[^.]+)$</regexp> </trailermatching>
+        - heading "videolibrary" [level=3] [ref=f16e921]
+        - paragraph [ref=f16e922]: Options specific to the Video Library
+        - paragraph [ref=f16e923]:
+          - generic [ref=f16e924]:
+            - text: "Note: Kodi v20 users don't need set \"importwatched\" or \"importresumepoint\" to true anymore as that's the default then"
+            - superscript [ref=f16e925]:
+              - link "[6]" [ref=f16e926] [cursor=pointer]:
+                - /url: "#cite_note-6"
+        - generic [ref=f16e927]: <videolibrary> <allitemsonbottom>false</allitemsonbottom> <!-- sorts the "*All" items at the bottom of the list when in Ascending order --> <cleanonupdate>false</cleanonupdate> <!-- default set to false to prevent Kodi from removing items from the database while updating. --> <usefasthash>true</usefasthash> <!-- defaults to true. Set to false in order to skip hashing based on the folders modification time. --> <recentlyaddeditems>35</recentlyaddeditems> <!-- number of recently added items. Defaults to 25 --> <itemseparator> / </itemseparator> <!-- separator used for multiple artists/genres in tags. Note, this is *space* *slash* *space* --> <exportautothumbs>false</exportautothumbs> <!-- export auto-generated thumbs. Defaults to false --> <importwatchedstate>false</importwatchedstate> <!-- import previously exported playdate and playcount from .nfo files. Defaults to false --> <importresumepoint>false</importresumepoint> <!-- import previously exported resume point from .nfo files. Defaults to false --> <dateadded>1</dateadded> <!-- 0 results in using the current datetime when adding a video; 1 (default) results in prefering to use the files mtime (if it's valid) and only using the file's ctime if the mtime isn't valid; 2 results in using the newer datetime of the file's mtime and ctime --> </videolibrary>
+        - heading "videoscanner" [level=3] [ref=f16e928]
+        - paragraph [ref=f16e929]: Options specific to the Video scanner
+        - generic [ref=f16e930]: <videoscanner> <ignoreerrors>true</ignoreerrors> <!-- Set to true to silently ignore errors while scanning videos. This prevents the error dialogue box, so you don't have to keep hitting "yes" to keep scanning.--> </videoscanner>
+        - heading "Library artwork" [level=2] [ref=f16e931]
+        - paragraph [ref=f16e932]:
+          - generic [ref=f16e933]: "Note: Using <imageres>9999</imageres> and <fanartres>9999</fanartres> will allow caching artwork at original size."
+        - heading "imageres" [level=3] [ref=f16e934]
+        - paragraph
+        - paragraph [ref=f16e935]:
+          - text: Specify the maximum resolution that
+          - link "cached artwork" [ref=f16e936] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Artwork/Cache#Texture_optimization
+          - text: (other than fanart / 16:9 images) should be resized to in pixels. The width is automatically calculated as being 16/9*height. The image will be resized to fit within this size. e.g. an image that is 2000x500 will be cached at size 1280x320. An image that is 500x800 will be cached at size 450x720 using the default value of 720.
+        - generic [ref=f16e937]: <imageres>720</imageres>
+        - heading "fanartres" [level=3] [ref=f16e938]
+        - paragraph
+        - paragraph [ref=f16e939]:
+          - text: Specify the maximum resolution that
+          - link "cached fanart" [ref=f16e940] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Artwork/Cache#Texture_optimization
+          - text: should be resized to in pixels. The width is automatically calculated as being 16/9*height. Only images that are exactly 16x9 and equal to or greater than this resolution will be cached at this size - all other images will be cached using <imageres>. The default value is 1080.
+        - generic [ref=f16e941]: <fanartres>1080</fanartres>
+        - heading "imagescalingalgorithm" [level=3] [ref=f16e942]
+        - paragraph [ref=f16e943]:
+          - text: Specify the image scaling algorithm for image resizing when
+          - link "caching artwork" [ref=f16e944] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Artwork/Cache#Texture_optimization
+          - text: to the local texture cache.
+        - generic [ref=f16e945]: <imagescalingalgorithm>bicubic</imagescalingalgorithm>
+        - paragraph [ref=f16e946]:
+          - link "Available image scaling algorithms" [ref=f16e947] [cursor=pointer]:
+            - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/blob/master/xbmc/pictures/PictureScalingAlgorithm.cpp#L20-L32
+        - generic [ref=f16e948]: fast_bilinear bilinear bicubic experimental nearest_neighbor averaging_area bicublin gaussian sinc lanczos bicubic_spline
+        - heading "imagequalityjpeg" [level=3] [ref=f16e949]
+        - paragraph [ref=f16e950]:
+          - text: This specifies the quality of the images when stored in jpeg format. By default kodi uses a quality of 4 which is a good compromise between size and quality. If you want to reduce the thumbnail sizes (decreasing quality) choose a higher value up to 21. If high quality (large thumbnail size) is needed, chose a smaller value, e.g. 0,1,2 or 3. (Added in v20
+          - superscript [ref=f16e951]:
+            - link "[7]" [ref=f16e952] [cursor=pointer]:
+              - /url: "#cite_note-7"
+          - text: )
+        - generic [ref=f16e953]: <imagequalityjpeg>4</imagequalityjpeg>
+        - heading "Video and music library settings" [level=2] [ref=f16e954]
+        - heading "playlistasfolders" [level=3] [ref=f16e955]
+        - paragraph [ref=f16e956]: In the recent releases, playlists are treated as folders. Selecting a playlist no longer plays it, but opens it, as if it were a folder.
+        - paragraph [ref=f16e957]: Set to false to revert to the previous behaviour. When you select a playlist, its content is added to the list of elements to be played.
+        - definition [ref=f16e959]:
+          - generic [ref=f16e960]: "Note: This setting will not affect smart playlists, they will always show as folders."
+        - term [ref=f16e962]: Example
+        - generic [ref=f16e963]: <playlistasfolders>true</playlistasfolders>
+        - heading "playlistretries" [level=3] [ref=f16e964]
+        - paragraph [ref=f16e965]: The number of retries attempted if a source is offline. With this control you can alter the number of consecutive failed items before a playlist fails.
+        - paragraph [ref=f16e966]: "Default:"
+        - generic [ref=f16e967]: <playlistretries>100</playlistretries>
+        - heading "playlisttimeout" [level=3] [ref=f16e968]
+        - paragraph [ref=f16e969]: The timeout, in seconds, before item failure.
+        - paragraph [ref=f16e970]: "Default:"
+        - generic [ref=f16e971]: <playlisttimeout>20</playlisttimeout>
+        - paragraph [ref=f16e972]
+        - heading "sorttokens" [level=3] [ref=f16e973]
+        - paragraph [ref=f16e974]:
+          - text: Allows you to specify additional tokens that will be ignored at the start of lines during sorting.
+          - generic [ref=f16e975]: "Note: Sort tokens are case sensitive."
+        - generic [ref=f16e976]: <sorttokens> <token>the</token> </sorttokens>
+        - paragraph [ref=f16e977]: In the above example "the ", "the." and "the_" will be ignored at the start of titles or names when sorting items, in both video and music libraries. A separator can also be specified, for example
+        - generic [ref=f16e978]: <sorttokens> <token separators="'">L</token> </sorttokens>
+        - paragraph [ref=f16e979]: In that case the value L', as in French movie name L'argent, will be ignored and the item listed under "A".
+        - paragraph [ref=f16e980]
+        - heading "musicdatabase/videodatabase" [level=3] [ref=f16e981]: musicdatabase/videodatabase
+        - paragraph
+        - generic [ref=f16e983]:
+          - text: "Main page:"
+          - link "MySQL" [ref=f16e985] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/MySQL
+        - paragraph [ref=f16e986]: Allows advanced customization of the default database settings for music, video, TV, EPG, and ADSP databases.
+        - definition [ref=f16e988]:
+          - generic [ref=f16e989]: "Note: It is HIGHLY recommended that you not attempt to place an sqlite3 database outside of kodi's path. sqlite3 contains no filesystem abstraction, so this will plain break on any non-local (as far as Kodi is concerned) paths. Use this for mysql only."
+        - paragraph [ref=f16e990]: "Parent tags:"
+        - paragraph [ref=f16e991]
+        - list [ref=f16e992]:
+          - listitem [ref=f16e993]: <videodatabase>
+          - listitem [ref=f16e994]: <musicdatabase>
+          - listitem [ref=f16e995]: <tvdatabase> - Highly experimental/unstable and no practical benefit for most users. Avoid using.
+          - listitem [ref=f16e996]: <epgdatabase> - Highly experimental/unstable and no practical benefit for most users. Avoid using.
+          - listitem [ref=f16e997]: <adspdatabase> - Highly experimental/unstable and no practical benefit for most users. Avoid using.
+        - table [ref=f16e998]:
+          - rowgroup [ref=f16e999]:
+            - row "Stop hand.png Kodi also supports using MySQL for PVR (tvdatabase and epgdatabase) as well as the ADSP database. However, there is little to no practical benefit to using MySQL for those databases, and there has been very little testing with them (expect bugs!). Unless you simply want to experiment, or have a very specific need, you should avoid using MySQL for PVR and ADSP." [ref=f16e1000]:
+              - cell "Stop hand.png" [ref=f16e1001]:
+                - img "Stop hand.png" [ref=f16e1002]
+              - cell "Kodi also supports using MySQL for PVR (tvdatabase and epgdatabase) as well as the ADSP database. However, there is little to no practical benefit to using MySQL for those databases, and there has been very little testing with them (expect bugs!). Unless you simply want to experiment, or have a very specific need, you should avoid using MySQL for PVR and ADSP." [ref=f16e1003]
+        - paragraph [ref=f16e1004]
+        - paragraph [ref=f16e1005]: "Child tags:"
+        - paragraph [ref=f16e1006]
+        - generic [ref=f16e1007]:
+          - term [ref=f16e1008]: <type>
+          - definition [ref=f16e1009]: "Required - Can be either \"sqlite3\" or \"mysql\" (default: sqlite3)"
+        - paragraph [ref=f16e1010]
+        - generic [ref=f16e1011]:
+          - term [ref=f16e1012]: <host>
+          - definition [ref=f16e1013]: Required -
+        - list [ref=f16e1014]:
+          - listitem [ref=f16e1015]: "sqlite3: defines the relative path to the database file (eg. /usr/local/kodi/databases)."
+          - listitem [ref=f16e1016]: "mysql: defines the host of the mysql socket (eg. localhost, 192.168.0.1, etc)"
+        - paragraph [ref=f16e1017]
+        - generic [ref=f16e1018]:
+          - term [ref=f16e1019]: <port>
+          - definition [ref=f16e1020]: Optional -
+        - list [ref=f16e1021]:
+          - listitem [ref=f16e1022]: "sqlite3: silently ignored"
+          - listitem [ref=f16e1023]: "mysql: defines the port of the mysql socket (default: 3306)"
+        - paragraph [ref=f16e1024]
+        - generic [ref=f16e1025]:
+          - term [ref=f16e1026]: <name>
+          - definition [ref=f16e1027]: Optional -
+          - definition [ref=f16e1028]: by default "MyVideos"+DB number will be used.
+        - list [ref=f16e1029]:
+          - listitem [ref=f16e1030]: "sqlite3: defines the name of the database file to read from, excluding the \".db\" extension."
+          - listitem [ref=f16e1031]: "mysql: defines the name of the database to use"
+        - paragraph [ref=f16e1032]
+        - generic [ref=f16e1033]:
+          - term [ref=f16e1034]: <user>
+          - definition [ref=f16e1035]: Required for MySQL -
+        - list [ref=f16e1036]:
+          - listitem [ref=f16e1037]: "sqlite3: silently ignored"
+          - listitem [ref=f16e1038]: "mysql: defines the user with privileged access to the database"
+        - paragraph [ref=f16e1039]
+        - generic [ref=f16e1040]:
+          - term [ref=f16e1041]: <pass>
+          - definition [ref=f16e1042]: Required for MySQL -
+        - list [ref=f16e1043]:
+          - listitem [ref=f16e1044]: "sqlite3: silently ignored"
+          - listitem [ref=f16e1045]: "mysql: defines the password for the user with privileged access to the database"
+        - paragraph [ref=f16e1046]
+        - generic [ref=f16e1047]:
+          - term [ref=f16e1048]: <compression>
+          - definition [ref=f16e1049]:
+            - text: Optional - Defaults to false. Set to "true" to enable MySQL compression protocol. Performance benefit is going to be largely dependent on the network bandwidth, latency between database and clients and on the size of the result sets.
+            - link "[1]" [ref=f16e1050] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/6484
+          - definition [ref=f16e1051]:
+            - generic [ref=f16e1052]: "Note: Slower clients (such as the RPi and others) won't benefit from it as the zlib de-compression overhead is higher than the actual compression savings"
+        - paragraph [ref=f16e1053]
+        - generic [ref=f16e1054]:
+          - term [ref=f16e1055]: <key>
+          - definition [ref=f16e1056]:
+            - text: Optional - SSL setting for MySQL
+            - link "[2]" [ref=f16e1057] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/2566
+        - generic [ref=f16e1058]:
+          - term [ref=f16e1059]: <cert>
+          - definition [ref=f16e1060]:
+            - text: Optional - SSL setting for MySQL
+            - link "[3]" [ref=f16e1061] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/2566
+        - generic [ref=f16e1062]:
+          - term [ref=f16e1063]: <ca>
+          - definition [ref=f16e1064]:
+            - text: Optional - SSL setting for MySQL
+            - link "[4]" [ref=f16e1065] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/2566
+        - generic [ref=f16e1066]:
+          - term [ref=f16e1067]: <capath>
+          - definition [ref=f16e1068]:
+            - text: Optional - SSL setting for MySQL
+            - link "[5]" [ref=f16e1069] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/2566
+        - generic [ref=f16e1070]:
+          - term [ref=f16e1071]: <ciphers>
+          - definition [ref=f16e1072]:
+            - text: Optional - SSL setting for MySQL
+            - link "[6]" [ref=f16e1073] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/2566
+        - paragraph [ref=f16e1074]: "Examples:"
+        - paragraph [ref=f16e1075]: 1) Configure a database for MySQL.
+        - definition [ref=f16e1077]:
+          - generic [ref=f16e1078]:
+            - text: "Note:"
+            - generic [ref=f16e1079]: The <videodatabase>, <musicdatabase>, <tvdatabase>, <epgdatabase>, and <adspdatabase> tags are interchangeable here.
+        - generic [ref=f16e1080]: <videodatabase> <type>mysql</type> <host>192.168.0.10</host> <name>kodi_video</name> <user>kodi</user> <pass>kodi</pass> </videodatabase>
+        - paragraph [ref=f16e1081]: 2) Configure a database for an sqlite database.
+        - definition [ref=f16e1083]:
+          - generic [ref=f16e1084]:
+            - text: "Note:"
+            - generic [ref=f16e1085]: The <videodatabase>, <musicdatabase>, <tvdatabase>, <epgdatabase>, and <adspdatabase> tags are interchangeable here.
+        - generic [ref=f16e1086]: <musicdatabase> <type>sqlite3</type> <host>/usr/local/share/kodi/databases</host> </musicdatabase>
+        - paragraph [ref=f16e1087]
+        - heading "externalplayer" [level=3] [ref=f16e1088]
+        - paragraph
+        - definition [ref=f16e1090]:
+          - generic [ref=f16e1091]:
+            - text: "See:"
+            - link "External players" [ref=f16e1093] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/External_players
+        - heading "Music settings" [level=2] [ref=f16e1094]
+        - heading "musicextensions" [level=3] [ref=f16e1095]
+        - paragraph
+        - paragraph [ref=f16e1096]: "Default extensions for MUSIC:"
+        - generic [ref=f16e1097]: .nsv .m4a .flac .aac .strm .pls .rm .rma .mpa .wav .wma .ogg .mp3 .mp2 .m3u .gdm .imf .m15 .sfx .uni .ac3 .dts .cue .aif .aiff .wpl .xspf .ape .mac .mpc .mp+ .mpp .shn .zip .wv .dsp .xsp .xwav .waa .wvs .wam .gcm .idsp .mpdsp .mss .spt .rsd .sap .cmc .cmr .dmc .mpt .mpd .rmt .tmc .tm8 .tm2 .oga .url .pxml .tta .rss .wtv .mka .tak .opus .dff .dsf .m4b .dtshd
+        - paragraph [ref=f16e1098]: It is possible to add or remove extensions for Music, using the following XML tags. Useful if you keep, say, FLAC and mp3 versions of music in the same folder. The <remove> tag can be used to remove mp3 from being listed in the library, leaving only the higher quality FLAC being displayed.
+        - generic [ref=f16e1099]: <musicextensions> <add>.ex1|.ex2</add> <remove>.ex3|.ex4</remove> </musicextensions>
+        - paragraph [ref=f16e1100]
+        - heading "cddbaddress" [level=3] [ref=f16e1101]
+        - paragraph [ref=f16e1102]: The address of the online CDDb database. You may set this to another freedb mirror if there is a more suitable one.
+        - paragraph [ref=f16e1103]: "Default:"
+        - generic [ref=f16e1104]: <cddbaddress>freedb.freedb.org</cddbaddress>
+        - heading "songinfoduration" [level=3] [ref=f16e1105]
+        - paragraph [ref=f16e1106]: This controls how long the song information will remain onscreen when the song changes during visualisations. The valid range is "1" to "Indefinite (0)", in seconds. This does not include the duration of any transition effects.
+        - paragraph [ref=f16e1107]: "Default:"
+        - generic [ref=f16e1108]: <songinfoduration>10</songinfoduration>
+        - heading "musicfilenamefilters" [level=3] [ref=f16e1109]
+        - paragraph [ref=f16e1110]: "Contains filters to match music information (artist, title etc.) from a tag-less music filename. The first <filter> to match completely is used. Matched items include:"
+        - generic [ref=f16e1111]: "%A - Artist %T - Title %B - Album %N - Track number %S - Part of set (disk number) %D - Duration %G - Genre %Y - Year %R - Rating"
+        - paragraph [ref=f16e1112]: "Example:"
+        - generic [ref=f16e1113]: <musicfilenamefilters> <filter>%A - %T</filter> </musicfilenamefilters>
+        - heading "musiclibrary" [level=3] [ref=f16e1114]
+        - paragraph [ref=f16e1115]: Options specific to the Music Library
+        - generic [ref=f16e1116]: <musiclibrary> <allitemsonbottom>true</allitemsonbottom> <!-- sorts the "*All" items at the bottom of the list when in Ascending order --> <cleanonupdate>false</cleanonupdate> <!-- default set to false to prevent Kodi from removing items from the database while updating. --> <recentlyaddeditems>35</recentlyaddeditems> <!-- number of recently added items. Defaults to 25 --> <albumformat>%B - %Y</albumformat> <!-- album label template, default is "%B" --> <prioritiseapetags>true</prioritiseapetags> <!-- prioritise APEv2 tags over ID3v1/2 tags, default is false. --> <itemseparator> / </itemseparator> <!-- separator used for multiple artists/genres in tags. Note, this is *space* *slash* *space* See Note below--> <artistseparators> <!-- separator used for multiple artists. Note that spaces are used for some separators. See Note below--> <separator>;</separator> <separator>:</separator> <separator>|</separator> <separator> feat. </separator> <separator> ft. </separator> </artistseparators> <dateadded>1</dateadded> <!--0 results in using the current datetime when adding a song; 1 (default) results in prefering to use the files mtime (if it's valid) and only using the file's ctime if the mtime isn't valid; 2 results in using the newer datetime of the file's mtime and ctime --> <!-- New for v19 and later releases --> <useisodates>false</useisodates> <!-- When "true" all dates displayed in the music library will be in ISO 8601 format (YYYY-MM-DD or part thereof). Defaults to "false" (use localized dates) --> </musiclibrary>
+        - paragraph [ref=f16e1117]:
+          - generic [ref=f16e1118]: "Note: Changing the <itemseparator> or <artistseparators> will only affect newly added items. A rescan won't change the existing ones. Remove the Source(s) or delete the Music DB and rebuild. This process should be made easier from v18 and up using <promptfulltagscan>"
+        - heading "Photos settings" [level=2] [ref=f16e1119]
+        - heading "pictureextensions" [level=3] [ref=f16e1120]
+        - paragraph [ref=f16e1121]: A list of additional file-extensions to allow (add) or exclude (remove) in the My Pictures window.
+        - paragraph [ref=f16e1122]: "Default extensions for PICTURES:"
+        - generic [ref=f16e1123]: .png .jpg .jpeg .bmp .gif .ico .tif .tiff .tga .pcx .cbz .zip .rss .webp .jp2 .apng
+        - paragraph [ref=f16e1124]: "Examples:"
+        - generic [ref=f16e1125]: <pictureextensions> <add>.ex1|.ex2</add> <remove>.ex3|.ex4</remove> </pictureextensions>
+        - heading "pictureexcludes" [level=3] [ref=f16e1126]
+        - paragraph [ref=f16e1127]: Matches filenames or folders which should be excluded from being displayed in My Pictures using a list of Regular Expressions
+        - generic [ref=f16e1128]: <pictureexcludes> <!-- Regular expressions that if evaluated to true won't be displayed in My Pictures --> <regexp>small</regexp> <regexp>[-\._ ](sample|trailer)[-\._ ]</regexp> </pictureexcludes>
+        - heading "slideshow" [level=3] [ref=f16e1129]
+        - paragraph
+        - generic [ref=f16e1130]: <slideshow> <!-- Amount to pan images as a percentage of the screen --> <panamount>2.5</panamount> <!-- Amount to zoom images as a percentage of the screen --> <zoomamount>5.0</zoomamount> <!-- Amount to compensate (zoom) images to attempt to reduce black bars. --> <!-- Results in cropping of the longer length of the image in order to reduce the black bars on the shorter length of the image. --> <!-- Defaults to 20. --> <blackbarcompensation>20</blackbarcompensation> </slideshow>
+        - heading "Network settings" [level=2] [ref=f16e1131]
+        - heading "ftp" [level=3] [ref=f16e1132]
+        - paragraph [ref=f16e1133]: Specific settings if a ftp server is in use as a source
+        - generic [ref=f16e1134]: <ftp> <remotethumbs>true</remotethumbs> <!-- enable extraction of flag and thumb for ftp --> </ftp>
+        - heading "samba" [level=3] [ref=f16e1135]
+        - paragraph
+        - generic [ref=f16e1136]: <samba> <doscodepage></doscodepage> <!-- code page to use for filenames --> <clienttimeout>10</clienttimeout> <!-- timeout (in seconds) --> <statfiles>true</statfiles> <!-- Set to false to disable smb stat() on files to speed up listings of large directories (over slow links) --> </samba>
+        - heading "hosts" [level=3] [ref=f16e1137]
+        - paragraph [ref=f16e1138]: Static dns entries which take precedence over your dns server.
+        - generic [ref=f16e1139]: <hosts> <entry name="HOSTNAME">IPADDRESS</entry> </hosts>
+        - heading "network" [level=3] [ref=f16e1140]
+        - paragraph
+        - generic [ref=f16e1141]: "<network> <curlclienttimeout>10</curlclienttimeout> <!-- Timeout in seconds for libcurl (http/ftp) connections --> <curllowspeedtime>20</curllowspeedtime> <!-- Time in seconds for libcurl to consider a connection lowspeed --> <curlretries>2</curlretries> <!-- Amount of retries for certain failed libcurl operations (e.g. timeout) --> <httpproxyusername></httpproxyusername> <!-- username for Basic Proxy Authentication --> <httpproxypassword></httpproxypassword> <!-- password for Basic Proxy Authentication --> <disableipv6>false</disableipv6> <!-- Certain hardware/OS combinations have trouble with ipv6. Set \"true\" to disable --> <disablehttp2>false</disablehttp2> <!-- Added in v19- Allows disabling HTTP2 for broken Curl / HTTP2 servers --> <nfstimeout>30</nfstimeout> <!-- Added in v19- Timeout in seconds for NFS access, 0 = wait forever (previous behaviour) default is 5s --> <catrustfile>filepath</catrustfile> <!-- Added in v19- Allows specifying a custom SSL CA trust store bundle. e.g. special://masterprofile/cacerts.pem --> <curlkeepaliveinterval>30</curlkeepaliveinterval> <!-- Added in v19- Enable TCP keepalive probes in curl --> <nfsretries>0</nfsretries> <!-- 0 to disable, default: -1 (unlimited) Added in v20--> </network>"
+        - paragraph [ref=f16e1142]: "More information:"
+        - list [ref=f16e1143]:
+          - listitem [ref=f16e1144]:
+            - text: <curlkeepaliveinterval>
+            - superscript [ref=f16e1145]:
+              - link "[8]" [ref=f16e1146] [cursor=pointer]:
+                - /url: "#cite_note-8"
+          - listitem [ref=f16e1147]:
+            - text: <nfsretries>
+            - superscript [ref=f16e1148]:
+              - link "[9]" [ref=f16e1149] [cursor=pointer]:
+                - /url: "#cite_note-9"
+        - heading "cache" [level=3] [ref=f16e1150]
+        - generic [ref=f16e1151]:
+          - text: "See also:"
+          - link "HOW-TO:Modify_the_video_cache" [ref=f16e1153] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/HOW-TO:Modify_the_video_cache
+        - generic [ref=f16e1154]: "<cache> <memorysize>0</memorysize> <!-- Number of bytes used for buffering streams in memory when set to 0 the cache will be written to disk instead of RAM --> <buffermode>0</buffermode> <!-- Choose what to buffer: 0) Buffer all internet filesystems (like \"2\" but additionally also ftp, webdav, etc.) 1) Buffer all filesystems (including local) (default since Kodi 19) 2) Only buffer true internet filesystems (streams) (http, https, etc.) 3) No buffer 4) Buffer all network filesystems (incl. smb, nfs, etc.) --> <readfactor>4.0</readfactor> <!-- This factor determines the max readrate in terms of readfactor * avg bitrate of a video file. This can help on bad connections to keep the cache filled. It will also greatly speed up buffering. Default value 4.0. --> <chunksize>65536</chunksize> <!-- Filesystem like e.g. NFS might not properly receive the server's max read chunk values and therefore end up with a very low default, causing issues during Cache filling and buffering. This values can be tuned between 256 Bytes and 1048576 Bytes. Depending on the filesystem this value is overwritten by e.g. FileCache implementation when another default is appropriate --> </cache>"
+        - heading "airtunesport" [level=3] [ref=f16e1155]
+        - paragraph [ref=f16e1156]: This overwrites the defalt listening port of the AirTunes server (announced via zeroconf).
+        - paragraph [ref=f16e1157]
+        - heading "airplayport" [level=3] [ref=f16e1158]
+        - paragraph [ref=f16e1159]: This overwrites the default listening port of the AirPlay server (announced via zeroconf).
+        - paragraph [ref=f16e1160]
+        - heading "File system settings" [level=2] [ref=f16e1161]
+        - heading "packagefoldersize" [level=3] [ref=f16e1162]
+        - paragraph [ref=f16e1163]: <packagefoldersize>options</packagefoldersize>
+        - paragraph [ref=f16e1164]:
+          - text: The amount (in megabytes) of add-on zip packages saved from previous add-on installs. These packages are mainly used for the
+          - link "add-on" [ref=f16e1165] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Add-ons
+          - text: rollback feature. Increasing the size should increase the amount of past versions saved. Defaults to 200 MB.
+        - paragraph [ref=f16e1166]: "Example:"
+        - generic [ref=f16e1167]: <packagefoldersize>200</packagefoldersize> <!-- this example would keep up to 200MB of add-on packages. -->
+        - paragraph [ref=f16e1168]
+        - heading "detectasudf" [level=3] [ref=f16e1169]
+        - paragraph [ref=f16e1170]: <detectasudf>options</detectasudf>
+        - paragraph [ref=f16e1171]: Set to true if you wish to detect joint ISO9660/UDF disks as UDF.
+        - paragraph [ref=f16e1172]: "Main options:"
+        - paragraph [ref=f16e1173]:
+          - text: true, false
+          - text: "Example:"
+        - generic [ref=f16e1174]: <detectasudf>false</detectasudf>
+        - paragraph [ref=f16e1175]
+        - heading "handlemounting" [level=3] [ref=f16e1176]
+        - paragraph [ref=f16e1177]: <handlemounting>options</handlemounting>
+        - paragraph [ref=f16e1178]:
+          - text: Only used in Linux, it defines if Kodi should attempt to mount media drives (via udisks or udisks2).
+          - text: "Default: False. If kodi is executed with the --standalone option (e.g. as done by kodi-standalone.sh) it by default will be True."
+        - paragraph [ref=f16e1179]: "Main options:"
+        - paragraph [ref=f16e1180]:
+          - text: true, false
+          - text: "Example:"
+        - generic [ref=f16e1181]: <handlemounting>false</handlemounting>
+        - paragraph [ref=f16e1182]
+        - heading "automountopticalmedia" [level=3] [ref=f16e1183]
+        - paragraph [ref=f16e1184]: <automountopticalmedia>options</automountopticalmedia>
+        - paragraph [ref=f16e1185]:
+          - text: Only used in linux for the udisks and udisks2 providers
+          - text: defines if kodi should automount optical discs
+          - superscript [ref=f16e1186]:
+            - link "[10]" [ref=f16e1187] [cursor=pointer]:
+              - /url: "#cite_note-10"
+        - paragraph [ref=f16e1188]: "Main options:"
+        - paragraph [ref=f16e1189]:
+          - text: true, false
+          - text: "Example:"
+        - generic [ref=f16e1190]: <automountopticalmedia>true</automountopticalmedia>
+        - paragraph [ref=f16e1191]
+        - heading "pathsubstitution" [level=3] [ref=f16e1192]
+        - paragraph
+        - generic [ref=f16e1194]:
+          - text: "Main page:"
+          - link "Path substitution" [ref=f16e1196] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Path_substitution
+        - generic [ref=f16e1197]: "Note: Path substition for \"sources\" and profiles is broken, and will NOT be fixed."
+        - paragraph [ref=f16e1198]: Path substitutions are for use for redirecting file paths. These are processed in order, and are useful for substituting an absolute path on a PC with a path suitable for Kodi to handle.
+        - paragraph [ref=f16e1199]: "Default: No path substitutions defined."
+        - paragraph [ref=f16e1200]: "Example:"
+        - generic [ref=f16e1201]: <pathsubstitution> <substitute> <from>G:\dvds\</from> <to>smb://somecomputer/g-share/dvds/</to> <!-- Note the difference between the usage of forward and backslashes --> </substitute> </pathsubstitution>
+        - paragraph [ref=f16e1202]
+        - heading "Input control settings" [level=2] [ref=f16e1203]
+        - heading "remotedelay" [level=3] [ref=f16e1204]
+        - paragraph [ref=f16e1205]: The repeat delay for a LIRC remote control. A delay value between 1 and 20 before a remote button starts repeating on a long keypress (i.e. continuously sending button pushes while it's held down).
+        - paragraph [ref=f16e1206]: "Default: 3"
+        - generic [ref=f16e1207]: <remotedelay>10</remotedelay>
+        - paragraph [ref=f16e1208]
+        - heading "controllerdeadzone" [level=3] [ref=f16e1209]
+        - paragraph [ref=f16e1210]:
+          - text: This advanced settings has been removed. Since v17, the
+          - link "<controllerdeadzone>" [ref=f16e1211] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Advancedsettings.xml#controllerdeadzone
+          - text: advanced setting has been removed. Deadzones can now be configured by plugging in the controller and selecting it in Settings -> System settings -> Input -> Peripherals.
+        - paragraph [ref=f16e1212]
+        - heading "enablemultimediakeys" [level=3] [ref=f16e1213]
+        - paragraph [ref=f16e1214]: This setting only has any effect on Windows versions of Kodi, and only applies to builds from 28th May 2011 onwards. In Windows the multimedia keys generate a WM_APPCOMMAND message in addition the keypress. Kodi processes both keypresses and the WM_APPCOMMAND messages, and the end result would be that the command is executed twice. To avoid this, by default multimedia keypresses are disabled. Although it should rarely be necessary, the enablemultimediakeys setting allows you to enable the multimedia keys.
+        - paragraph [ref=f16e1215]: "Example:"
+        - generic [ref=f16e1216]: <enablemultimediakeys>true</enablemultimediakeys>
+        - paragraph [ref=f16e1217]
+        - heading "seeksteps" [level=3] [ref=f16e1218]
+        - generic [ref=f16e1220]:
+          - text: "Main page:"
+          - link "Skip steps" [ref=f16e1222] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Skip_steps
+        - paragraph [ref=f16e1223]:
+          - text: This setting changes which increments are available in the settings GUI for additive seeking. Note that
+          - code [ref=f16e1224]: <seeksteps>
+          - text: is not used to actually choose which seek steps are enabled.
+        - paragraph [ref=f16e1225]: "Default:"
+        - generic [ref=f16e1226]: <seeksteps>7, 15, 30, 60, 180, 300, 600, 900, 1800</seeksteps>
+        - paragraph [ref=f16e1227]:
+          - generic [ref=f16e1230]:
+            - generic [ref=f16e1232]:
+              - link "Editor note" [ref=f16e1233] [cursor=pointer]:
+                - /url: /web/20240101191552/https://kodi.wiki/view/Template:Editor_note
+              - text: ":"
+            - text: the defaults need to be updated for seeksteps.
+        - paragraph [ref=f16e1234]
+        - heading "touchscreen" [level=3] [ref=f16e1235]
+        - paragraph [ref=f16e1236]: This setting allows you to move/align the origin of the touch screen with the origin of the display used. If touch input does not result in a correct movement of the mouse pointer, the behaviour can be corrected with an offset and a stretch/compress factor.
+        - paragraph [ref=f16e1237]: "Example:"
+        - generic [ref=f16e1238]: <touchscreen> <x_offset>0</x_offset> <!-- set pixel x offset to align it to the used display--> <y_offset>0</y_offset> <!-- set pixel y offset to align it to the used display--> <x_stretch_factor>1.0</x_stretch_factor> <!-- stretch/compress the touch x axis--> <y_stretch_factor>1.0</y_stretch_factor> <!-- stretch/compress the touch y axis--> </touchscreen>
+        - paragraph [ref=f16e1239]
+        - heading "scanirserver" [level=3] [ref=f16e1240]
+        - paragraph [ref=f16e1241]:
+          - text: Introduced in v18 and used in MS Windows setups only.
+          - superscript [ref=f16e1242]:
+            - link "[11]" [ref=f16e1243] [cursor=pointer]:
+              - /url: "#cite_note-11"
+          - text: Used to disable the regular connection attempts to the IR Server Suite when there is no remote to connect to.
+        - paragraph [ref=f16e1244]: The default setting is to allow connection attempts. To disable connection attempts change value to false.
+        - generic [ref=f16e1245]: <scanirserver>true</scanirserver>
+        - paragraph [ref=f16e1246]
+        - heading "Other interface settings" [level=2] [ref=f16e1247]
+        - heading "window" [level=3] [ref=f16e1248]
+        - paragraph [ref=f16e1249]:
+          - generic [ref=f16e1250]: "Note: This is a \"hidden\" guisettings.xml setting (defined by the mouse moving the window size), but it is mentioned here because it is a particularly useful override when used in advancedsettings.xml"
+          - text: This allows you to manually set the default size of Kodi's windowed mode. If you resize the window, it will return to the set size when restarting.
+        - paragraph [ref=f16e1251]: WIDTH and HEIGHT are the values for each dimension, in pixels.
+        - generic [ref=f16e1252]: <window> <width>WIDTH</width> <height>HEIGHT</height> </window>
+        - paragraph [ref=f16e1253]
+        - heading "restrictcapsmask" [level=3] [ref=f16e1254]
+        - paragraph [ref=f16e1255]: Windows only. A bitmask to prevent Kodi from using detected texture capabilities of the GPU. This helps work around buggy hardware/drivers.
+        - paragraph [ref=f16e1256]: "1: prevent the use of compressed textures (DXT1, DXT3, DXT5) 2: prevent the use of non-power-of-two dimensions for textures 4: prevent the use of compressed textures with non-power-of-two dimensions."
+        - generic [ref=f16e1257]: <restrictcapsmask>0</restrictcapsmask>
+        - paragraph [ref=f16e1258]
+        - heading "algorithmdirtyregions" [level=3] [ref=f16e1259]
+        - paragraph
+        - generic [ref=f16e1260]:
+          - text: "See also:"
+          - link "HOW-TO:Modify dirty regions" [ref=f16e1262] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/HOW-TO:Modify_dirty_regions
+        - paragraph [ref=f16e1263]:
+          - generic [ref=f16e1264]:
+            - text: "Note: Some GPU/hardware configurations will have some minor issues (such as a visual \"flicker\"). For those situations try mode 2 or use the default (mode 3, which requires no advancedsetting). Almost all ARM-based devices (such as"
+            - link "Android" [ref=f16e1265] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Android
+            - text: ) willl likely have flickering issues.
+        - paragraph [ref=f16e1266]: Enable dirty-region processing. Dirty regions are any parts of the screen that have changed since the last frame. By not re-rendering what hasn't changed the GUI can be sped up. Because all GPUs work differently, only Mode 3 is guaranteed to work for everyone without flickering issues. This mode will reduce CPU/GPU usage, but will not increase GUI speed.
+        - table [ref=f16e1267]:
+          - rowgroup [ref=f16e1268]:
+            - row "value result description" [ref=f16e1269]:
+              - columnheader "value" [ref=f16e1270]
+              - columnheader "result" [ref=f16e1271]
+              - columnheader "description" [ref=f16e1272]
+            - row "0 Off The entire viewport is always rendered." [ref=f16e1273]:
+              - rowheader "0" [ref=f16e1274]
+              - cell "Off" [ref=f16e1275]
+              - cell "The entire viewport is always rendered." [ref=f16e1276]
+            - row "1 Union All dirty regions are grouped into the smallest possible rectangle. This is typically the fastest mode for slower GPUs due to only making one pass." [ref=f16e1277]:
+              - rowheader "1" [ref=f16e1278]
+              - cell "Union" [ref=f16e1279]
+              - cell "All dirty regions are grouped into the smallest possible rectangle. This is typically the fastest mode for slower GPUs due to only making one pass." [ref=f16e1280]
+            - row "2 Cost reduction Each dirty region is presented separately, in as many passes as there are regions." [ref=f16e1281]:
+              - rowheader "2" [ref=f16e1282]
+              - cell "Cost reduction" [ref=f16e1283]
+              - cell "Each dirty region is presented separately, in as many passes as there are regions." [ref=f16e1284]
+            - row "3 Whole Screen The entire screen is rendered if there are any dirty regions. This is a safe default for drivers that clear buffer contents (manifests as blinking or vibrating images). Default" [ref=f16e1285]:
+              - rowheader "3" [ref=f16e1286]
+              - cell "Whole Screen" [ref=f16e1287]
+              - cell "The entire screen is rendered if there are any dirty regions. This is a safe default for drivers that clear buffer contents (manifests as blinking or vibrating images). Default" [ref=f16e1288]
+        - paragraph [ref=f16e1289]: "Example:"
+        - generic [ref=f16e1290]: <gui> <algorithmdirtyregions>1</algorithmdirtyregions> </gui>
+        - paragraph [ref=f16e1291]
+        - heading "visualizedirtyregions" [level=3] [ref=f16e1292]
+        - paragraph
+        - generic [ref=f16e1293]:
+          - text: "See also:"
+          - link "HOW-TO:Modify dirty regions" [ref=f16e1295] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/HOW-TO:Modify_dirty_regions
+        - paragraph [ref=f16e1296]: Enable dirty-region visualization. Paints a rectangle over marked controls.
+        - list [ref=f16e1297]:
+          - listitem [ref=f16e1298]: "true: on"
+          - listitem [ref=f16e1299]: "false: off (Default)"
+        - paragraph [ref=f16e1300]:
+          - generic [ref=f16e1301]: "Note: This is only a development mode and isn't of use to normal users."
+        - paragraph [ref=f16e1302]: "Example:"
+        - generic [ref=f16e1303]: <gui> <visualizedirtyregions>true</visualizedirtyregions> </gui>
+        - paragraph [ref=f16e1304]
+        - heading "smartredraw" [level=3] [ref=f16e1305]
+        - paragraph [ref=f16e1306]:
+          - generic [ref=f16e1307]: "Note: This is an experimental feature and you might face issues using it. So please be aware of that."
+        - paragraph [ref=f16e1308]: This new feature was introduced in Kodi 18 and if enabled, the GUI process call (and therefore the render call) is only done if anything has changed. The result will be a faster GUI and less load if Kodi plays a video
+        - list [ref=f16e1309]:
+          - listitem [ref=f16e1310]: "true: on"
+          - listitem [ref=f16e1311]: "false: off (Default)"
+        - paragraph [ref=f16e1312]: "Example:"
+        - generic [ref=f16e1313]: <gui> <smartredraw>true</smartredraw> </gui>
+        - paragraph [ref=f16e1314]
+        - heading "showexitbutton" [level=3] [ref=f16e1315]
+        - paragraph [ref=f16e1316]: Setting to hide the exit button, useful for people running appliance based setups where exit would only confuse/complicate the user. Modifiable via the advancedsettings.xml by setting showexitbutton to false, default is true (show)
+        - paragraph [ref=f16e1317]: "Example:"
+        - generic [ref=f16e1318]: <showexitbutton>true</showexitbutton>
+        - paragraph [ref=f16e1319]
+        - heading "fullscreen" [level=3] [ref=f16e1320]
+        - paragraph [ref=f16e1321]: Starts Kodi in full screen (check resolutions!).
+        - generic [ref=f16e1322]: <fullscreen>false</fullscreen>
+        - paragraph [ref=f16e1323]
+        - heading "splash" [level=3] [ref=f16e1324]
+        - paragraph [ref=f16e1325]: Set to false if you wish to disable the startup splash image. Defaults to true.
+        - generic [ref=f16e1326]: <splash>true</splash>
+        - paragraph [ref=f16e1327]
+        - heading "cputempcommand" [level=3] [ref=f16e1328]
+        - paragraph [ref=f16e1329]: Provide a shell command Kodi will use to get CPU temperature. It should print out only "[temp as integer] [scale as one of "CcFf"]".
+        - term [ref=f16e1331]: For Nvidia and Raspberry Pi
+        - generic [ref=f16e1332]: "<cputempcommand>sed -e 's/\\([0-9]*\\)[0-9]\\{3\\}.*/\\1 C/' /sys/class/thermal/thermal_zone0/temp</cputempcommand>"
+        - paragraph [ref=f16e1333]: or
+        - generic [ref=f16e1334]: "<cputempcommand>echo \"$(sensors -u | tail -n64 | grep temp1_input | awk '{print $2 }' |awk '{printf(\"%d\\n\",$1 + 0.5);}') C\"</cputempcommand>"
+        - term [ref=f16e1336]: For ATI/AMD
+        - generic [ref=f16e1337]: "<cputempcommand>sensors|sed -ne \"s/temp1: \\+[-+]\\([0-9]\\+\\).*/\\1 C/p\"</cputempcommand>"
+        - paragraph [ref=f16e1338]
+        - heading "gputempcommand" [level=3] [ref=f16e1339]
+        - paragraph [ref=f16e1340]: Provide a shell command Kodi will use to get GPU temperature. It should print out only "[temp as integer] [scale as one of "CcFf"]".
+        - term [ref=f16e1342]: For Nvidia
+        - generic [ref=f16e1343]: <gputempcommand>echo "$(nvidia-settings -tq gpuCoreTemp) C"</gputempcommand>
+        - paragraph [ref=f16e1344]: or
+        - generic [ref=f16e1345]: <gputempcommand>echo "$(nvidia-smi -q -d TEMPERATURE | grep Gpu | cut -c35-36) C"</gputempcommand>
+        - term [ref=f16e1347]: For ATI/AMD
+        - generic [ref=f16e1348]: <gputempcommand>/usr/bin/aticonfig --od-gettemperature | grep Temperature | cut -f 2 -d "-" | cut -f 1 -d "." | sed -e "s, ,," | sed 's/$/ C/'</gputempcommand>
+        - term [ref=f16e1350]: For Raspberry Pi
+        - generic [ref=f16e1351]: <gputempcommand>/opt/vc/bin/vcgencmd measure_temp | sed -e "s/temp=//" -e "s/\..*'/ /"</gputempcommand>
+        - paragraph [ref=f16e1352]
+        - heading "glrectanglehack" [level=3] [ref=f16e1353]
+        - paragraph [ref=f16e1354]: Problems with ghosting or videos which are only played back in the left upper quarter? The following ATI hack may solve it.
+        - generic [ref=f16e1355]: <glrectanglehack>yes</glrectanglehack>
+        - paragraph [ref=f16e1356]
+        - heading "alwaysontop" [level=3] [ref=f16e1357]
+        - paragraph [ref=f16e1358]: Added in XBMC v9.11 (Windows OS only). Keeps Kodi always on top when windowed.
+        - generic [ref=f16e1359]: <alwaysontop>yes</alwaysontop>
+        - paragraph [ref=f16e1360]: There is also a fake fullscreen GUI option in Kodi's settings.
+        - paragraph [ref=f16e1361]
+        - heading "minimizetotray" [level=3] [ref=f16e1362]
+        - paragraph [ref=f16e1363]:
+          - generic [ref=f16e1364]: "Note: Available in Kodi v20 and above."
+        - paragraph [ref=f16e1365]: Windows only. Minimizes Kodi to the system tray. Defaults to false.
+        - generic [ref=f16e1366]: <minimizetotray>true</minimizetotray>
+        - paragraph [ref=f16e1367]
+        - heading "Removed tags" [level=1] [ref=f16e1368]
+        - paragraph
+        - list [ref=f16e1369]:
+          - listitem [ref=f16e1370]:
+            - text: <thumbsize> - replaced by <
+            - link "imageres" [ref=f16e1371] [cursor=pointer]:
+              - /url: "#imageres"
+            - text: "> in v12 Frodo"
+          - listitem [ref=f16e1372]:
+            - text: <fanartheight> - replaced by <
+            - link "fanartres" [ref=f16e1373] [cursor=pointer]:
+              - /url: "#fanartres"
+            - text: "> in v12 Frodo"
+          - listitem [ref=f16e1374]: <dvdthumbs> - removed in v12 Frodo
+          - listitem [ref=f16e1375]: <busydialogdelayms> - removed in v12 Frodo
+          - listitem [ref=f16e1376]: <bginfoloadermaxthreads> - removed in v13 Gotham
+          - listitem [ref=f16e1377]: <showepginfoonselect> - replaced by a GUI setting in v13 Gotham
+          - listitem [ref=f16e1378]: <resample>, <forceDirectSound>, <audiophile>, <audiosinkbufferdurationmsec>, <allowtranscode44100>, and <streamsilence> - These were various sub-tags for <audio> that were removed in v13 Gotham and either replaced by GUI settings or were no longer needed.
+          - listitem [ref=f16e1379]: <enableairtunesdebuglog> - replaced by a GUI option in v14 Helix
+          - listitem [ref=f16e1380]: <videoDisableHi10pMultithreading> - renamed to <disableswmultithreading> in v14 Helix
+          - listitem [ref=f16e1381]:
+            - text: <hideallitems> - For both the
+            - code [ref=f16e1382]: <videolibrary>
+            - text: and
+            - code [ref=f16e1383]: <musiclibrary>
+            - text: sections, this is replaced by a GUI option in v15 Isengard
+          - listitem [ref=f16e1384]:
+            - text: <SmallStepBackSeconds> - In v15 the
+            - code [ref=f16e1385]: SmallStepBack
+            - link "Action_IDs" [ref=f16e1386] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Action_IDs
+            - text: has been replaced by
+            - code [ref=f16e1387]: seek(-7)
+            - text: in default keymaps. See
+            - link "skip steps" [ref=f16e1389] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Skip_steps
+            - text: for details. When the original
+            - code [ref=f16e1390]: SmallStepBack
+            - text: action ID is used it defaults to the first backwards
+            - link "additive seeking value" [ref=f16e1391] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Skip_steps
+            - text: .
+          - listitem [ref=f16e1392]:
+            - text: <timeseekforward>/<timeseekbackward> - In v15 these tags are replaced by GUI options via
+            - link "additive seeking" [ref=f16e1393] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Skip_steps
+            - text: ", which is configured in the GUI. See"
+            - link "skip steps" [ref=f16e1395] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Skip_steps
+            - text: for details.
+          - listitem [ref=f16e1396]: <karaoke> - In v16 all of the karaoke features in Kodi were removed.
+          - listitem [ref=f16e1397]: <useddsfanart> - removed in v17 Krypton.
+          - listitem [ref=f16e1398]:
+            - text: <cachemembuffersize> and <readbufferfactor> - In v17 <cachemembuffersize> is renamed to <memorysize> and
+            - code [ref=f16e1399]: <readbufferfactor>
+            - text: is renamed to
+            - code [ref=f16e1400]: <readfactor>
+            - text: . In addition, all three buffer related settings in <network> are moved out of <network> and into a new <cache> parent tag.
+          - listitem [ref=f16e1401]: <minvideocachelevel>, <minaudiocachelevel>, and <cacheindvdplayer> have been removed in v17.
+          - listitem [ref=f16e1402]: <useffmpegvda> - Tag was only used for development testing. Removed in v17.
+          - listitem [ref=f16e1403]: <nofliptimeout> - Removed in v17
+          - listitem [ref=f16e1404]: <blackbarcolour> - Removed in v17 (maybe?)
+          - listitem [ref=f16e1405]: <disableswmultithreading> - Removed in v17 (maybe?)
+          - listitem [ref=f16e1406]: <controllerdeadzone> - Removed in v17
+          - listitem [ref=f16e1407]: <measurerefreshrate> - Removed in v17 or v18?
+          - listitem [ref=f16e1408]: <myth> - Removed sometime between v16 to v18
+          - listitem [ref=f16e1409]: <tuxbox> - Removed
+          - listitem [ref=f16e1410]: <backgroundupdate> - Removed
+          - listitem [ref=f16e1411]: <hideemptyseries> - Replaced by a GUI option.
+          - listitem [ref=f16e1412]: <mymovies> and child tag <categoriestogenres> - Removed
+          - listitem [ref=f16e1413]: <albumssortbyartistthenyear> - Removed
+          - listitem [ref=f16e1414]: <albumformatright> - Removed
+          - listitem [ref=f16e1415]: <remoterepeat> - Removed
+          - listitem [ref=f16e1416]:
+            - text: <allowd3d9ex> and
+            - text: <forced3d9ex> - Removed sometime between v16 to v18
+          - listitem [ref=f16e1417]: <lingertime> - Replaced by a GUI setting in v18
+          - listitem [ref=f16e1418]: <forcevaapienabled> - Removed in v18
+          - listitem [ref=f16e1419]:
+            - text: <dxvaallowhqscaling> - Removed in v18
+            - superscript [ref=f16e1420]:
+              - link "[12]" [ref=f16e1421] [cursor=pointer]:
+                - /url: "#cite_note-12"
+          - listitem [ref=f16e1422]: <promptfulltagscan>false</promptfulltagscan> Removed in v18. Now automatically asked each time a scan is conducted.
+          - listitem [ref=f16e1423]: <omxdecodestartwithvalidframe> - This tag is only in some Raspberry Pi specific distributions, such as OpenELEC. As of March 2015, this tag has not been merged into "vanilla" Kodi builds
+          - listitem [ref=f16e1424]: <musicthumbs> Replaced in v19 by the GUI setting Thumbnail image files found in Media -> Music
+          - listitem [ref=f16e1425]: <artistextraart> Replaced in v19 by the GUI setting Artist art types whitelist found in Media -> Music
+          - listitem [ref=f16e1426]: <albumextraart> Replaced in v19 by the GUI setting Album art types whitelist found in Media -> Music
+          - listitem [ref=f16e1427]: <episodeextraart> Replaced in v19 by the GUI setting Episode art types whitelist found in Media -> Videos
+          - listitem [ref=f16e1428]: <tvshowextraart> Replaced in v19 by the GUI setting TV show art types whitelist found in Media -> Videos
+          - listitem [ref=f16e1429]: <tvseasonextraart> Replaced in v19 by the GUI setting TV show art types whitelist found in Media -> Videos
+          - listitem [ref=f16e1430]: <movieextraart> Replaced in v19 by the GUI setting Movie art types whitelist found in Media -> Videos
+          - listitem [ref=f16e1431]: <moviesetextraart> Replaced in v19 by the GUI setting Movie art types whitelist found in Media -> Videos
+          - listitem [ref=f16e1432]: <musicvideoextraart> Replaced in v19 by the GUI setting Music video art types whitelist found in Media -> Videos
+          - listitem [ref=f16e1433]: <fanart> Removed in v19
+          - listitem [ref=f16e1434]: <assfixedworks> Removed in v20
+          - listitem [ref=f16e1435]:
+            - text: <try10bitoutput> Removed in v20 and replaced with
+            - link "Use 10 bit for SDR" [ref=f16e1436] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Settings/System/Display#Use_10_bit_for_SDR
+            - text: setting
+            - superscript [ref=f16e1437]:
+              - link "[13]" [ref=f16e1438] [cursor=pointer]:
+                - /url: "#cite_note-13"
+          - listitem [ref=f16e1439]:
+            - text: <enablehighqualityhwscalers> Removed in v20
+            - superscript [ref=f16e1440]:
+              - link "[14]" [ref=f16e1441] [cursor=pointer]:
+                - /url: "#cite_note-14"
+        - paragraph [ref=f16e1442]
+        - heading "guisettings.xml Setting Conversion" [level=1] [ref=f16e1443]
+        - paragraph [ref=f16e1444]:
+          - text: It is possible to convert settings found in the
+          - link "Settings" [ref=f16e1446] [cursor=pointer]:
+            - /url: /web/20240101191552/https://kodi.wiki/view/Settings
+          - text: (guisettings.xml) pages of Kodi into entries for the advancedsettings.xml file.
+        - paragraph [ref=f16e1447]: When a setting from the guisettings.xml is added to the advancedsettings.xml file, it will override the existing guisettings.xml values and the setting will be removed from the settings pages.
+        - paragraph [ref=f16e1448]: Why would I need to do this?
+        - list [ref=f16e1449]:
+          - listitem [ref=f16e1450]: You set up multiple devices and then need to individually change settings and preferences on each device. Using this conversion method, you save those settings in the advancedsettings.xml file and simply add the file to each device
+          - listitem [ref=f16e1451]: You need to hide settings to prevent those settings from being modified
+        - paragraph [ref=f16e1452]: "To convert a guisetting to advancedsettings.xml follow these steps:"
+        - list [ref=f16e1453]:
+          - listitem [ref=f16e1454]: In the Kodi settings pages, adjust the setting(s) to your preference.
+          - listitem [ref=f16e1455]: Back out of the settings pages to the main menu, which forces Kodi to save the adjusted settings to the guisettings.xml file
+          - listitem [ref=f16e1456]:
+            - text: Locate the guisettings.xml file in the
+            - link "Userdata" [ref=f16e1457] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Userdata
+            - text: folder and open it
+          - listitem [ref=f16e1458]: Locate the setting(s) to be converted. The list can be overwhelming so make use of the Search feature of whichever editor you are using
+          - listitem [ref=f16e1459]: "Using the following setting as an example:"
+        - generic [ref=f16e1460]: <setting id="videolibrary.showemptytvshows">true</setting>
+        - generic [ref=f16e1461]:
+          - definition [ref=f16e1462]:
+            - text: "Breaking down the string:"
+            - generic [ref=f16e1463]:
+              - definition [ref=f16e1464]: videolibrary- parent tag
+              - definition [ref=f16e1465]: showemptytvshows- child tag
+              - definition [ref=f16e1466]: true- value
+          - definition [ref=f16e1467]: The conversion is as follows and place this in the advancedsettings.xml file
+        - generic [ref=f16e1468]: <advancedsettings version="1.0"> <videolibrary> <showemptytvshows>true</showemptytvshows> </videolibrary> </advancedsettings>
+        - paragraph [ref=f16e1469]: "Note: Some parent tags may already be in use in your advancedsettings.xml file. Do not duplicate them, but add the child tag beneath the existing parent tag."
+        - paragraph [ref=f16e1470]
+        - heading "References" [level=1] [ref=f16e1471]
+        - list [ref=f16e1473]:
+          - listitem [ref=f16e1474]:
+            - link "↑" [ref=f16e1476] [cursor=pointer]:
+              - /url: "#cite_ref-1"
+            - link "https://github.com/xbmc/xbmc/blob/master/xbmc/settings/AdvancedSettings.cpp" [ref=f16e1478] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/blob/master/xbmc/settings/AdvancedSettings.cpp
+          - listitem [ref=f16e1479]:
+            - link "↑" [ref=f16e1481] [cursor=pointer]:
+              - /url: "#cite_ref-2"
+            - link "https://forum.kodi.tv/showthread.php?tid=10023&pid=2795069#pid2795069" [ref=f16e1483] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://forum.kodi.tv/showthread.php?tid=10023&pid=2795069#pid2795069
+          - listitem [ref=f16e1484]:
+            - link "↑" [ref=f16e1486] [cursor=pointer]:
+              - /url: "#cite_ref-3"
+            - link "https://github.com/xbmc/xbmc/pull/20711" [ref=f16e1488] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/20711
+          - listitem [ref=f16e1489]:
+            - link "↑" [ref=f16e1491] [cursor=pointer]:
+              - /url: "#cite_ref-4"
+            - link "https://github.com/xbmc/xbmc/pull/18605" [ref=f16e1493] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/18605
+          - listitem [ref=f16e1494]:
+            - link "↑" [ref=f16e1496] [cursor=pointer]:
+              - /url: "#cite_ref-5"
+            - link "https://github.com/xbmc/xbmc/pull/20549" [ref=f16e1498] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/20549
+          - listitem [ref=f16e1499]:
+            - link "↑" [ref=f16e1501] [cursor=pointer]:
+              - /url: "#cite_ref-6"
+            - link "https://github.com/xbmc/xbmc/pull/20842" [ref=f16e1503] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/20842
+          - listitem [ref=f16e1504]:
+            - link "↑" [ref=f16e1506] [cursor=pointer]:
+              - /url: "#cite_ref-7"
+            - link "https://github.com/xbmc/xbmc/pull/21418" [ref=f16e1508] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/21418
+          - listitem [ref=f16e1509]:
+            - link "↑" [ref=f16e1511] [cursor=pointer]:
+              - /url: "#cite_ref-8"
+            - link "https://github.com/xbmc/xbmc/pull/19319" [ref=f16e1513] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/19319
+          - listitem [ref=f16e1514]:
+            - link "↑" [ref=f16e1516] [cursor=pointer]:
+              - /url: "#cite_ref-9"
+            - link "https://github.com/xbmc/xbmc/pull/19513" [ref=f16e1518] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/19513
+          - listitem [ref=f16e1519]:
+            - link "↑" [ref=f16e1521] [cursor=pointer]:
+              - /url: "#cite_ref-10"
+            - link "https://github.com/xbmc/xbmc/pull/20840" [ref=f16e1523] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/20840
+          - listitem [ref=f16e1524]:
+            - link "↑" [ref=f16e1526] [cursor=pointer]:
+              - /url: "#cite_ref-11"
+            - link "https://github.com/xbmc/xbmc/pull/13896" [ref=f16e1528] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/13896
+          - listitem [ref=f16e1529]:
+            - link "↑" [ref=f16e1531] [cursor=pointer]:
+              - /url: "#cite_ref-12"
+            - link "https://github.com/xbmc/xbmc/pull/15466" [ref=f16e1533] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/15466
+          - listitem [ref=f16e1534]:
+            - link "↑" [ref=f16e1536] [cursor=pointer]:
+              - /url: "#cite_ref-13"
+            - link "https://github.com/xbmc/xbmc/pull/20014" [ref=f16e1538] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/20014
+          - listitem [ref=f16e1539]:
+            - link "↑" [ref=f16e1541] [cursor=pointer]:
+              - /url: "#cite_ref-14"
+            - link "https://github.com/xbmc/xbmc/pull/21537" [ref=f16e1543] [cursor=pointer]:
+              - /url: https://web.archive.org/web/20240101191552/https://github.com/xbmc/xbmc/pull/21537
+        - paragraph [ref=f16e1544]
+        - generic [ref=f16e1547]: Page updated for v18
+      - generic [ref=f16e1549]:
+        - link "Categories" [ref=f16e1550] [cursor=pointer]:
+          - /url: /web/20240101191552/https://kodi.wiki/view/Special:Categories
+        - text: ":"
+        - list [ref=f16e1551]:
+          - listitem [ref=f16e1552]:
+            - link "Leia" [ref=f16e1553] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Category:Leia
+          - listitem [ref=f16e1554]:
+            - link "Advanced topics" [ref=f16e1555] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Category:Advanced_topics
+          - listitem [ref=f16e1556]:
+            - link "Manual" [ref=f16e1557] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Category:Manual
+          - listitem [ref=f16e1558]:
+            - link "Settings" [ref=f16e1559] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Category:Settings
+  - generic:
+    - heading "Navigation menu" [level=2] [ref=f16e1560]
+    - generic [ref=f16e1561]:
+      - navigation "Personal tools" [ref=f16e1562]:
+        - list [ref=f16e1564]:
+          - listitem [ref=f16e1565]:
+            - link "Log in" [ref=f16e1566] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/index.php?title=Special:UserLogin&returnto=Advancedsettings.xml
+      - navigation "Namespaces" [ref=f16e1568]:
+        - list [ref=f16e1569]:
+          - listitem [ref=f16e1570]:
+            - link "Page" [ref=f16e1571] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Advancedsettings.xml
+          - listitem [ref=f16e1572]:
+            - link "Discussion" [ref=f16e1573] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Talk:Advancedsettings.xml
+      - generic [ref=f16e1574]:
+        - navigation "Views" [ref=f16e1575]:
+          - list [ref=f16e1576]:
+            - listitem [ref=f16e1577]:
+              - link "Read" [ref=f16e1578] [cursor=pointer]:
+                - /url: /web/20240101191552/https://kodi.wiki/view/Advancedsettings.xml
+            - listitem [ref=f16e1579]:
+              - link "View source" [ref=f16e1580] [cursor=pointer]:
+                - /url: /web/20240101191552/https://kodi.wiki/index.php?title=Advancedsettings.xml&action=edit
+            - listitem [ref=f16e1581]:
+              - link "View history" [ref=f16e1582] [cursor=pointer]:
+                - /url: /web/20240101191552/https://kodi.wiki/index.php?title=Advancedsettings.xml&action=history
+        - search [ref=f16e1583]:
+          - generic [ref=f16e1584]:
+            - heading "Search" [level=3] [ref=f16e1585]
+            - generic [ref=f16e1587]:
+              - searchbox "Search Official Kodi Wiki" [ref=f16e1588]
+              - button "Search" [ref=f16e1589] [cursor=pointer]
+              - button "Go" [ref=f16e1590] [cursor=pointer]
+    - generic [ref=f16e1591]:
+      - banner [ref=f16e1592]:
+        - link "Visit the main page" [ref=f16e1593] [cursor=pointer]:
+          - /url: /web/20240101191552/https://kodi.wiki/view/Main_Page
+      - navigation "Wiki main pages" [ref=f16e1594]:
+        - heading "Wiki main pages" [level=3] [ref=f16e1595]
+        - list [ref=f16e1597]:
+          - listitem [ref=f16e1598]:
+            - link "Wiki home" [ref=f16e1599] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Main_Page
+          - listitem [ref=f16e1600]:
+            - link "New Users" [ref=f16e1601] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Main_Page
+          - listitem [ref=f16e1602]:
+            - link "Installing & First time user" [ref=f16e1603] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/First_time_user
+          - listitem [ref=f16e1604]:
+            - link "Glossary" [ref=f16e1605] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Glossary
+          - listitem [ref=f16e1606]:
+            - link "FAQs" [ref=f16e1607] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/FAQs
+          - listitem [ref=f16e1608]:
+            - link "New Features" [ref=f16e1609] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/New_features
+          - listitem [ref=f16e1610]:
+            - link "Troubleshooting" [ref=f16e1611] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Troubleshooting
+          - listitem [ref=f16e1612]:
+            - link "Forum Rules" [ref=f16e1613] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Official:Forum_rules
+          - listitem [ref=f16e1614]:
+            - link "Banned Add-ons" [ref=f16e1615] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Banned_add-ons
+      - navigation "Kodi Menu" [ref=f16e1616]:
+        - heading "Kodi Menu" [level=3] [ref=f16e1617]
+        - list [ref=f16e1619]:
+          - listitem [ref=f16e1620]:
+            - link "Settings" [ref=f16e1621] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Settings
+          - listitem [ref=f16e1622]:
+            - link "Video, Movie & TV Show Library" [ref=f16e1623] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Video_library
+          - listitem [ref=f16e1624]:
+            - link "Music & Music Video Library" [ref=f16e1625] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Music_library
+          - listitem [ref=f16e1626]:
+            - link "Live TV, PVR & Radio" [ref=f16e1627] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Live_TV
+          - listitem [ref=f16e1628]:
+            - link "Add-ons" [ref=f16e1629] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Add-ons
+          - listitem [ref=f16e1630]:
+            - link "Pictures" [ref=f16e1631] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Pictures
+          - listitem [ref=f16e1632]:
+            - link "Favourites" [ref=f16e1633] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Favourites
+          - listitem [ref=f16e1634]:
+            - link "Weather" [ref=f16e1635] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Weather
+      - navigation "Extras" [ref=f16e1636]:
+        - heading "Extras" [level=3] [ref=f16e1637]
+        - list [ref=f16e1639]:
+          - listitem [ref=f16e1640]:
+            - link "Remote Controls" [ref=f16e1641] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Remote_controls
+          - listitem [ref=f16e1642]:
+            - link "Devices / Hardware" [ref=f16e1643] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Devices
+          - listitem [ref=f16e1644]:
+            - link "Skins" [ref=f16e1645] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Skins
+          - listitem [ref=f16e1646]:
+            - link "Supplemental Tools" [ref=f16e1647] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Supplemental_tools
+          - listitem [ref=f16e1648]:
+            - link "Syncing and sharing" [ref=f16e1649] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Syncing_and_sharing
+          - listitem [ref=f16e1650]:
+            - link "Advanced topics" [ref=f16e1651] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Advanced_topics
+      - navigation "Development" [ref=f16e1652]:
+        - heading "Development" [level=3] [ref=f16e1653]
+        - list [ref=f16e1655]:
+          - listitem [ref=f16e1656]:
+            - link "Kodi Development" [ref=f16e1657] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Development
+          - listitem [ref=f16e1658]:
+            - link "Test Builds and Betas" [ref=f16e1659] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Development_builds
+          - listitem [ref=f16e1660]:
+            - link "Skin Development" [ref=f16e1661] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Skinning
+          - listitem [ref=f16e1662]:
+            - link "Add-on Development" [ref=f16e1663] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Add-on_development
+          - listitem [ref=f16e1664]:
+            - link "Translation System" [ref=f16e1665] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Translations
+      - navigation "Devices" [ref=f16e1666]:
+        - heading "Devices" [level=3] [ref=f16e1667]
+        - list [ref=f16e1669]:
+          - listitem [ref=f16e1670]:
+            - link "Hardware Requirements" [ref=f16e1671] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Supported_hardware
+          - listitem [ref=f16e1672]:
+            - link "Android" [ref=f16e1673] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Android
+          - listitem [ref=f16e1674]:
+            - link "iOS" [ref=f16e1675] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/IOS
+          - listitem [ref=f16e1676]:
+            - link "Linux" [ref=f16e1677] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Linux
+          - listitem [ref=f16e1678]:
+            - link "Mac OS X" [ref=f16e1679] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Mac_OS_X
+          - listitem [ref=f16e1680]:
+            - link "Windows" [ref=f16e1681] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Windows
+          - listitem [ref=f16e1682]:
+            - link "more..." [ref=f16e1683] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Devices
+      - navigation "Wiki help" [ref=f16e1684]:
+        - heading "Wiki help" [level=3] [ref=f16e1685]
+        - list [ref=f16e1687]:
+          - listitem [ref=f16e1688]:
+            - link "Wiki help" [ref=f16e1689] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Help:Main_page
+          - listitem [ref=f16e1690]:
+            - link "Templates" [ref=f16e1691] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Category:Templates
+          - listitem [ref=f16e1692]:
+            - link "Pages to cleanup" [ref=f16e1693] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Category:Cleanup
+          - listitem [ref=f16e1694]:
+            - link "Incomplete pages" [ref=f16e1695] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Category:Incomplete
+          - listitem [ref=f16e1696]:
+            - link "Recent changes" [ref=f16e1697] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Special:RecentChanges
+      - navigation "Tools" [ref=f16e1698]:
+        - heading "Tools" [level=3] [ref=f16e1699]
+        - list [ref=f16e1701]:
+          - listitem [ref=f16e1702]:
+            - link "What links here" [ref=f16e1703] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Special:WhatLinksHere/Advancedsettings.xml
+          - listitem [ref=f16e1704]:
+            - link "Related changes" [ref=f16e1705] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Special:RecentChangesLinked/Advancedsettings.xml
+          - listitem [ref=f16e1706]:
+            - link "Special pages" [ref=f16e1707] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/view/Special:SpecialPages
+          - listitem [ref=f16e1708]:
+            - link "Printable version" [ref=f16e1709] [cursor=pointer]:
+              - /url: javascript:print();
+          - listitem [ref=f16e1710]:
+            - link "Permanent link" [ref=f16e1711] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/index.php?title=Advancedsettings.xml&oldid=249010
+          - listitem [ref=f16e1712]:
+            - link "Page information" [ref=f16e1713] [cursor=pointer]:
+              - /url: /web/20240101191552/https://kodi.wiki/index.php?title=Advancedsettings.xml&action=info
+  - contentinfo [ref=f16e1714]:
+    - list [ref=f16e1715]:
+      - listitem [ref=f16e1716]: This page was last edited on 24 December 2023, at 22:01.
+      - listitem [ref=f16e1717]:
+        - text: Text on this page is available under
+        - link "Attribution-ShareAlike 3.0 Unported" [ref=f16e1718] [cursor=pointer]:
+          - /url: https://web.archive.org/web/20240101191552/https://creativecommons.org/licenses/by-sa/3.0/
+        - text: . Images and video may be under a different copyright.
+    - list:
+      - listitem [ref=f16e1719]:
+        - link "Privacy policy" [ref=f16e1720] [cursor=pointer]:
+          - /url: /web/20240101191552/https://kodi.wiki/view/Official_Kodi_Wiki:Privacy_policy
+      - listitem [ref=f16e1721]:
+        - link "Disclaimers" [ref=f16e1722] [cursor=pointer]:
+          - /url: /web/20240101191552/https://kodi.wiki/view/Official_Kodi_Wiki:General_disclaimer
+    - list [ref=f16e1723]:
+      - listitem [ref=f16e1724]:
+        - link "Attribution-ShareAlike 3.0 Unported" [ref=f16e1725] [cursor=pointer]:
+          - /url: https://web.archive.org/web/20240101191552/https://creativecommons.org/licenses/by-sa/3.0/
+          - img "Attribution-ShareAlike 3.0 Unported" [ref=f16e1726]
+      - listitem [ref=f16e1727]:
+        - link "Powered by MediaWiki" [ref=f16e1728] [cursor=pointer]:
+          - /url: https://web.archive.org/web/20240101191552/https://www.mediawiki.org/
+          - img "Powered by MediaWiki" [ref=f16e1729]

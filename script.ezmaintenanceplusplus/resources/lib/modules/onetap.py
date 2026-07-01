@@ -24,7 +24,7 @@ import xbmcaddon
 import xbmcgui
 import xbmcvfs
 
-SLOTS = 6
+SLOTS = 10
 ADDON = "EZ Maintenance++"
 FIELDS = ("name", "kind", "src", "type", "meta")
 
@@ -467,32 +467,21 @@ def apply(slot):
 # menu (NOT settings). Lists pinned backups; tap one to restore it.
 # --------------------------------------------------------------------------- #
 def menu():
+    # No separate "pin a backup" row: an empty slot IS the pin action (tap it), and a filled
+    # slot's action menu already has "Change backup". Each row does one obvious thing.
     pins = all_pins()
     labels = [
-        label_for(p) if is_set(p) else "Slot %d  -  (empty)" % p["slot"] for p in pins
+        label_for(p) if is_set(p) else "[ + ]  Pin a backup  (slot %d)" % p["slot"]
+        for p in pins
     ]
-    labels.append("[ + ]  Pin or change a backup...")
-    idx = xbmcgui.Dialog().select("One-Tap Restore - pick a backup to restore", labels)
+    idx = xbmcgui.Dialog().select("One-Tap Restore", labels)
     if idx == -1:
-        return
-    if idx == len(pins):
-        menu_pick()
         return
     chosen = pins[idx]
     if is_set(chosen):
         _pin_actions(chosen["slot"])  # Restore / Rename / Verify / Change / Remove
     else:
-        pick(chosen["slot"])  # empty slot tapped -> pin one
-
-
-def menu_pick():
-    opts = []
-    for n in range(1, SLOTS + 1):
-        p = get_pin(n)
-        opts.append("Slot %d  -  %s" % (n, p["name"] if is_set(p) else "empty"))
-    idx = xbmcgui.Dialog().select("Pin a backup to which slot?", opts)
-    if idx != -1:
-        pick(idx + 1)
+        pick(chosen["slot"])  # empty slot tapped -> pin a backup here
 
 
 def _pin_actions(slot):

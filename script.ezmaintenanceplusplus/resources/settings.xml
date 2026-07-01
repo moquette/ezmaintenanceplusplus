@@ -45,6 +45,26 @@
 		<setting id="pin6_src" type="text" default="" visible="false" />
 		<setting id="pin6_type" type="text" default="" visible="false" />
 		<setting id="pin6_meta" type="text" default="" visible="false" />
+		<setting id="pin7_name" type="text" default="" visible="false" />
+		<setting id="pin7_kind" type="text" default="" visible="false" />
+		<setting id="pin7_src" type="text" default="" visible="false" />
+		<setting id="pin7_type" type="text" default="" visible="false" />
+		<setting id="pin7_meta" type="text" default="" visible="false" />
+		<setting id="pin8_name" type="text" default="" visible="false" />
+		<setting id="pin8_kind" type="text" default="" visible="false" />
+		<setting id="pin8_src" type="text" default="" visible="false" />
+		<setting id="pin8_type" type="text" default="" visible="false" />
+		<setting id="pin8_meta" type="text" default="" visible="false" />
+		<setting id="pin9_name" type="text" default="" visible="false" />
+		<setting id="pin9_kind" type="text" default="" visible="false" />
+		<setting id="pin9_src" type="text" default="" visible="false" />
+		<setting id="pin9_type" type="text" default="" visible="false" />
+		<setting id="pin9_meta" type="text" default="" visible="false" />
+		<setting id="pin10_name" type="text" default="" visible="false" />
+		<setting id="pin10_kind" type="text" default="" visible="false" />
+		<setting id="pin10_src" type="text" default="" visible="false" />
+		<setting id="pin10_type" type="text" default="" visible="false" />
+		<setting id="pin10_meta" type="text" default="" visible="false" />
 	</category>
 	<category label="Backup/Restore">
 		<setting id="BackupFixSpecialHome" type="bool" label="Replace home folder in xml files with special://home" default="false" />

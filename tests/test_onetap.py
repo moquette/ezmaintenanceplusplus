@@ -504,10 +504,12 @@ def test_menu_empty_slot_calls_pick(ot):
     assert calls == [1]
 
 
-def test_menu_plus_option_calls_menu_pick(ot):
+def test_menu_empty_slot_pins_that_slot(ot):
+    # no more "[+]" row: tapping empty slot 2 (row index 1) pins slot 2 directly
     o = ot.onetap
-    ot.dialog.select_returns = [o.SLOTS]  # the "[+] Pin..." row (index == slot count)
+    ot.dialog.select_returns = [1]
     calls = []
-    o.menu_pick = lambda: calls.append(1)
+    o.pick = lambda slot: calls.append(slot)
     o.menu()
-    assert calls == [1]
+    assert calls == [2]
+    assert not hasattr(o, "menu_pick")  # the redundant helper is gone

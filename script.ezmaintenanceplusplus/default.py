@@ -289,55 +289,41 @@ def BUILDS():
 
 
 def FRESHSTART(mode="verbose"):
+    # Wipe to a clean Kodi. No skin-swap first (that step used to hang): we wipe, then
+    # RESTART, and on restart Kodi falls back to a default skin because the custom one is
+    # gone. Uses the same hardened wipe as One-Tap Restore (preserves this add-on, its
+    # runtime deps, temp/, and backupdir). mode="silent" wipes with no prompts, no restart.
     if mode != "silent":
-        select = xbmcgui.Dialog().yesno(
-            "Ez Maintenance+",
-            "Are you absolutely certain you want to wipe this install?"
-            + "\n"
-            + "All addons EXCLUDING THIS WIZARD will be completely wiped!",
-            yeslabel="Yes",
-            nolabel="No",
-        )
-    else:
-        select = 1
-    if select == 0:
-        return
-    elif select == 1:
-        progressDialog.create(AddonTitle, "Wiping Install" + "\n" + "Please Wait")
-        try:
-            for root, dirs, files in os.walk(HOME, topdown=True):
-                dirs[:] = [d for d in dirs if d not in EXCLUDES]
-                for name in files:
-                    try:
-                        os.remove(os.path.join(root, name))
-                        os.rmdir(os.path.join(root, name))
-                    except:
-                        pass
+        if not xbmcgui.Dialog().yesno(
+            AddonTitle,
+            "Wipe this Kodi to a clean state?\n"
+            "All add-ons, skins, and settings are removed (this tool survives). "
+            "Kodi restarts afterward.",
+            yeslabel="Wipe",
+            nolabel="Cancel",
+        ):
+            return
+    try:
+        progressDialog.create(AddonTitle, "Wiping install..." + "\n" + "Please wait")
+    except Exception:
+        pass
+    try:
+        from resources.lib.modules import onetap
 
-                for name in dirs:
-                    try:
-                        os.rmdir(os.path.join(root, name))
-                        os.rmdir(root)
-                    except:
-                        pass
-        except:
-            pass
-    REMOVE_EMPTY_FOLDERS()
-    REMOVE_EMPTY_FOLDERS()
-    REMOVE_EMPTY_FOLDERS()
-    REMOVE_EMPTY_FOLDERS()
-    REMOVE_EMPTY_FOLDERS()
-    REMOVE_EMPTY_FOLDERS()
-    REMOVE_EMPTY_FOLDERS()
-    # RESTOREFAV()
-    # ENABLE_WIZARD()
-    if mode != "silent":
-        dialog.ok(AddonTitle, "Wipe Successful, The interface will now be reset...")
-
-    # xbmc.executebuiltin('Mastermode')
-    if mode != "silent":
-        xbmc.executebuiltin("LoadProfile(Master user)")
-    # xbmc.executebuiltin('Mastermode')
+        onetap._wipe(HOME, onetap._wipe_excludes())
+    except Exception:
+        pass
+    try:
+        progressDialog.close()
+    except Exception:
+        pass
+    if mode != "silent" and xbmcgui.Dialog().yesno(
+        AddonTitle,
+        "Wipe complete. Kodi must restart to finish. Restart now?",
+        yeslabel="Restart",
+        nolabel="Later",
+    ):
+        xbmc.executebuiltin("Quit")
 
 
 def REMOVE_EMPTY_FOLDERS():
@@ -535,13 +521,6 @@ elif action == "onetap_menu":
     onetap.menu()
 
 elif action == "fresh_start":
-    dialog.ok(
-        AddonTitle,
-        "Before Proceeding please switch skin to the default Kodi... Confluence or Estuary...",
-    )
-    from resources.lib.modules import wiz
-
-    wiz.skinswap()
     FRESHSTART()
 
 elif action == "builds":

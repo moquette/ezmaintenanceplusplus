@@ -5,6 +5,10 @@ We import the REAL add-on module `dropbox_remote.py` under fully-faked Kodi
 modules + a fake `requests`, exactly the way Kodi exposes them at runtime, so we
 exercise the shipped REST/chunk/token/pagination logic directly. No source is
 modified; everything here is test-only scaffolding.
+
+The same fakes also back the `ui_mod` fixture, which imports the real `ui.py`
+(the uniform dialog/progress/copy library) so its Progress gauge, cancel model,
+and atomic chunked copy are exercised off-device.
 """
 
 import importlib
@@ -44,39 +48,90 @@ class _FakeAddon:
 
 
 class _FakeDialog:
+    """Records every call so tests can assert heading / message / labels, while keeping
+    the simple scripted return values the Dropbox tests already rely on."""
+
     last_ok = None
     inputs = []  # queue of strings to return from input()
+    ok_calls = []
+    yesno_calls = []
+    notification_calls = []
+    select_calls = []
+    input_calls = []
+    yesno_result = True
+    select_result = -1
+
+    @classmethod
+    def reset(cls):
+        cls.last_ok = None
+        cls.inputs = []
+        cls.ok_calls = []
+        cls.yesno_calls = []
+        cls.notification_calls = []
+        cls.select_calls = []
+        cls.input_calls = []
+        cls.yesno_result = True
+        cls.select_result = -1
 
     def ok(self, *a, **k):
         _FakeDialog.last_ok = a
+        _FakeDialog.ok_calls.append((a, k))
         return True
 
     def input(self, *a, **k):
+        _FakeDialog.input_calls.append((a, k))
         if _FakeDialog.inputs:
             return _FakeDialog.inputs.pop(0)
         return ""
 
     def select(self, *a, **k):
-        return -1
+        _FakeDialog.select_calls.append((a, k))
+        return _FakeDialog.select_result
 
     def notification(self, *a, **k):
+        _FakeDialog.notification_calls.append((a, k))
         return None
 
     def yesno(self, *a, **k):
-        return True
+        _FakeDialog.yesno_calls.append((a, k))
+        return _FakeDialog.yesno_result
 
 
 class _FakeDialogProgress:
+    """Records create/update/close and can be scripted to report a cancel after N
+    iscanceled() polls (cancel_after)."""
+
+    create_calls = []
+    update_calls = []
+    close_calls = 0
+    cancel_after = None  # iscanceled() returns True on/after this poll count (1-based)
+    _polls = 0
+
+    @classmethod
+    def reset(cls):
+        cls.create_calls = []
+        cls.update_calls = []
+        cls.close_calls = 0
+        cls.cancel_after = None
+        cls._polls = 0
+
     def create(self, *a, **k):
+        _FakeDialogProgress.create_calls.append((a, k))
         return None
 
     def update(self, *a, **k):
+        _FakeDialogProgress.update_calls.append((a, k))
         return None
 
     def close(self, *a, **k):
+        _FakeDialogProgress.close_calls += 1
         return None
 
     def iscanceled(self):
+        _FakeDialogProgress._polls += 1
+        ca = _FakeDialogProgress.cancel_after
+        if ca is not None and _FakeDialogProgress._polls >= ca:
+            return True
         return False
 
 
@@ -96,7 +151,8 @@ def _make_xbmc():
 
     m.log = _log
     m.translatePath = lambda p: p  # PY2 path; unused here
-    m.executebuiltin = lambda *a, **k: None
+    m._executed = []
+    m.executebuiltin = lambda *a, **k: m._executed.append(a[0] if a else "")
     m.sleep = lambda *a, **k: None
     return m
 
@@ -119,30 +175,73 @@ def _make_xbmcgui():
 
 
 class _FakeStat:
-    def __init__(self, size):
-        self._size = size
+    """Stat over the _FakeFile payload store: st_size() reports the current bytes at the
+    path (0 if unknown), so a copy's post-write size check is realizable. A path in
+    _overrides forces a specific size (used to fake a short/mismatched copy)."""
+
+    _overrides = {}  # path -> forced size
+
+    def __init__(self, path):
+        self._path = path
 
     def st_size(self):
-        return self._size
+        if self._path in _FakeStat._overrides:
+            return _FakeStat._overrides[self._path]
+        data = _FakeFile._payloads.get(self._path, b"")
+        return len(data or b"")
 
 
 class _FakeFile:
-    """xbmcvfs.File context manager returning bytes via readBytes()."""
+    """xbmcvfs.File fake: chunked readBytes(n) reads and buffered write()s.
+
+    The read source AND write destination is the shared _payloads[path] store, so a file
+    written here (e.g. a copy sidecar) can then be Stat'd and read back. write() returns
+    a bool like the real API and can be forced False for a path via _write_fails.
+    A no-arg readBytes() still returns all bytes, so older tests keep working.
+    """
 
     _payloads = {}  # path -> bytes
+    _write_fails = set()  # paths whose write() returns False
 
     def __init__(self, path, mode="r"):
         self.path = path
-        self._data = _FakeFile._payloads.get(path, b"")
+        self.mode = mode or "r"
+        self._writing = "w" in self.mode or "a" in self.mode
+        if self._writing:
+            self._buf = bytearray()
+        else:
+            self._data = _FakeFile._payloads.get(path, b"") or b""
+            self._pos = 0
 
     def __enter__(self):
         return self
 
     def __exit__(self, *a):
+        self.close()
         return False
 
-    def readBytes(self):
-        return self._data
+    def readBytes(self, n=None):
+        data = self._data
+        if n is None or n < 0:
+            chunk = data[self._pos :]
+            self._pos = len(data)
+        else:
+            chunk = data[self._pos : self._pos + n]
+            self._pos += len(chunk)
+        return bytearray(chunk)
+
+    def write(self, data):
+        if self.path in _FakeFile._write_fails:
+            return False
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        self._buf.extend(data)
+        return True
+
+    def close(self):
+        if self._writing:
+            _FakeFile._payloads[self.path] = bytes(self._buf)
+        return True
 
 
 def _make_xbmcvfs():
@@ -162,10 +261,57 @@ def _make_xbmcvfs():
 
     m._listdir_result = {}
     m.listdir = _listdir
+
     m._deleted = []
-    m.delete = lambda p: m._deleted.append(p)
-    m.copy = lambda a, b: True
-    m.exists = lambda p: True
+
+    def _delete(p):
+        m._deleted.append(p)
+        _FakeFile._payloads.pop(p, None)
+        return True
+
+    m.delete = _delete
+
+    # copy spy: records (src, dst); result defaults True but can be scripted False (or a
+    # callable) via _copy_result. On success it moves the payload so a later read sees it.
+    m._copies = []
+    m._copy_result = True
+
+    def _copy(a, b):
+        m._copies.append((a, b))
+        res = m._copy_result
+        res = res(a, b) if callable(res) else res
+        if res and a in _FakeFile._payloads:
+            _FakeFile._payloads[b] = _FakeFile._payloads[a]
+        return res
+
+    m.copy = _copy
+
+    # rename spy: records (src, dst); moves the payload; result scriptable via
+    # _rename_result (False forces the copy+delete finalize fallback).
+    m._renames = []
+    m._rename_result = True
+
+    def _rename(a, b):
+        m._renames.append((a, b))
+        if not m._rename_result:
+            return False
+        if a in _FakeFile._payloads:
+            _FakeFile._payloads[b] = _FakeFile._payloads.pop(a)
+        return True
+
+    m.rename = _rename
+
+    # exists: payload-driven, then a permissive default so existing tests (which never
+    # populate payloads) keep seeing files as present. ui tests set _exists_default=False
+    # to get payload-accurate existence for their cleanup assertions.
+    m._exists_default = True
+
+    def _exists(p):
+        if p in _FakeFile._payloads:
+            return True
+        return m._exists_default
+
+    m.exists = _exists
     m.mkdir = lambda p: True
     m.rmdir = lambda p: True
     return m
@@ -213,14 +359,21 @@ class FakeRequests:
         return self.responder(idx, call)
 
 
+def _reset_fakes():
+    """Reset all shared fake state between tests."""
+    LOG_LINES.clear()
+    _FakeAddon._settings = {}
+    _FakeDialog.reset()
+    _FakeDialogProgress.reset()
+    _FakeFile._payloads = {}
+    _FakeFile._write_fails = set()
+    _FakeStat._overrides = {}
+
+
 @pytest.fixture
 def fake_kodi(monkeypatch):
     """Install fake kodi + requests modules; return a namespace handle."""
-    LOG_LINES.clear()
-    _FakeAddon._settings = {}
-    _FakeDialog.last_ok = None
-    _FakeDialog.inputs = []
-    _FakeFile._payloads = {}
+    _reset_fakes()
 
     xbmc = _make_xbmc()
     xbmcaddon = _make_xbmcaddon()
@@ -276,3 +429,47 @@ def fake_kodi(monkeypatch):
     # 'dropbox_key' settings-fallback path they set up.
     dbx.APP_KEY = ""
     return ns
+
+
+@pytest.fixture
+def ui_mod(monkeypatch):
+    """Import the real ui.py under fake Kodi modules; return a handle with the module and
+    its fake xbmc* deps for driving/asserting dialogs, progress, and VFS copies."""
+    _reset_fakes()
+
+    xbmc = _make_xbmc()
+    xbmcaddon = _make_xbmcaddon()
+    xbmcgui = _make_xbmcgui()
+    xbmcvfs = _make_xbmcvfs()
+    xbmcvfs._exists_default = False  # payload-accurate exists for copy/cleanup tests
+
+    mods = {
+        "xbmc": xbmc,
+        "xbmcaddon": xbmcaddon,
+        "xbmcgui": xbmcgui,
+        "xbmcvfs": xbmcvfs,
+    }
+    for name, mod in mods.items():
+        monkeypatch.setitem(sys.modules, name, mod)
+
+    sys.modules.pop("ui", None)
+    spec = importlib.util.spec_from_file_location(
+        "ui",
+        ADDON_ROOT / "resources" / "lib" / "modules" / "ui.py",
+    )
+    ui = importlib.util.module_from_spec(spec)
+    sys.modules["ui"] = ui
+    spec.loader.exec_module(ui)
+
+    return types.SimpleNamespace(
+        ui=ui,
+        xbmc=xbmc,
+        xbmcgui=xbmcgui,
+        xbmcvfs=xbmcvfs,
+        addon=_FakeAddon,
+        Dialog=_FakeDialog,
+        DialogProgress=_FakeDialogProgress,
+        FakeFile=_FakeFile,
+        FakeStat=_FakeStat,
+        log_lines=LOG_LINES,
+    )

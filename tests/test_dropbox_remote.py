@@ -652,6 +652,100 @@ def test_download_broken_stream_removes_partial_temp(fake_kodi, tmp_path):
     assert not os.path.exists(dest_real), "partial temp file was not cleaned up"
 
 
+def test_download_cancel_removes_partial_and_raises(fake_kodi, tmp_path):
+    """A progress callback returning False cancels the download: the partial temp is
+    removed (never a truncated zip left for a later restore) and DropboxCanceled is
+    raised, so the caller reports 'canceled' not 'failed'. Mirrors the upload-cancel
+    contract - the download side used to swallow the cancel entirely (a no-op)."""
+    dbx = fake_kodi.dbx
+    import time
+
+    fake_kodi.addon._settings.update(
+        {"dropbox_key": "K", "dropbox_secret": "S", "dropbox_refresh_token": "R"}
+    )
+    dbx._cache["bearer"] = "B"
+    dbx._cache["exp"] = time.time() + 99999
+    dest_real = str(tmp_path / "dl.zip")
+    fake_kodi.xbmcvfs._temp_map["special://temp/dl.zip"] = dest_real
+    payload = b"A" * (3 * 1024 * 1024)  # three 1 MiB blocks
+    fake_kodi.requests.responder = lambda i, c: fake_kodi.FakeResponse(
+        200,
+        {},
+        headers={"Dropbox-API-Result": json.dumps({"size": len(payload)})},
+        content=payload,
+    )
+    calls = {"n": 0}
+
+    def progress(recv, total):
+        calls["n"] += 1
+        return calls["n"] < 2  # allow the first block, cancel on the second
+
+    with pytest.raises(dbx.DropboxCanceled):
+        dbx.download("dl.zip", progress=progress)
+    assert not os.path.exists(dest_real), "canceled download left a partial file"
+
+
+def test_download_progress_none_return_does_not_cancel(fake_kodi, tmp_path):
+    """The existing wiz download gauge callback just updates a dialog and returns None.
+    Only an explicit False cancels - a None return must NOT abort the download, or every
+    restore would break."""
+    dbx = fake_kodi.dbx
+    import time
+
+    fake_kodi.addon._settings.update(
+        {"dropbox_key": "K", "dropbox_secret": "S", "dropbox_refresh_token": "R"}
+    )
+    dbx._cache["bearer"] = "B"
+    dbx._cache["exp"] = time.time() + 99999
+    dest_real = str(tmp_path / "dl.zip")
+    fake_kodi.xbmcvfs._temp_map["special://temp/dl.zip"] = dest_real
+    payload = b"B" * 2500
+    fake_kodi.requests.responder = lambda i, c: fake_kodi.FakeResponse(
+        200,
+        {},
+        headers={"Dropbox-API-Result": json.dumps({"size": len(payload)})},
+        content=payload,
+    )
+
+    def progress(recv, total):
+        return None  # a plain gauge update - must not be read as a cancel
+
+    out = dbx.download("dl.zip", progress=progress)
+    assert out == "special://temp/dl.zip"
+    with open(dest_real, "rb") as fh:
+        assert fh.read() == payload
+
+
+def test_download_buggy_callback_does_not_corrupt_stream(fake_kodi, tmp_path):
+    """A callback that RAISES is a caller bug, not a cancel: the download completes and
+    the buggy callback's error is swallowed (the stream is never corrupted or aborted)."""
+    dbx = fake_kodi.dbx
+    import time
+
+    fake_kodi.addon._settings.update(
+        {"dropbox_key": "K", "dropbox_secret": "S", "dropbox_refresh_token": "R"}
+    )
+    dbx._cache["bearer"] = "B"
+    dbx._cache["exp"] = time.time() + 99999
+    dest_real = str(tmp_path / "dl.zip")
+    fake_kodi.xbmcvfs._temp_map["special://temp/dl.zip"] = dest_real
+    payload = b"C" * 4096
+    fake_kodi.requests.responder = lambda i, c: fake_kodi.FakeResponse(
+        200,
+        {},
+        headers={"Dropbox-API-Result": json.dumps({"size": len(payload)})},
+        content=payload,
+    )
+
+    def progress(recv, total):
+        raise RuntimeError("callback blew up")
+
+    out = dbx.download("dl.zip", progress=progress)
+    assert out == "special://temp/dl.zip"
+    with open(dest_real, "rb") as fh:
+        assert fh.read() == payload
+
+
 def test_download_makes_dest_dir(fake_kodi, tmp_path):
     """FIX (LOW-5): download() mkdirs the dest directory before opening it, so a
     missing special://temp does not blow up the write."""

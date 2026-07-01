@@ -48,7 +48,9 @@ def _name_stamp(name):
 # the add-on), so it is safe to hardcode here. Falls back to the 'dropbox_key' advanced
 # setting if a user points the add-on at their own Dropbox app.
 APP_KEY = "0xzoqv9xq7ji6et"
-APP_SECRET = ""  # unused under PKCE; kept only for the legacy _secret() settings fallback
+APP_SECRET = (
+    ""  # unused under PKCE; kept only for the legacy _secret() settings fallback
+)
 
 # Upload-session chunk size: a small 8 MiB (a multiple of Dropbox's 4 MiB session
 # unit) so one chunk finishes well inside TIMEOUT even on a slow Fire TV / Apple TV
@@ -642,7 +644,9 @@ def download(remote_name, dest_dir=None, progress=None):
 
     By default it stages in special://temp; pass dest_dir (a real local directory) to
     stage elsewhere (the raw path is then returned). `progress`, if given, is called
-    progress(bytes_received, total_bytes) as the stream is written."""
+    progress(bytes_received, total_bytes) as the stream is written; returning False
+    cancels (the partial file is removed and DropboxCanceled is raised, so the caller
+    reports "canceled" rather than "failed" and never restores a truncated zip)."""
     if dest_dir:
         dest = os.path.join(dest_dir, remote_name)
         ret = dest
@@ -679,6 +683,7 @@ def download(remote_name, dest_dir=None, progress=None):
                 except (TypeError, ValueError):
                     total = 0
             written = 0
+            cancelled = False
             try:
                 with open(dest, "wb") as fh:
                     for block in resp.iter_content(chunk_size=1024 * 1024):
@@ -686,10 +691,19 @@ def download(remote_name, dest_dir=None, progress=None):
                             fh.write(block)
                             written += len(block)
                             if progress is not None:
+                                # A buggy callback must never corrupt the stream, so its
+                                # OWN errors are swallowed; but an explicit False is a
+                                # cancel request and is honored. `is False` (not falsy) so
+                                # a callback that just updates and returns None never
+                                # cancels.
+                                cont = True
                                 try:
-                                    progress(written, total)
+                                    cont = progress(written, total)
                                 except Exception:
-                                    pass
+                                    cont = True
+                                if cont is False:
+                                    cancelled = True
+                                    break
             except Exception:
                 # A broken stream leaves a partial temp file: remove it so a
                 # later restore can never pick up a truncated zip, then re-raise.
@@ -698,6 +712,15 @@ def download(remote_name, dest_dir=None, progress=None):
                 except OSError:
                     pass
                 raise
+            if cancelled:
+                # User canceled mid-download: drop the partial (never leave a truncated
+                # zip for a later restore) and signal the caller. Raised OUTSIDE the
+                # try/except above so the cancel is never swallowed as a stream error.
+                try:
+                    os.remove(dest)
+                except OSError:
+                    pass
+                raise DropboxCanceled()
             _log("download wrote %s bytes for %s" % (written, remote_name))
             # A 200 with no body would otherwise become a silent "restore complete"
             # on an empty file - fail loud instead so the caller surfaces it.

@@ -380,3 +380,32 @@ def test_apply_bad_zip_never_wipes(ot, tmp_path):
     o._wipe = lambda *a, **k: wipes.append(1)
     o.apply(1)  # is_zipfile(bad) is False -> abort before wipe
     assert wipes == []
+
+
+# --------------------------- the menu (user-facing entry) ----------------- #
+def test_menu_taps_set_pin_calls_apply(ot):
+    o = ot.onetap
+    o.save_pin(1, "Golden", "vfs", "nfs://h/b.zip", "full", "full . 130 MB")
+    ot.dialog.select_returns = [0]  # tap row 0 = slot 1 (set)
+    calls = []
+    o.apply = lambda slot: calls.append(slot)
+    o.menu()
+    assert calls == [1]
+
+
+def test_menu_empty_slot_calls_pick(ot):
+    o = ot.onetap
+    ot.dialog.select_returns = [0]  # slot 1 empty -> pin it
+    calls = []
+    o.pick = lambda slot: calls.append(slot)
+    o.menu()
+    assert calls == [1]
+
+
+def test_menu_plus_option_calls_menu_pick(ot):
+    o = ot.onetap
+    ot.dialog.select_returns = [o.SLOTS]  # the "[+] Pin..." row (index == slot count)
+    calls = []
+    o.menu_pick = lambda: calls.append(1)
+    o.menu()
+    assert calls == [1]

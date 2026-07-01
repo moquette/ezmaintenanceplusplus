@@ -417,3 +417,36 @@ def apply(slot):
         wiz.restore(local, confirm=False)
     finally:
         _cleanup(local)
+
+
+# --------------------------------------------------------------------------- #
+# The One-Tap Restore MENU - the user-facing entry, opened from the add-on's main
+# menu (NOT settings). Lists pinned backups; tap one to restore it.
+# --------------------------------------------------------------------------- #
+def menu():
+    pins = all_pins()
+    labels = [
+        label_for(p) if is_set(p) else "Slot %d  -  (empty)" % p["slot"] for p in pins
+    ]
+    labels.append("[ + ]  Pin or change a backup...")
+    idx = xbmcgui.Dialog().select("One-Tap Restore - pick a backup to restore", labels)
+    if idx == -1:
+        return
+    if idx == len(pins):
+        menu_pick()
+        return
+    chosen = pins[idx]
+    if is_set(chosen):
+        apply(chosen["slot"])  # restore (apply verifies + confirms + wipes + restores)
+    else:
+        pick(chosen["slot"])  # empty slot tapped -> pin one
+
+
+def menu_pick():
+    opts = []
+    for n in range(1, SLOTS + 1):
+        p = get_pin(n)
+        opts.append("Slot %d  -  %s" % (n, p["name"] if is_set(p) else "empty"))
+    idx = xbmcgui.Dialog().select("Pin a backup to which slot?", opts)
+    if idx != -1:
+        pick(idx + 1)

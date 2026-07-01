@@ -92,13 +92,12 @@ def CATEGORIES():
         "",
     )
     CreateDir(
-        "[COLOR lime][B]MY WIZARD[/B][/COLOR]",
+        "[COLOR lime][B]ONE-TAP RESTORE[/B][/COLOR]",
         "ur",
-        "builds",
+        "onetap_menu",
         ADDON_ICON,
         ADDON_FANART,
         "",
-        isFolder=True,
     )
     CreateDir(
         "[COLOR white][B]BACKUP/RESTORE[/B][/COLOR]",
@@ -529,6 +528,11 @@ if action == None:
     CATEGORIES()
 elif action == "settings":
     control.openSettings()
+
+elif action == "onetap_menu":
+    from resources.lib.modules import onetap
+
+    onetap.menu()
 
 elif action == "fresh_start":
     dialog.ok(

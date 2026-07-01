@@ -535,6 +535,70 @@ def test_backup_vfs_copy_failure_no_success_no_rotation(monkeypatch, tmp_path):
     assert "fail" in blob.lower(), "did not surface the failure to the user"
 
 
+def test_restore_post_wipe_is_uninterruptible_and_always_restarts(
+    monkeypatch, tmp_path
+):
+    """Stage C invariant: once the box is wiped, restore(post_wipe=True) must NOT honor a
+    cancel (the extract is uninterruptible) and must ALWAYS reach the restart prompt - a
+    wiped box left unprompted is the worst outcome. Even with the progress dialog
+    reporting canceled, the extract completes and Quit is issued."""
+    import zipfile as _zip
+
+    wiz, _ = _import_wiz(monkeypatch, {})
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.txt").write_text("aaa")
+    (src / "b.txt").write_text("bbb")
+    zpath = tmp_path / "backup_202601010101.zip"
+    with _zip.ZipFile(str(zpath), "w") as z:
+        z.write(str(src / "a.txt"), "a.txt")
+        z.write(str(src / "b.txt"), "b.txt")
+    extract_dir = tmp_path / "home"
+    extract_dir.mkdir()
+    wiz.control.HOME = str(extract_dir)
+    # the progress dialog SCREAMS canceled the whole time - post_wipe must ignore it
+    monkeypatch.setattr(wiz.xbmcgui.DialogProgress, "iscanceled", lambda self: True)
+    executed = []
+    monkeypatch.setattr(
+        wiz.xbmc, "executebuiltin", lambda *a, **k: executed.append(a[0] if a else "")
+    )
+
+    wiz.restore(str(zpath), confirm=False, post_wipe=True)
+
+    # the extract ran to completion despite the 'cancel'
+    assert (extract_dir / "a.txt").exists()
+    assert (extract_dir / "b.txt").exists()
+    # and the restart was ALWAYS offered + taken (default yesno True -> Quit)
+    assert "Quit" in executed
+
+
+def test_restore_normal_honors_cancel(monkeypatch, tmp_path):
+    """The companion: a NORMAL restore (not post_wipe) DOES honor a cancel - it stops
+    extracting and never issues the restart."""
+    import zipfile as _zip
+
+    wiz, _ = _import_wiz(monkeypatch, {})
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.txt").write_text("aaa")
+    zpath = tmp_path / "backup_202601010101.zip"
+    with _zip.ZipFile(str(zpath), "w") as z:
+        z.write(str(src / "a.txt"), "a.txt")
+    extract_dir = tmp_path / "home"
+    extract_dir.mkdir()
+    wiz.control.HOME = str(extract_dir)
+    monkeypatch.setattr(wiz.xbmcgui.DialogProgress, "iscanceled", lambda self: True)
+    executed = []
+    monkeypatch.setattr(
+        wiz.xbmc, "executebuiltin", lambda *a, **k: executed.append(a[0] if a else "")
+    )
+
+    wiz.restore(str(zpath), confirm=False, post_wipe=False)
+
+    # a normal restore that the user canceled must NOT restart
+    assert "Quit" not in executed
+
+
 def test_dropbox_no_refresh_token_aborts_early(monkeypatch):
     settings = {"destination": "2", "backup.keep": "2", "dropbox_refresh_token": ""}
     wiz, _ = _import_wiz(monkeypatch, settings)

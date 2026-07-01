@@ -363,6 +363,19 @@ def test_wipe_protects_addon_deps_and_temp(ot, tmp_path):
     assert not (tmp_path / "userdata" / "guisettings.xml").exists()
 
 
+def test_wipe_keeps_addon_db_file(ot, tmp_path):
+    o = ot.onetap
+    (tmp_path / "userdata" / "Database").mkdir(parents=True)
+    db = tmp_path / "userdata" / "Database" / "Addons33.db"
+    db.write_text("state")
+    (tmp_path / "userdata" / "guisettings.xml").write_text("x")
+    o._wipe(str(tmp_path), {"temp"}, {str(db)})
+    assert db.exists()  # the add-on state DB is preserved (stays enabled)
+    assert not (
+        tmp_path / "userdata" / "guisettings.xml"
+    ).exists()  # everything else wiped
+
+
 def test_apply_empty_slot_never_wipes(ot):
     o = ot.onetap
     wipes = []

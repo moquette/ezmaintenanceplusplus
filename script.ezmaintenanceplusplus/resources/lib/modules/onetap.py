@@ -306,17 +306,23 @@ def _wipe_excludes():
     return keep
 
 
-def _wipe(home, excludes):
-    """Remove everything under `home` except any entry named in `excludes` (matched at
-    any depth - protects addons/<this add-on> and temp/). Returns files removed."""
+def _wipe(home, excludes, keep_files=None):
+    """Remove everything under `home` except any entry named in `excludes` (matched at any
+    depth - protects addons/<this add-on> and temp/) and any absolute path in `keep_files`
+    (e.g. Kodi's add-on state DB, so the surviving add-on stays ENABLED). Returns files
+    removed."""
     import os
 
+    keep_files = keep_files or set()
     removed = 0
     for root, dirs, files in os.walk(home, topdown=True):
         dirs[:] = [d for d in dirs if d not in excludes]
         for fname in files:
+            path = os.path.join(root, fname)
+            if path in keep_files:
+                continue
             try:
-                os.remove(os.path.join(root, fname))
+                os.remove(path)
                 removed += 1
             except Exception:
                 pass
@@ -329,6 +335,20 @@ def _wipe(home, excludes):
             except Exception:
                 pass
     return removed
+
+
+def keep_addon_db():
+    """Absolute paths of Kodi's add-on state database (Addons*.db). Preserving it through a
+    wipe keeps EZ Maintenance++ ENABLED on the restart instead of coming back disabled
+    (which is what made it look 'gone' after a wipe)."""
+    import glob
+    import os
+
+    try:
+        db_dir = xbmcvfs.translatePath("special://home/userdata/Database")
+        return set(glob.glob(os.path.join(db_dir, "Addons*.db")))
+    except Exception:
+        return set()
 
 
 def _stage(pin):

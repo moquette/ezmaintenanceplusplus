@@ -19,6 +19,7 @@ import xbmcgui
 import xbmcvfs
 import re
 from resources.lib.modules.backtothefuture import unicode, PY2
+from resources.lib.modules import ui
 
 if PY2:
     translatePath = xbmc.translatePath
@@ -163,8 +164,7 @@ def advancedSettings():
         if not entered or entered == "-" or not str(entered).isdigit():
             return
         mb = int(entered)
-        if mb > 400 and not dialog.yesno(
-            AddonTitle,
+        if mb > 400 and not ui.confirm(
             "%d MB is very large. Kodi buffers up to ~500 MB and a big buffer can make "
             "playback fail on low-memory devices. Use it anyway?" % mb,
             yeslabel="Use it",
@@ -176,15 +176,12 @@ def advancedSettings():
         _clean_stale_advancedsettings()
 
     if _set_cache_mb(mb):
-        dialog.ok(
-            AddonTitle,
+        ui.done(
             "Cache buffer set to %d MB.\n"
-            "Applies to the next video you play - no restart needed." % mb,
+            "Applies to the next video you play - no restart needed." % mb
         )
     else:
-        dialog.ok(
-            AddonTitle, "Could not change the cache setting. Nothing was changed."
-        )
+        ui.error("Could not change the cache setting. Nothing was changed.")
 
 
 def open_Settings():

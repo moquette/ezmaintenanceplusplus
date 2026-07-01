@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
 
-'''
- CONTROL ROUTINES
-'''
+"""
+CONTROL ROUTINES
+"""
 
+import os
 
-import os,sys
-
-import xbmc,xbmcaddon,xbmcplugin,xbmcgui,xbmcvfs
+import xbmc
+import xbmcaddon
+import xbmcplugin
+import xbmcgui
+import xbmcvfs
 from resources.lib.modules.backtothefuture import PY2
+from resources.lib.modules import ui
 
 
 integer = 1000
@@ -84,81 +88,99 @@ if PY2:
 else:
     translatePath = xbmcvfs.translatePath
 
-skinPath = translatePath('special://skin/')
+skinPath = translatePath("special://skin/")
 
-addonPath = translatePath(addonInfo('path'))
+addonPath = translatePath(addonInfo("path"))
 
-AddonID = 'script.ezmaintenanceplusplus'
-artPath = translatePath(os.path.join('special://home/addons/' + AddonID, 'art'))
+AddonID = "script.ezmaintenanceplusplus"
+artPath = translatePath(os.path.join("special://home/addons/" + AddonID, "art"))
 # DIRECTORIES
-backupdir        =  translatePath(os.path.join('special://home/backupdir',''))
-packagesdir      =  translatePath(os.path.join('special://home/addons/packages',''))
-USERDATA         =  translatePath(os.path.join('special://home/userdata',''))
-ADDON_DATA       =  translatePath(os.path.join(USERDATA, 'addon_data'))
-HOME             =  translatePath('special://home/')
-HOME_ADDONS      =  translatePath('special://home/addons')
+backupdir = translatePath(os.path.join("special://home/backupdir", ""))
+packagesdir = translatePath(os.path.join("special://home/addons/packages", ""))
+USERDATA = translatePath(os.path.join("special://home/userdata", ""))
+ADDON_DATA = translatePath(os.path.join(USERDATA, "addon_data"))
+HOME = translatePath("special://home/")
+HOME_ADDONS = translatePath("special://home/addons")
 
 
 def addonIcon():
-    path = translatePath(os.path.join('special://home/addons/' + AddonID , 'icon.png'))
+    path = translatePath(os.path.join("special://home/addons/" + AddonID, "icon.png"))
     return path
 
+
 def addonThumb():
-    theme = appearance() ; art = artPath()
-    if not (art == None and theme in ['-', '']): return os.path.join(art, 'poster.png')
-    elif theme == '-': return 'DefaultFolder.png'
-    return addonInfo('icon')
+    theme = appearance()
+    art = artPath()
+    if not (art == None and theme in ["-", ""]):
+        return os.path.join(art, "poster.png")
+    elif theme == "-":
+        return "DefaultFolder.png"
+    return addonInfo("icon")
 
 
 def addonPoster():
-    theme = appearance() ; art = artPath()
-    if not (art == None and theme in ['-', '']): return os.path.join(art, 'poster.png')
-    return 'DefaultVideo.png'
+    theme = appearance()
+    art = artPath()
+    if not (art == None and theme in ["-", ""]):
+        return os.path.join(art, "poster.png")
+    return "DefaultVideo.png"
 
 
 def addonBanner():
-    theme = appearance() ; art = artPath()
-    if not (art == None and theme in ['-', '']): return os.path.join(art, 'banner.png')
-    return 'DefaultVideo.png'
+    theme = appearance()
+    art = artPath()
+    if not (art == None and theme in ["-", ""]):
+        return os.path.join(art, "banner.png")
+    return "DefaultVideo.png"
 
 
 def addonFanart():
-    return translatePath(os.path.join('special://home/addons/' + AddonID , 'fanart.jpg'))
+    return translatePath(os.path.join("special://home/addons/" + AddonID, "fanart.jpg"))
 
 
 def addonNext():
-    theme = appearance() ; art = artPath()
-    if not (art == None and theme in ['-', '']): return os.path.join(art, 'next.png')
-    return 'DefaultVideo.png'
+    theme = appearance()
+    art = artPath()
+    if not (art == None and theme in ["-", ""]):
+        return os.path.join(art, "next.png")
+    return "DefaultVideo.png"
 
 
-
-def infoDialog(message, heading=addonInfo('name'), icon='', time=None, sound=False):
-    if time == None: time = 3000
-    else: time = int(time)
-    if icon == '': icon = addonIcon()
-    elif icon == 'INFO': icon = xbmcgui.NOTIFICATION_INFO
-    elif icon == 'WARNING': icon = xbmcgui.NOTIFICATION_WARNING
-    elif icon == 'ERROR': icon = xbmcgui.NOTIFICATION_ERROR
+def infoDialog(message, heading=ui.HEADING, icon="", time=None, sound=False):
+    if time == None:
+        time = 3000
+    else:
+        time = int(time)
+    if icon == "":
+        icon = addonIcon()
+    elif icon == "INFO":
+        icon = xbmcgui.NOTIFICATION_INFO
+    elif icon == "WARNING":
+        icon = xbmcgui.NOTIFICATION_WARNING
+    elif icon == "ERROR":
+        icon = xbmcgui.NOTIFICATION_ERROR
     dialog.notification(heading, message, icon, time, sound=sound)
 
 
-def yesnoDialog(line1, line2, line3, heading=addonInfo('name'), nolabel='', yeslabel=''):
-    return dialog.yesno(heading, line1 + '\n' + line2 + '\n' + line3, nolabel=nolabel, yeslabel=yeslabel)
+def yesnoDialog(line1, line2, line3, heading=ui.HEADING, nolabel="", yeslabel=""):
+    return dialog.yesno(
+        heading, line1 + "\n" + line2 + "\n" + line3, nolabel=nolabel, yeslabel=yeslabel
+    )
 
 
-def selectDialog(list, heading=addonInfo('name')):
+def selectDialog(list, heading=ui.HEADING):
     return dialog.select(heading, list)
 
 
-def openSettings(query=None, id=addonInfo('id')):
+def openSettings(query=None, id=addonInfo("id")):
     try:
         idle()
-        execute('Addon.OpenSettings(%s)' % id)
-        if query == None: raise Exception()
-        c, f = query.split('.')
-        execute('SetFocus(%i)' % (int(c) + 100))
-        execute('SetFocus(%i)' % (int(f) + 200))
+        execute("Addon.OpenSettings(%s)" % id)
+        if query == None:
+            raise Exception()
+        c, f = query.split(".")
+        execute("SetFocus(%i)" % (int(c) + 100))
+        execute("SetFocus(%i)" % (int(f) + 200))
     except:
         return
 
@@ -169,13 +191,16 @@ def getCurrentViewId():
 
 
 def refresh():
-    return execute('Container.Refresh')
+    return execute("Container.Refresh")
+
 
 def busy():
-    return execute('ActivateWindow(busydialog)')
+    return execute("ActivateWindow(busydialog)")
+
 
 def idle():
-    return execute('Dialog.Close(busydialog)')
+    return execute("Dialog.Close(busydialog)")
+
 
 def queueItem():
-    return execute('Action(Queue)')
+    return execute("Action(Queue)")

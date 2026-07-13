@@ -247,20 +247,25 @@ def _qr_image(url):
 
     global _qr_seq
     _qr_seq += 1
-    # best-effort tidy of prior QR pngs so special://temp does not accumulate
-    try:
-        import glob
-
-        for old in glob.glob(xbmcvfs.translatePath("special://temp/_dbx_qr*.png")):
-            try:
-                os.remove(old)
-            except OSError:
-                pass
-    except Exception:
-        pass
+    png = _qrgen.make_qr_png_bytes(url)
     special = "special://temp/_dbx_qr_%d_%d.png" % (int(time.time()), _qr_seq)
-    with open(xbmcvfs.translatePath(special), "wb") as fh:
-        fh.write(_qrgen.make_qr_png_bytes(url))
+    # Write THROUGH xbmcvfs (Kodi's own VFS), NEVER plain open(). On Apple TV (tvOS)
+    # Kodi's VFS - which its texture loader uses to READ - silently reads EMPTY for a
+    # local file written by a *different* writer (plain Python open()); it's an App
+    # Sandbox scoped-resource quirk, documented in
+    # docs/playbooks/kodi-vfs-cannot-read-foreign-local-files.md (same repo). That is why
+    # the barcode was blank on Apple TV (plain-open PNG) but fine on Fire TV (Android, no
+    # such restriction). Writing THROUGH xbmcvfs makes the file "known" to Kodi so the
+    # texture loader can read it back. special://temp (not userdata) => no NSUserDefaults
+    # mirroring. Fresh filename each call defeats Kodi's per-path texture cache; the PNG is
+    # already 32-bit so Kodi 21.3 will draw it; return the special:// path for ControlImage.
+    f = xbmcvfs.File(special, "w")
+    try:
+        ok = f.write(bytearray(png))
+    finally:
+        f.close()
+    if not ok:
+        _log("authorize: QR write via xbmcvfs failed")
     return special
 
 

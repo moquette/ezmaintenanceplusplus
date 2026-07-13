@@ -51,9 +51,32 @@ def _nfs_url(host, path):
     return "nfs://{}/{}".format(str(host).split(":", 1)[0], str(path).lstrip("/"))
 
 
+# userdata-relative path matches nsud's NSUserDefaults key on tvOS.
+SOURCES_SPECIAL = "special://home/userdata/sources.xml"
+
+
 def _sources_xml_path():
-    p = xbmcvfs.translatePath("special://profile/sources.xml")
-    return p or xbmcvfs.translatePath("special://home/userdata/sources.xml")
+    return xbmcvfs.translatePath(SOURCES_SPECIAL)
+
+
+def _read_sources_bytes():
+    """Read sources.xml through xbmcvfs - the layer Kodi actually reads. On Apple
+    TV that is the NSUserDefaults mirror (a plain POSIX read can see a stale or
+    dropped disk copy and make us clobber existing sources); on Fire TV / desktop
+    it is the same POSIX file. Returns bytes, or b'' when absent/unreadable."""
+    f = None
+    try:
+        f = xbmcvfs.File(SOURCES_SPECIAL)
+        b = f.readBytes()
+        return bytes(b) if b else b""
+    except Exception:
+        return b""
+    finally:
+        try:
+            if f is not None:
+                f.close()
+        except Exception:
+            pass
 
 
 def _make_source(files, name, path):
@@ -76,10 +99,11 @@ def add_media_sources(interactive=True):
     ]
     try:
         xml_path = _sources_xml_path()
+        raw = _read_sources_bytes()
         root = None
-        if xml_path and os.path.exists(xml_path):
+        if raw:
             try:
-                root = ET.parse(xml_path).getroot()
+                root = ET.fromstring(raw)
             except ET.ParseError:
                 root = None
         if root is None or root.tag != "sources":
@@ -106,6 +130,14 @@ def add_media_sources(interactive=True):
         if added:
             with open(xml_path, "w", encoding="utf-8") as f:
                 f.write(ET.tostring(root, encoding="unicode"))
+            # tvOS-safe persist: vector into NSUserDefaults + drop the POSIX dupe
+            # on Apple TV via the verified nsud path (a plain POSIX write alone
+            # dual-layers the file, so File Manager lists sources twice - the
+            # tvOS-restore-duplicate-userdata bug fixed in 2026.07.08.6). A no-op
+            # rewrite of identical bytes on Fire TV / desktop.
+            from resources.lib.modules import nsud
+
+            nsud.persist_one("sources.xml", log=_log)
         _log("sources added=%d" % added)
         if interactive:
             ui.done(

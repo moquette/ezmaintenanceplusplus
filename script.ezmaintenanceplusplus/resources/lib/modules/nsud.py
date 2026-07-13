@@ -196,3 +196,36 @@ def rewrite_userdata_xml(
             "%d posix-dropped (tvOS)" % (written, skipped, failed, dropped)
         )
     return (written, skipped, failed)
+
+
+def persist_one(rel, log=None):
+    """Persist ONE already-on-disk userdata file (userdata-relative, e.g.
+    "sources.xml") the tvOS-safe way, for a caller that just wrote it with plain
+    POSIX and would otherwise leave it dual-layered on Apple TV.
+
+    Same ordered write-through -> read-back -> drop-POSIX as
+    ``rewrite_userdata_xml``, for a single file: vector it through xbmcvfs (->
+    NSUserDefaults on tvOS) and, ONLY on tvOS and ONLY after a read-back confirms
+    the store holds the identical bytes, drop the now-redundant POSIX copy so File
+    Manager stops listing the file (and its contents) twice - the
+    tvOS-restore-duplicate-userdata bug. A strict no-op rewrite of identical bytes
+    on Fire TV / Android / desktop (there the special:// path IS the POSIX file).
+    Returns True on a confirmed vector; guarded, never raises."""
+    rel = (rel or "").replace("\\", "/")
+    special = _special_for(rel)
+    posix = xbmcvfs.translatePath(special)
+    try:
+        if not _vfs_rewrite_once(posix, special):
+            if log:
+                log("nsud.persist_one: vector failed for %s (POSIX stands)" % rel)
+            return False
+        if _is_tvos() and _vector_confirmed(special, posix):
+            try:
+                os.remove(posix)
+            except OSError:
+                pass
+        if log:
+            log("nsud.persist_one: persisted %s" % rel)
+        return True
+    except Exception:  # noqa: BLE001 - never abort the caller
+        return False

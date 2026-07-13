@@ -1,0 +1,270 @@
+# -*- coding: utf-8 -*-
+"""Box setup: the surviving "Foundation" provisioning, decoupled.
+
+Extracted from the retiring script.module.tony7bones setup layer
+(tony7bones.setup.foundation) so it can live in EZ Maintenance++ instead. Three
+zero-config steps for a fresh box:
+
+  * media sources - the mini's KodiShare / KodiBackup NFS shares (+ our repo)
+  * weather       - Multi Weather, installed + pointed at Sacramento
+  * RSS ticker    - the lookandfeel.enablerssfeeds core setting
+
+No dependency on the old tony7bones install machinery: weather installs via
+Kodi's own InstallAddon builtin (not the module's installer), settings are set
+over JSON-RPC, and the sources/weather/RssFeeds files are written directly. All
+steps are idempotent and defensive (logged, never abort the box).
+"""
+
+import json
+import os
+from xml.etree import ElementTree as ET
+
+import xbmc
+import xbmcaddon
+import xbmcvfs
+
+from resources.lib.modules import ui
+
+AddonTitle = "EZ Maintenance++"
+
+
+def _log(msg, level=xbmc.LOGINFO):
+    xbmc.log("EZMpp box-setup: %s" % msg, level)
+
+
+# --------------------------------------------------------------------------- #
+# Media sources (the mini's NFS shares + our repo) - zero-config for this
+# household; the host is a constant IP (never a resolvable hostname).
+# --------------------------------------------------------------------------- #
+MINI_HOST = "192.168.7.2"
+KODI_SHARE_PATH = "Users/moquette/Kodi/Share/"
+KODI_BACKUP_PATH = "Users/moquette/Kodi/Backup/"
+KODI_SHARE_SOURCE_NAME = "KodiShare"
+KODI_BACKUP_SOURCE_NAME = "KodiBackup"
+REPO_SOURCE_NAME = ".tony.7.bones"
+REPO_SOURCE_URL = "https://tony7bones.github.io/"
+
+
+def _nfs_url(host, path):
+    """Port-free nfs:// URL from (host, path). Kodi caches sources at startup,
+    so a `:2049` variant would look like a different source - never emit a port."""
+    return "nfs://{}/{}".format(str(host).split(":", 1)[0], str(path).lstrip("/"))
+
+
+def _sources_xml_path():
+    p = xbmcvfs.translatePath("special://profile/sources.xml")
+    return p or xbmcvfs.translatePath("special://home/userdata/sources.xml")
+
+
+def _make_source(files, name, path):
+    src = ET.SubElement(files, "source")
+    ET.SubElement(src, "name").text = name
+    p = ET.SubElement(src, "path")
+    p.set("pathversion", "1")
+    p.text = path
+    ET.SubElement(src, "allowsharing").text = "true"
+
+
+def add_media_sources(interactive=True):
+    """Add KodiShare / KodiBackup (mini NFS) + our repo to userdata/sources.xml.
+    Preserves existing sources, dedupes on name AND path (a second run is a
+    no-op). They appear in File Manager after a Kodi restart."""
+    want = [
+        (REPO_SOURCE_NAME, REPO_SOURCE_URL),
+        (KODI_SHARE_SOURCE_NAME, _nfs_url(MINI_HOST, KODI_SHARE_PATH)),
+        (KODI_BACKUP_SOURCE_NAME, _nfs_url(MINI_HOST, KODI_BACKUP_PATH)),
+    ]
+    try:
+        xml_path = _sources_xml_path()
+        root = None
+        if xml_path and os.path.exists(xml_path):
+            try:
+                root = ET.parse(xml_path).getroot()
+            except ET.ParseError:
+                root = None
+        if root is None or root.tag != "sources":
+            root = ET.Element("sources")
+        files = root.find("files")
+        if files is None:
+            files = ET.SubElement(root, "files")
+        if files.find("default") is None:
+            files.insert(0, ET.Element("default"))
+        have_names = {
+            (s.findtext("name") or "").strip() for s in files.findall("source")
+        }
+        have_paths = {
+            (s.findtext("path") or "").strip() for s in files.findall("source")
+        }
+        added = 0
+        for name, path in want:
+            if name in have_names or path in have_paths:
+                continue
+            _make_source(files, name, path)
+            have_names.add(name)
+            have_paths.add(path)
+            added += 1
+        if added:
+            with open(xml_path, "w", encoding="utf-8") as f:
+                f.write(ET.tostring(root, encoding="unicode"))
+        _log("sources added=%d" % added)
+        if interactive:
+            ui.done(
+                "Media sources ready (%d added).\n\nKodi caches sources at "
+                "startup, so KodiShare and KodiBackup show up in File Manager "
+                "after a restart." % added,
+                heading=AddonTitle,
+            )
+        return True
+    except Exception as e:  # noqa: BLE001 - never abort the box
+        _log("sources failed: %s" % e, xbmc.LOGERROR)
+        if interactive:
+            ui.error("Could not add media sources: %s" % e, heading=AddonTitle)
+        return False
+
+
+# --------------------------------------------------------------------------- #
+# Weather (Multi Weather) - install via Kodi's builtin, then point it at
+# Sacramento so it fetches without the interactive geocode search.
+# --------------------------------------------------------------------------- #
+WEATHER_ADDON = "weather.multi"
+WEATHER_PROVIDER_SETTING = "weather.addon"
+WEATHER_LOCATION = {
+    "loc1_name": "Sacramento, CA, US",
+    "loc1_url": "us/ca/sacramento",  # the load-bearing field the add-on fetches on
+    "loc1_lat": "38.5816",
+    "loc1_lon": "-121.4944",
+}
+
+
+def _set_core_setting(setting_id, value):
+    """Set a CORE Kodi setting (weather.addon, lookandfeel.*) via JSON-RPC."""
+    resp = xbmc.executeJSONRPC(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "method": "Settings.SetSettingValue",
+                "params": {"setting": setting_id, "value": value},
+                "id": 1,
+            }
+        )
+    )
+    return '"result":true' in (resp or "")
+
+
+def _is_installed(addon_id):
+    try:
+        xbmcaddon.Addon(addon_id)
+        return True
+    except Exception:
+        return False
+
+
+def _weather_settings_path():
+    return xbmcvfs.translatePath(
+        "special://profile/addon_data/weather.multi/settings.xml"
+    )
+
+
+def _write_weather_settings(settings):
+    """Write id->value into Multi Weather's settings.xml, preserving the rest."""
+    xml_path = _weather_settings_path()
+    os.makedirs(os.path.dirname(xml_path), exist_ok=True)
+    root = None
+    if os.path.exists(xml_path):
+        try:
+            root = ET.parse(xml_path).getroot()
+        except ET.ParseError:
+            root = None
+    if root is None or root.tag != "settings":
+        root = ET.Element("settings")
+        root.set("version", "2")
+    by_id = {s.get("id"): s for s in root.findall("setting") if s.get("id")}
+    for sid, val in settings.items():
+        el = by_id.get(sid)
+        if el is None:
+            el = ET.SubElement(root, "setting")
+            el.set("id", sid)
+            by_id[sid] = el
+        el.text = val
+    with open(xml_path, "w", encoding="utf-8") as f:
+        f.write(ET.tostring(root, encoding="unicode"))
+
+
+def setup_weather(interactive=True):
+    """Install Multi Weather (Kodi's InstallAddon builtin - needs an enabled
+    repo that carries it, e.g. the official Kodi repo), set it as the provider,
+    and pre-write the Sacramento location."""
+    try:
+        if not _is_installed(WEATHER_ADDON):
+            if interactive:
+                with ui.Progress("Installing Multi Weather...", heading=AddonTitle):
+                    xbmc.executebuiltin("InstallAddon(%s)" % WEATHER_ADDON, True)
+            else:
+                xbmc.executebuiltin("InstallAddon(%s)" % WEATHER_ADDON, True)
+        installed = _is_installed(WEATHER_ADDON)
+        if installed:
+            _set_core_setting(WEATHER_PROVIDER_SETTING, WEATHER_ADDON)
+            _write_weather_settings(WEATHER_LOCATION)
+        _log("weather installed=%s" % installed)
+        if interactive:
+            if installed:
+                ui.done(
+                    "Weather is set to Multi Weather (Sacramento, CA).",
+                    heading=AddonTitle,
+                )
+            else:
+                ui.error(
+                    "Multi Weather did not install. Make sure a repository that "
+                    "carries it (the official Kodi repo) is enabled, then retry.",
+                    heading=AddonTitle,
+                )
+        return installed
+    except Exception as e:  # noqa: BLE001
+        _log("weather failed: %s" % e, xbmc.LOGERROR)
+        if interactive:
+            ui.error("Weather setup failed: %s" % e, heading=AddonTitle)
+        return False
+
+
+# --------------------------------------------------------------------------- #
+# RSS ticker
+# --------------------------------------------------------------------------- #
+RSS_ENABLE_SETTING = "lookandfeel.enablerssfeeds"
+
+
+def enable_rss(interactive=True):
+    """Turn on the RSS news ticker (Kodi's shipped default feed set stands)."""
+    try:
+        ok = _set_core_setting(RSS_ENABLE_SETTING, True)
+        _log("rss enabled=%s" % ok)
+        if interactive:
+            ui.done("RSS news ticker enabled.", heading=AddonTitle)
+        return ok
+    except Exception as e:  # noqa: BLE001
+        _log("rss failed: %s" % e, xbmc.LOGERROR)
+        if interactive:
+            ui.error("RSS setup failed: %s" % e, heading=AddonTitle)
+        return False
+
+
+# --------------------------------------------------------------------------- #
+# All three, with one confirm and a restart offer at the end.
+# --------------------------------------------------------------------------- #
+def setup_all():
+    if not ui.confirm(
+        "Set up this box now?\n\nAdds the mini's KodiShare/KodiBackup sources, "
+        "installs and configures Multi Weather, and turns on the RSS ticker.",
+        heading=AddonTitle,
+    ):
+        return
+    with ui.Progress("Setting up this box...", heading=AddonTitle) as p:
+        p.message("Adding media sources...")
+        add_media_sources(interactive=False)
+        p.message("Setting up weather...")
+        setup_weather(interactive=False)
+        p.message("Enabling RSS ticker...")
+        enable_rss(interactive=False)
+    ui.ask_restart(
+        "Box set up. A restart is needed for the new media sources to appear.",
+        heading=AddonTitle,
+    )

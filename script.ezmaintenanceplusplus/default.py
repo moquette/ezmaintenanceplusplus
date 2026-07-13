@@ -60,6 +60,15 @@ def CATEGORIES():
         ADDON_FANART,
         "",
     )
+    CreateDir(
+        "Set up this box",
+        "ur",
+        "box_setup",
+        ADDON_ICON,
+        ADDON_FANART,
+        "",
+        isFolder=True,
+    )
     # CreateDir('Tools','ur','tools',ADDON_ICON,ADDON_FANART,'', isFolder=True)
 
     CreateDir(
@@ -139,6 +148,15 @@ def MAINTENANCE():
     CreateDir("Clear Cache", "url", "clear_cache", ADDON_ICON, ADDON_FANART, "")
     CreateDir("Clear Packages", "url", "clear_packages", ADDON_ICON, ADDON_FANART, "")
     CreateDir("Clear Thumbnails", "url", "clear_thumbs", ADDON_ICON, ADDON_FANART, "")
+
+
+def BOX_SETUP():
+    CreateDir("Set up everything", "url", "setup_all_box", ADDON_ICON, ADDON_FANART, "")
+    CreateDir(
+        "Add media sources (mini)", "url", "setup_sources", ADDON_ICON, ADDON_FANART, ""
+    )
+    CreateDir("Set up weather", "url", "setup_weather", ADDON_ICON, ADDON_FANART, "")
+    CreateDir("Enable RSS ticker", "url", "setup_rss", ADDON_ICON, ADDON_FANART, "")
 
 
 # ###########################################################################################
@@ -373,5 +391,28 @@ elif action == "dbtest":
     from resources.lib.modules import dropbox_remote
 
     _dbtest(dropbox_remote)
+
+elif action == "box_setup":
+    BOX_SETUP()
+
+elif action == "setup_all_box":
+    from resources.lib.modules import boxsetup
+
+    boxsetup.setup_all()
+
+elif action == "setup_sources":
+    from resources.lib.modules import boxsetup
+
+    boxsetup.add_media_sources()
+
+elif action == "setup_weather":
+    from resources.lib.modules import boxsetup
+
+    boxsetup.setup_weather()
+
+elif action == "setup_rss":
+    from resources.lib.modules import boxsetup
+
+    boxsetup.enable_rss()
 
 xbmcplugin.endOfDirectory(int(sys.argv[1]))

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.13.0" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.13.1" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,7 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+        v2026.07.13.1: New "Set up this box" menu: adds the mini KodiShare/KodiBackup sources, installs and points Multi Weather at Sacramento, and turns on the RSS ticker (the surviving Foundation setup, moved here from the retired tony7bones setup add-ons).
         v2026.07.13.0: Menu: cleaner thin Title-Case labels. Dropped the bold ALL-CAPS and forced white color so items render in the active skin's native thin font and adapt color on focus.
         v2026.07.09.1: Boot: size alerts moved off the boot path behind GUI-ready; fixed cache clean skipping dir-only levels; fixed packages count; removed dead wizard/builds machinery
         v2026.07.09.0: Fix: the post-restore setup steps were numbered backwards. The device-name question is asked first, so it is now labelled 1 of 2, and the video-quality question 2 of 2.

@@ -20,11 +20,6 @@ else:
 thumbnailPath = translatePath("special://thumbnails")
 cachePath = os.path.join(translatePath("special://home"), "cache")
 tempPath = translatePath("special://temp")
-addonPath = os.path.join(
-    os.path.join(translatePath("special://home"), "addons"), "script.ezmaintenance"
-)
-
-mediaPath = os.path.join(addonPath, "media")
 databasePath = translatePath("special://database")
 THUMBS = translatePath(os.path.join("special://home/userdata/Thumbnails", ""))
 
@@ -32,184 +27,86 @@ addon_id = "script.ezmaintenanceplusplus"
 fanart = translatePath(os.path.join("special://home/addons/" + addon_id, "fanart.jpg"))
 iconpath = translatePath(os.path.join("special://home/addons/" + addon_id, "icon.png"))
 
+# Names never deleted by the cache clean. The dir names are KEPT as directories
+# but their CONTENTS are still cleaned (same rules), matching what the old
+# os.walk pass did by recursing into them.
+KEEP_FILES = (
+    "xbmc.log",
+    "xbmc.old.log",
+    "kodi.log",
+    "kodi.old.log",
+    "archive_cache",
+    "commoncache.db",
+    "commoncache.socket",
+    "temp",
+)
+KEEP_DIRS = ("archive_cache", "temp")
 
-class cacheEntry:
-    def __init__(self, namei, pathi):
-        self.name = namei
-        self.path = pathi
+
+def _clean_tree(path, keep_files=(), keep_dirs=(), remove_dirs=True):
+    """Empty a directory in one top-level pass: unlink files, rmtree subdirs.
+
+    A subdir named in keep_dirs is kept but its contents are cleaned with the
+    same rules. remove_dirs=False keeps the whole directory skeleton and only
+    unlinks files, recursively. Every per-entry error is swallowed - this runs
+    against live Kodi caches where entries can vanish mid-scan.
+
+    (Replaces per-caller os.walk loops that nested the rmtree pass inside an
+    `if file_count > 0:` gate, so a level holding subdirectories but no loose
+    files was never cleaned at all.)"""
+    try:
+        entries = list(os.scandir(path))
+    except OSError:
+        return
+    for entry in entries:
+        try:
+            if entry.is_dir(follow_symlinks=False):
+                if entry.name in keep_dirs or not remove_dirs:
+                    _clean_tree(entry.path, keep_files, keep_dirs, remove_dirs)
+                else:
+                    shutil.rmtree(entry.path, ignore_errors=True)
+            elif entry.name not in keep_files:
+                os.unlink(entry.path)
+        except OSError:
+            pass
 
 
 def clearCache(mode="verbose"):
-    if os.path.exists(cachePath) == True:
-        for root, dirs, files in os.walk(cachePath):
-            file_count = 0
-            file_count += len(files)
-            if file_count > 0:
-                for f in files:
-                    try:
-                        if (
-                            f == "xbmc.log"
-                            or f == "xbmc.old.log"
-                            or f == "kodi.log"
-                            or f == "kodi.old.log"
-                            or f == "archive_cache"
-                            or f == "commoncache.db"
-                            or f == "commoncache.socket"
-                            or f == "temp"
-                        ):
-                            continue
-                        os.unlink(os.path.join(root, f))
-                    except:
-                        pass
-                for d in dirs:
-                    try:
-                        if d == "archive_cache" or d == "temp":
-                            continue
-                        shutil.rmtree(os.path.join(root, d))
-                    except:
-                        pass
-
-            else:
-                pass
-    if os.path.exists(tempPath) == True:
-        for root, dirs, files in os.walk(tempPath):
-            file_count = 0
-            file_count += len(files)
-            if file_count > 0:
-                for f in files:
-                    try:
-                        if (
-                            f == "xbmc.log"
-                            or f == "xbmc.old.log"
-                            or f == "kodi.log"
-                            or f == "kodi.old.log"
-                            or f == "archive_cache"
-                            or f == "commoncache.db"
-                            or f == "commoncache.socket"
-                            or f == "temp"
-                        ):
-                            continue
-                        os.unlink(os.path.join(root, f))
-                    except:
-                        pass
-                for d in dirs:
-                    try:
-                        if d == "archive_cache" or d == "temp":
-                            continue
-                        shutil.rmtree(os.path.join(root, d))
-                    except:
-                        pass
-
-            else:
-                pass
-    if xbmc.getCondVisibility("system.platform.ATV2"):
-        atv2_cache_a = os.path.join(
-            "/private/var/mobile/Library/Caches/AppleTV/Video/", "Other"
-        )
-
-        for root, dirs, files in os.walk(atv2_cache_a):
-            file_count = 0
-            file_count += len(files)
-
-            if file_count > 0:
-                for f in files:
-                    os.unlink(os.path.join(root, f))
-                for d in dirs:
-                    shutil.rmtree(os.path.join(root, d))
-            else:
-                pass
-        atv2_cache_b = os.path.join(
-            "/private/var/mobile/Library/Caches/AppleTV/Video/", "LocalAndRental"
-        )
-
-        for root, dirs, files in os.walk(atv2_cache_b):
-            file_count = 0
-            file_count += len(files)
-
-            if file_count > 0:
-                for f in files:
-                    os.unlink(os.path.join(root, f))
-                for d in dirs:
-                    shutil.rmtree(os.path.join(root, d))
-            else:
-                pass
-
-    cacheEntries = []
-
-    for entry in cacheEntries:
-        clear_cache_path = translatePath(entry.path)
-        if os.path.exists(clear_cache_path) == True:
-            for root, dirs, files in os.walk(clear_cache_path):
-                file_count = 0
-                file_count += len(files)
-                if file_count > 0:
-                    for f in files:
-                        os.unlink(os.path.join(root, f))
-                    for d in dirs:
-                        shutil.rmtree(os.path.join(root, d))
-                else:
-                    pass
+    _clean_tree(cachePath, KEEP_FILES, KEEP_DIRS)
+    _clean_tree(tempPath, KEEP_FILES, KEEP_DIRS)
 
     if mode == "verbose":
         ui.notify("Clean Completed", icon=iconpath, time_ms=3000)
 
 
 def deleteThumbnails(mode="verbose"):
-
-    if os.path.exists(thumbnailPath) == True:
-        # dialog = xbmcgui.Dialog()
-        # if dialog.yesno("Delete Thumbnails", "This option deletes all thumbnails" + '\n' + "Are you sure you want to do this?"):
-        for root, dirs, files in os.walk(thumbnailPath):
-            file_count = 0
-            file_count += len(files)
-            if file_count > 0:
-                for f in files:
-                    try:
-                        os.unlink(os.path.join(root, f))
-                    except:
-                        pass
-
-    if os.path.exists(THUMBS):
-        try:
-            for root, dirs, files in os.walk(THUMBS):
-                file_count = 0
-                file_count += len(files)
-                # Count files and give option to delete
-                if file_count > 0:
-                    for f in files:
-                        os.unlink(os.path.join(root, f))
-                    for d in dirs:
-                        shutil.rmtree(os.path.join(root, d))
-        except:
-            pass
+    # special://thumbnails: keep Kodi's 0-f/ bucket skeleton, drop the images.
+    _clean_tree(thumbnailPath, remove_dirs=False)
+    # On a real box special://thumbnails ALIASES userdata/Thumbnails - the two
+    # paths are the SAME directory, and a dir-removing second pass would rmtree
+    # the bucket skeleton the first pass just preserved. (The old walk got this
+    # right only by accident: its rmtree was gated behind `if file_count > 0`,
+    # and pass 1 had already emptied every level.) Only a genuinely separate
+    # legacy dir is removed whole.
+    try:
+        aliased = os.path.realpath(THUMBS) == os.path.realpath(thumbnailPath)
+    except OSError:
+        aliased = True  # fail safe: never risk the live skeleton
+    if not aliased:
+        _clean_tree(THUMBS)
 
     try:
         text13 = os.path.join(databasePath, "Textures13.db")
         os.unlink(text13)
-    except:
+    except OSError:
         pass
     if mode == "verbose":
         ui.notify("Clean Thumbs Completed", icon=iconpath, time_ms=3000)
 
 
 def purgePackages(mode="verbose"):
-
     purgePath = translatePath("special://home/addons/packages")
-    dialog = xbmcgui.Dialog()
-    for root, dirs, files in os.walk(purgePath):
-        file_count = 0
-        file_count += len(files)
-    # if dialog.yesno("Delete Package Cache Files", "%d packages found."%file_count + '\n' + "Delete Them?"):
-    for root, dirs, files in os.walk(purgePath):
-        file_count = 0
-        file_count += len(files)
-        if file_count > 0:
-            for f in files:
-                os.unlink(os.path.join(root, f))
-            for d in dirs:
-                shutil.rmtree(os.path.join(root, d))
-            # dialog = xbmcgui.Dialog()
-            # dialog.ok("Maintenance", "Deleting Packages all done")
+    _clean_tree(purgePath)
     if mode == "verbose":
         ui.notify("Clean Packages Completed", icon=iconpath, time_ms=3000)
 
@@ -251,8 +148,14 @@ def determineNextMaintenance():
 
 
 def getNextMaintenance():
+    # Read from the PLUGIN process too (default.py's Maintenance submenu), where
+    # nothing guarantees the service has set the property yet - default to 0
+    # (no schedule) instead of blowing up the listing on int("").
     win = xbmcgui.Window(10000)
-    t1 = int(win.getProperty("ezmaintenance.nextMaintenanceTime"))
+    try:
+        t1 = int(win.getProperty("ezmaintenance.nextMaintenanceTime"))
+    except (TypeError, ValueError):
+        t1 = 0
 
     logMaintenance("getNextMaintenance: %s" % str(t1))
 

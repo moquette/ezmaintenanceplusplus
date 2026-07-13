@@ -1,80 +1,241 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
-<settings>
-	<category label="Maintenance">
-		<setting id="notify_mode" type="bool" label="Show Stats at Startup" default="false" />
-                <setting type="lsep" label="AutoClean" />
-		<setting id="startup.cache" type="bool" label="AutoClean Cache at Startup" default="true" />
-		<setting id="autoCleanDays" type="slider" label="AutoClean Cache Every Number of Days (0 is Not)" default="0" range="0,365" option="int" />
-		<setting id="autoCleanHour" type="slider" label="AutoClean Cache at Hour (0-12 = AM / 12-23 = PM)" default="4" range="0,23" option="int" enable="!eq(-1,0)" subsetting="true" />
-                <setting type="lsep" label="Package Folder Limits" />
-		<setting id="filesize_alert" type="slider" label="Max Total Files Size (MB)" default="200" range="25,500" option="int" />
-		<setting id="packagenumbers_alert" type="slider" label="Max Number of Zip Files" default="50" range="5,200" option="int" />
-		<setting type="lsep" label="Thumbnails Folder Limits" />
-		<setting id="filesizethumb_alert" type="slider" label="Max Total Files Size (MB)" default="500" range="50,2000" option="int" />
-	</category>
+<settings version="1">
+	<section id="script.ezmaintenanceplusplus">
+		<category id="maintenance" label="30000">
+			<group id="1">
+				<setting id="notify_mode" type="boolean" label="30030">
+					<level>0</level>
+					<default>false</default>
+					<control type="toggle" />
+				</setting>
+			</group>
+			<group id="2" label="30010">
+				<setting id="startup.cache" type="boolean" label="30031">
+					<level>0</level>
+					<default>true</default>
+					<control type="toggle" />
+				</setting>
+				<setting id="autoCleanDays" type="integer" label="30032">
+					<level>0</level>
+					<default>0</default>
+					<constraints>
+						<minimum>0</minimum>
+						<step>1</step>
+						<maximum>365</maximum>
+					</constraints>
+					<control type="slider" format="integer" />
+				</setting>
+				<setting id="autoCleanHour" type="integer" parent="autoCleanDays" label="30033">
+					<level>0</level>
+					<default>4</default>
+					<constraints>
+						<minimum>0</minimum>
+						<step>1</step>
+						<maximum>23</maximum>
+					</constraints>
+					<dependencies>
+						<dependency type="enable" setting="autoCleanDays" operator="!is">0</dependency>
+					</dependencies>
+					<control type="slider" format="integer" />
+				</setting>
+			</group>
+			<group id="3" label="30011">
+				<setting id="filesize_alert" type="integer" label="30034">
+					<level>0</level>
+					<default>200</default>
+					<constraints>
+						<minimum>25</minimum>
+						<step>1</step>
+						<maximum>500</maximum>
+					</constraints>
+					<control type="slider" format="integer" />
+				</setting>
+				<setting id="packagenumbers_alert" type="integer" label="30035">
+					<level>0</level>
+					<default>50</default>
+					<constraints>
+						<minimum>5</minimum>
+						<step>1</step>
+						<maximum>200</maximum>
+					</constraints>
+					<control type="slider" format="integer" />
+				</setting>
+			</group>
+			<group id="4" label="30012">
+				<setting id="filesizethumb_alert" type="integer" label="30036">
+					<level>0</level>
+					<default>500</default>
+					<constraints>
+						<minimum>50</minimum>
+						<step>1</step>
+						<maximum>2000</maximum>
+					</constraints>
+					<control type="slider" format="integer" />
+				</setting>
+			</group>
+		</category>
 
-	<category label="One-Tap Restore">
-		<setting type="lsep" label="Manage your one-tap backups from the ONE-TAP RESTORE menu (open the add-on). This tab just stores the pins." />
-		<setting id="pin1_name" type="text" default="" visible="false" />
-		<setting id="pin1_kind" type="text" default="" visible="false" />
-		<setting id="pin1_src" type="text" default="" visible="false" />
-		<setting id="pin1_type" type="text" default="" visible="false" />
-		<setting id="pin1_meta" type="text" default="" visible="false" />
-		<setting id="pin2_name" type="text" default="" visible="false" />
-		<setting id="pin2_kind" type="text" default="" visible="false" />
-		<setting id="pin2_src" type="text" default="" visible="false" />
-		<setting id="pin2_type" type="text" default="" visible="false" />
-		<setting id="pin2_meta" type="text" default="" visible="false" />
-		<setting id="pin3_name" type="text" default="" visible="false" />
-		<setting id="pin3_kind" type="text" default="" visible="false" />
-		<setting id="pin3_src" type="text" default="" visible="false" />
-		<setting id="pin3_type" type="text" default="" visible="false" />
-		<setting id="pin3_meta" type="text" default="" visible="false" />
-		<setting id="pin4_name" type="text" default="" visible="false" />
-		<setting id="pin4_kind" type="text" default="" visible="false" />
-		<setting id="pin4_src" type="text" default="" visible="false" />
-		<setting id="pin4_type" type="text" default="" visible="false" />
-		<setting id="pin4_meta" type="text" default="" visible="false" />
-		<setting id="pin5_name" type="text" default="" visible="false" />
-		<setting id="pin5_kind" type="text" default="" visible="false" />
-		<setting id="pin5_src" type="text" default="" visible="false" />
-		<setting id="pin5_type" type="text" default="" visible="false" />
-		<setting id="pin5_meta" type="text" default="" visible="false" />
-		<setting id="pin6_name" type="text" default="" visible="false" />
-		<setting id="pin6_kind" type="text" default="" visible="false" />
-		<setting id="pin6_src" type="text" default="" visible="false" />
-		<setting id="pin6_type" type="text" default="" visible="false" />
-		<setting id="pin6_meta" type="text" default="" visible="false" />
-		<setting id="pin7_name" type="text" default="" visible="false" />
-		<setting id="pin7_kind" type="text" default="" visible="false" />
-		<setting id="pin7_src" type="text" default="" visible="false" />
-		<setting id="pin7_type" type="text" default="" visible="false" />
-		<setting id="pin7_meta" type="text" default="" visible="false" />
-		<setting id="pin8_name" type="text" default="" visible="false" />
-		<setting id="pin8_kind" type="text" default="" visible="false" />
-		<setting id="pin8_src" type="text" default="" visible="false" />
-		<setting id="pin8_type" type="text" default="" visible="false" />
-		<setting id="pin8_meta" type="text" default="" visible="false" />
-		<setting id="pin9_name" type="text" default="" visible="false" />
-		<setting id="pin9_kind" type="text" default="" visible="false" />
-		<setting id="pin9_src" type="text" default="" visible="false" />
-		<setting id="pin9_type" type="text" default="" visible="false" />
-		<setting id="pin9_meta" type="text" default="" visible="false" />
-		<setting id="pin10_name" type="text" default="" visible="false" />
-		<setting id="pin10_kind" type="text" default="" visible="false" />
-		<setting id="pin10_src" type="text" default="" visible="false" />
-		<setting id="pin10_type" type="text" default="" visible="false" />
-		<setting id="pin10_meta" type="text" default="" visible="false" />
-	</category>
-	<category label="Backup/Restore">
-		<setting id="BackupFixSpecialHome" type="bool" label="Replace home folder in xml files with special://home" default="false" />
-		<setting id="destination" type="enum" label="Destination" values="Local|Network (SMB/NFS)|Dropbox" default="0" />
-		<setting id="backup.keep" type="slider" label="Keep how many backups (0 = keep all)" default="5" range="0,50" option="int" />
-		<setting id="download.path" type="folder" label="Backup Location" visible="!eq(-2,2)" />
-		<setting id="restore.path" type="folder" label="Restore from Zip Location (folder)" visible="!eq(-3,2)" />
-		<setting id="dropbox_signin" type="action" label="Sign in to Dropbox" action="RunScript(script.ezmaintenanceplusplus,authorize)" option="close" visible="eq(-4,2)" />
-		<setting id="dropbox_key" type="text" label="Dropbox App key (advanced - only if not signing in normally)" default="" visible="eq(-5,2)" />
-		<setting id="dropbox_secret" type="text" label="Dropbox App secret (advanced)" default="" visible="eq(-6,2)" />
-		<setting id="dropbox_refresh_token" type="text" label="Dropbox refresh token" default="" visible="false" />
-    </category>
+		<category id="backup_restore" label="30002">
+			<group id="1">
+				<setting id="BackupFixSpecialHome" type="boolean" label="30050">
+					<level>0</level>
+					<default>false</default>
+					<control type="toggle" />
+				</setting>
+				<setting id="destination" type="integer" label="30051">
+					<level>0</level>
+					<default>0</default>
+					<constraints>
+						<options>
+							<option label="30052">0</option>
+							<option label="30053">1</option>
+							<option label="30054">2</option>
+						</options>
+					</constraints>
+					<control type="spinner" format="string" />
+				</setting>
+				<setting id="backup.keep" type="integer" label="30055">
+					<level>0</level>
+					<default>5</default>
+					<constraints>
+						<minimum>0</minimum>
+						<step>1</step>
+						<maximum>50</maximum>
+					</constraints>
+					<control type="slider" format="integer" />
+				</setting>
+				<setting id="download.path" type="path" label="30056">
+					<level>0</level>
+					<default></default>
+					<constraints>
+						<allowempty>true</allowempty>
+						<sources>
+							<source>files</source>
+						</sources>
+					</constraints>
+					<dependencies>
+						<dependency type="visible" setting="destination" operator="!is">2</dependency>
+					</dependencies>
+					<control type="button" format="path">
+						<heading>30056</heading>
+					</control>
+				</setting>
+				<setting id="restore.path" type="path" label="30057">
+					<level>0</level>
+					<default></default>
+					<constraints>
+						<allowempty>true</allowempty>
+						<sources>
+							<source>files</source>
+						</sources>
+					</constraints>
+					<dependencies>
+						<dependency type="visible" setting="destination" operator="!is">2</dependency>
+					</dependencies>
+					<control type="button" format="path">
+						<heading>30057</heading>
+					</control>
+				</setting>
+				<setting id="dropbox_signin" type="action" label="30058">
+					<level>0</level>
+					<default></default>
+					<dependencies>
+						<dependency type="visible" setting="destination">2</dependency>
+					</dependencies>
+					<control type="button" format="action">
+						<data>RunScript(script.ezmaintenanceplusplus,authorize)</data>
+					</control>
+				</setting>
+				<setting id="dropbox_key" type="string" label="30059">
+					<level>0</level>
+					<default></default>
+					<constraints>
+						<allowempty>true</allowempty>
+					</constraints>
+					<dependencies>
+						<dependency type="visible" setting="destination">2</dependency>
+					</dependencies>
+					<control type="edit" format="string">
+						<heading>30059</heading>
+					</control>
+				</setting>
+				<setting id="dropbox_secret" type="string" label="30060">
+					<level>0</level>
+					<default></default>
+					<constraints>
+						<allowempty>true</allowempty>
+					</constraints>
+					<dependencies>
+						<dependency type="visible" setting="destination">2</dependency>
+					</dependencies>
+					<control type="edit" format="string">
+						<heading>30060</heading>
+					</control>
+				</setting>
+				<setting id="dropbox_refresh_token" type="string">
+					<level>0</level>
+					<default></default>
+					<constraints>
+						<allowempty>true</allowempty>
+					</constraints>
+					<visible>false</visible>
+					<control type="edit" format="string" />
+				</setting>
+				<!-- One-Tap Restore pin storage: hidden slots managed by the ONE-TAP RESTORE
+				     menu (onetap.py), not shown in this dialog. Kept here so getSetting/
+				     setSetting("pin%d_%s") persists. Relocated verbatim from the retired
+				     onetap_restore category so no empty tab renders. -->
+				<setting id="pin1_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin1_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin1_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin1_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin1_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin2_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin2_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin2_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin2_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin2_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin3_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin3_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin3_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin3_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin3_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin4_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin4_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin4_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin4_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin4_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin5_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin5_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin5_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin5_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin5_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin6_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin6_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin6_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin6_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin6_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin7_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin7_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin7_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin7_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin7_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin8_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin8_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin8_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin8_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin8_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin9_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin9_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin9_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin9_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin9_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin10_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin10_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin10_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin10_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+				<setting id="pin10_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
+			</group>
+		</category>
+	</section>
 </settings>

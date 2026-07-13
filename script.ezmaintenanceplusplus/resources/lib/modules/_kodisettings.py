@@ -83,3 +83,38 @@ def apply_guisettings(guisettings_path):
         except Exception:
             pass
     return applied
+
+
+def write_guisetting(guisettings_path, sid, value):
+    """Write a single string setting straight into guisettings.xml on disk.
+
+    The complement of apply_guisettings, for the OTHER persistence hazard. Settings.SetSettingValue
+    updates only Kodi's in-memory store, which is flushed to guisettings.xml on a CLEAN shutdown;
+    on Fire TV / Android an unclean kill (power pull, task-swipe) loses it. Writing the file too
+    means the value survives an unclean kill. On tvOS the file is rewritten from NSUserDefaults on
+    boot, so this write is same-value reinforcement there (SetSettingValue is the durable path), and
+    on Fire TV/Android it is the durable one. Doing BOTH covers every platform.
+
+    Finds the <setting id="sid"> element (creating it if absent) and sets its text, clearing the
+    default="true" marker Kodi uses for untouched settings so the value is treated as user-set.
+    Best-effort and fully guarded: any parse/write failure returns False and changes nothing.
+    Returns True iff the file was rewritten."""
+    try:
+        if not os.path.exists(guisettings_path):
+            return False
+        tree = ET.parse(guisettings_path)
+        root = tree.getroot()
+        node = None
+        for n in root.iter("setting"):
+            if n.get("id") == sid:
+                node = n
+                break
+        if node is None:
+            node = ET.SubElement(root, "setting", {"id": sid})
+        node.text = "" if value is None else str(value)
+        if node.get("default") is not None:
+            node.attrib.pop("default", None)
+        tree.write(guisettings_path, encoding="utf-8", xml_declaration=True)
+        return True
+    except Exception:
+        return False

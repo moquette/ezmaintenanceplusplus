@@ -1,0 +1,110 @@
+# EZ Maintenance++ (script.ezmaintenanceplusplus)
+# Settings-dialog labels. Kodi resolves every settings.xml label/heading/option
+# as a numeric string id via g_localizeStrings; without these entries the native
+# add-on settings dialog renders every label blank. Add-on private id band is
+# 30000-30999 (ids below 30000 resolve to Kodi CORE strings).
+msgid ""
+msgstr ""
+"Project-Id-Version: script.ezmaintenanceplusplus\n"
+"Report-Msgid-Bugs-To: \n"
+"Language-Team: English\n"
+"Language: en_gb\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+# --- Category headings ---
+msgctxt "#30000"
+msgid "Maintenance"
+msgstr ""
+
+msgctxt "#30002"
+msgid "Backup/Restore"
+msgstr ""
+
+# --- Group headings ---
+msgctxt "#30010"
+msgid "AutoClean"
+msgstr ""
+
+msgctxt "#30011"
+msgid "Package Folder Limits"
+msgstr ""
+
+msgctxt "#30012"
+msgid "Thumbnails Folder Limits"
+msgstr ""
+
+# --- Maintenance settings ---
+msgctxt "#30030"
+msgid "Show Stats at Startup"
+msgstr ""
+
+msgctxt "#30031"
+msgid "AutoClean Cache at Startup"
+msgstr ""
+
+msgctxt "#30032"
+msgid "AutoClean Cache Every Number of Days (0 is Not)"
+msgstr ""
+
+msgctxt "#30033"
+msgid "AutoClean Cache at Hour (0-12 = AM / 12-23 = PM)"
+msgstr ""
+
+msgctxt "#30034"
+msgid "Max Total Files Size (MB)"
+msgstr ""
+
+msgctxt "#30035"
+msgid "Max Number of Zip Files"
+msgstr ""
+
+msgctxt "#30036"
+msgid "Max Thumbnails Folder Size (MB)"
+msgstr ""
+
+# --- Backup/Restore settings, control headings, spinner options ---
+msgctxt "#30050"
+msgid "Replace home folder in xml files with special://home"
+msgstr ""
+
+msgctxt "#30051"
+msgid "Destination"
+msgstr ""
+
+msgctxt "#30052"
+msgid "Local"
+msgstr ""
+
+msgctxt "#30053"
+msgid "Network (SMB/NFS)"
+msgstr ""
+
+msgctxt "#30054"
+msgid "Dropbox"
+msgstr ""
+
+msgctxt "#30055"
+msgid "Keep how many backups (0 = keep all)"
+msgstr ""
+
+msgctxt "#30056"
+msgid "Backup Location"
+msgstr ""
+
+msgctxt "#30057"
+msgid "Restore from Zip Location (folder)"
+msgstr ""
+
+msgctxt "#30058"
+msgid "Sign in to Dropbox"
+msgstr ""
+
+msgctxt "#30059"
+msgid "Dropbox App key (advanced - only if not signing in normally)"
+msgstr ""
+
+msgctxt "#30060"
+msgid "Dropbox App secret (advanced)"
+msgstr ""

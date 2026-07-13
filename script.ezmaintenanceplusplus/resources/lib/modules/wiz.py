@@ -18,10 +18,7 @@ import xbmcaddon
 import xbmcgui
 import xbmcvfs
 import os
-import sys
-import urllib
 import re
-import time
 import zipfile
 from resources.lib.modules import control, maintenance, tools, ui
 from datetime import datetime
@@ -35,11 +32,8 @@ else:
     translatePath = xbmcvfs.translatePath
     unicode = str
 
-dp = xbmcgui.DialogProgress()
 dialog = xbmcgui.Dialog()
 addonInfo = xbmcaddon.Addon().getAddonInfo
-
-USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11"
 
 AddonTitle = "EZ Maintenance++"
 AddonID = "script.ezmaintenanceplusplus"
@@ -50,6 +44,27 @@ AddonID = "script.ezmaintenanceplusplus"
 # backup() reports an error and SKIPS rotation (a cancel instead returns canceled=True),
 # and the prior good backup is never pruned behind a ship that never landed.
 VfsCopyError = ui.VfsCopyError
+
+
+# Kodi's own network-browse dialog (used to pick download.path/restore.path -
+# both "type=folder" settings, browse-only, no manual text entry) bakes an
+# explicit port into the nfs:// URL it hands back, e.g.
+# nfs://192.168.7.2:2049/export/path. That explicit-port form breaks Kodi's
+# own NFS client write path - proven live, independently, on two different
+# boxes (a VfsCopyError / 0-byte copy every time) - while the port-free form
+# (nfs://host/export/path) works. Since the destination setting can only ever
+# be set via that same browse dialog, this can recur on every future box;
+# strip the port defensively wherever the setting is read rather than relying
+# on a one-off manual edit each time.
+_NFS_PORT_RE = re.compile(r"^(nfs://[^/]+?):\d+(/|$)")
+
+
+def _strip_nfs_port(path):
+    """Strip an explicit port from an nfs:// VFS path; anything else (smb://,
+    a local path, empty/None) passes through unchanged."""
+    if not path:
+        return path
+    return _NFS_PORT_RE.sub(r"\1\2", path)
 
 
 # Backup filenames carry a trailing _YYYYMMDDHHMM stamp before ".zip".
@@ -96,30 +111,10 @@ def get_Kodi_Version():
     return KODIV
 
 
-def open_Settings():
-    open_Settings = xbmcaddon.Addon(id=AddonID).openSettings()
-
-
-def ENABLE_ADDONS():
-    for root, dirs, files in os.walk(HOME_ADDONS, topdown=True):
-        dirs[:] = [d for d in dirs]
-        for addon_name in dirs:
-            if not any(value in addon_name for value in EXCLUDES_ADDONS):
-                # addLink(addon_name,'url',100,ART+'tool.png',FANART,'')
-                try:
-                    query = (
-                        '{"jsonrpc":"2.0", "method":"Addons.SetAddonEnabled","params":{"addonid":"%s","enabled":true}, "id":1}'
-                        % (addon_name)
-                    )
-                    xbmc.executeJSONRPC(query)
-
-                except:
-                    pass
-
-
 def FIX_SPECIAL():
 
     HOME = translatePath("special://home")
+    dp = xbmcgui.DialogProgress()
     dp.create(AddonTitle, "Renaming paths...")
     url = translatePath("special://userdata")
     for root, dirs, files in os.walk(url):
@@ -146,67 +141,6 @@ def FIX_SPECIAL():
                         f.close()
                     except:
                         pass
-
-
-def skinswap():
-
-    skin = xbmc.getSkinDir()
-    KODIV = get_Kodi_Version()
-    skinswapped = 0
-    from resources.lib.modules import skinSwitch
-
-    # SWITCH THE SKIN IF THE CURRENT SKIN IS NOT CONFLUENCE
-    if skin not in ["skin.confluence", "skin.estuary"]:
-        choice = xbmcgui.Dialog().yesno(
-            AddonTitle,
-            "We can try to reset to the default Kodi Skin..."
-            + "\n"
-            + "Do you want to Proceed?",
-            yeslabel="Yes",
-            nolabel="No",
-        )
-        if choice == 1:
-            skin = "skin.estuary" if KODIV >= 17 else "skin.confluence"
-            skinSwitch.swapSkins(skin)
-            skinswapped = 1
-            time.sleep(1)
-
-    # IF A SKIN SWAP HAS HAPPENED CHECK IF AN OK DIALOG (CONFLUENCE INFO SCREEN) IS PRESENT, PRESS OK IF IT IS PRESENT
-    if skinswapped == 1:
-        if not xbmc.getCondVisibility("Window.isVisible(yesnodialog)"):
-            xbmc.executebuiltin("Action(Select)")
-
-    # IF THERE IS NOT A YES NO DIALOG (THE SCREEN ASKING YOU TO SWITCH TO CONFLUENCE) THEN SLEEP UNTIL IT APPEARS
-    if skinswapped == 1:
-        while not xbmc.getCondVisibility("Window.isVisible(yesnodialog)"):
-            time.sleep(1)
-
-    # WHILE THE YES NO DIALOG IS PRESENT PRESS LEFT AND THEN SELECT TO CONFIRM THE SWITCH TO CONFLUENCE.
-    if skinswapped == 1:
-        while xbmc.getCondVisibility("Window.isVisible(yesnodialog)"):
-            xbmc.executebuiltin("Action(Left)")
-            xbmc.executebuiltin("Action(Select)")
-            time.sleep(1)
-
-    skin = xbmc.getSkinDir()
-
-    # CHECK IF THE SKIN IS NOT CONFLUENCE
-    if skin not in ["skin.confluence", "skin.estuary"]:
-        choice = xbmcgui.Dialog().yesno(
-            AddonTitle,
-            "[COLOR lightskyblue][B]ERROR: AUTOSWITCH WAS NOT SUCCESFULL[/B][/COLOR]"
-            + "\n"
-            + "[COLOR lightskyblue][B]CLICK YES TO MANUALLY SWITCH TO CONFLUENCE NOW[/B][/COLOR]"
-            + "\n"
-            + "[COLOR lightskyblue][B]YOU CAN PRESS NO AND ATTEMPT THE AUTO SWITCH AGAIN IF YOU WISH[/B][/COLOR]",
-            yeslabel="[B][COLOR green]YES[/COLOR][/B]",
-            nolabel="[B][COLOR lightskyblue]NO[/COLOR][/B]",
-        )
-        if choice == 1:
-            xbmc.executebuiltin("ActivateWindow(appearancesettings)")
-            return
-        else:
-            sys.exit(1)
 
 
 def _destination():
@@ -242,10 +176,10 @@ def backup(mode="full"):
         return
 
     # Local / Network (SMB/NFS): path-based CreateZip (VFS copy seam handles nfs://, smb://).
-    backupdir = control.setting("download.path")
+    backupdir = _strip_nfs_port(control.setting("download.path"))
     if backupdir == "" or backupdir == None:
         control.infoDialog("Please Setup a Path for Downloads first")
-        control.openSettings(query="1.3")
+        control.openSettings()
         return
 
     name = tools._get_keyboard(
@@ -276,6 +210,7 @@ def backup(mode="full"):
             "Backing up files",
             exclude_dirs,
             exclude_database,
+            prune_home_root=(mode == "full"),
         )
     except VfsCopyError as e:
         # The ship to the share/path FAILED. Never report success and never
@@ -344,6 +279,7 @@ def _backup_dropbox(mode, defaultName, BACKUPDATA):
         "Backing up files",
         exclude_dirs,
         exclude_database,
+        prune_home_root=(mode == "full"),
     )
     try:
         if canceled:
@@ -450,10 +386,10 @@ def restoreFolder():
 
     names = []
     links = []
-    zipFolder = control.setting("restore.path")
+    zipFolder = _strip_nfs_port(control.setting("restore.path"))
     if zipFolder == "" or zipFolder == None:
         control.infoDialog("Please Setup a Zip Files Location first")
-        control.openSettings(query="2.0")
+        control.openSettings()
         return
     try:
         _dirs, _files = xbmcvfs.listdir(
@@ -468,7 +404,36 @@ def restoreFolder():
             links.append(url)
     select = control.selectDialog(names)
     if select != -1:
-        restore(links[select])
+        # How to restore: a self-describing MENU instead of a yes/no, so the choice is
+        # unambiguous. Each line is a full instruction (no "Yes/No" to map onto Wipe/Merge
+        # buttons), the safe "add on top" is FIRST and highlighted, and Back/Cancel aborts
+        # instead of silently merging. The wipe itself is still deferred to restore(), which
+        # ONLY wipes after the chosen zip is staged and validated (a bad zip never wipes).
+        how = control.selectDialog(
+            [
+                "Keep what's on this device and add the backup on top",
+                "Erase this device first, then restore a clean copy",
+                "Cancel - don't restore anything",
+            ],
+            heading="Restore backup: how should I do it?",
+        )
+        # Corroborating hint from the file name (defense-in-depth; the zip's own layout is
+        # the authoritative anchor). Maps a "kodi_settings"/userdata name -> userdata anchor.
+        # Lazy import breaks the onetap<->wiz cycle (onetap imports wiz inside apply()).
+        hint = None
+        try:
+            from resources.lib.modules import onetap
+
+            hint = {"full": "home", "userdata": "userdata"}.get(
+                onetap.infer_type(names[select])
+            )
+        except Exception:
+            pass
+        if how == 0:
+            restore(links[select], wipe=False, anchor_hint=hint)  # merge
+        elif how == 1:
+            restore(links[select], wipe=True, anchor_hint=hint)  # clean clone
+        # how == 2 (Cancel) or -1 (Back): do nothing.
 
 
 def _restore_dropbox():
@@ -525,13 +490,21 @@ def _restore_dropbox():
             pass
 
 
-def restore(zipFile, confirm=True, post_wipe=False):
+def restore(zipFile, confirm=True, post_wipe=False, wipe=False, anchor_hint=None):
     """Extract a backup zip over special://home and offer a restart.
 
     post_wipe=True is the One-Tap path: the box has ALREADY been wiped and the snapshot
     ALREADY fully validated by the caller before the wipe. In that mode the extract is a
     single UNINTERRUPTIBLE unit (no cancel) and we NEVER early-return - a wiped box must
     always be driven to the restart prompt, never left silent on a partial/empty extract.
+
+    wipe=True is the normal-restore "clean clone" path (chosen in restoreFolder()): this
+    function does the wipe ITSELF, but ONLY under the mandatory safe ordering - the zip is
+    staged locally AND validated (size>0 + a real zip) FIRST; only THEN is the box wiped;
+    then the extract runs as the same UNINTERRUPTIBLE unit as post_wipe. If the zip is
+    missing/short/corrupt the function ABORTS with the box UNTOUCHED (it never wipes on a
+    bad zip). The wipe reuses the PROVEN One-Tap wipe (onetap._wipe / _wipe_excludes),
+    which preserves this add-on, its runtime deps, and special://temp (the staged zip).
     """
     if confirm and not post_wipe:
         if not ui.confirm(
@@ -567,6 +540,8 @@ def restore(zipFile, confirm=True, post_wipe=False):
     # Validate BEFORE extracting so we never report success on a missing / empty / bad
     # zip. After a wipe the snapshot was already validated by the caller BEFORE the box was
     # touched, so post_wipe does NOT early-return here (that would strand a wiped box).
+    # NOTE: wipe=True still validates here (it is NOT yet post_wipe), because on the
+    # clean-clone path THIS is the validation that MUST pass before we are allowed to wipe.
     try:
         size = os.path.getsize(local)
     except OSError:
@@ -584,19 +559,85 @@ def restore(zipFile, confirm=True, post_wipe=False):
         )
         return
 
-    try:
-        items = len(zipfile.ZipFile(local).infolist())
-    except Exception:
-        items = 0
+    # Clean-clone path: the zip is now staged + validated, so it is finally safe to wipe.
+    # Ensure the validated zip lives in special://temp (which the wipe preserves) so the
+    # source survives the wipe, wipe with the PROVEN One-Tap wipe, then flip to post_wipe
+    # semantics (uninterruptible extract that always reaches the restart prompt).
+    if wipe and not post_wipe:
+        try:
+            temp_dir = translatePath("special://temp")
+            os.makedirs(temp_dir, exist_ok=True)
+            if os.path.dirname(os.path.abspath(local)) != os.path.abspath(temp_dir):
+                import shutil
 
-    # Skip the temp/ subtree on extract: the restore zip is staged in special://temp
-    # (== special://home/temp), and a full backup contains a partial copy of itself
-    # there - extracting it would clobber the source mid-read.
+                staged_local = os.path.join(temp_dir, os.path.basename(local))
+                if os.path.abspath(staged_local) != os.path.abspath(local):
+                    shutil.copyfile(local, staged_local)
+                local = staged_local
+                staged = True
+        except Exception:
+            # Could not park the validated zip somewhere the wipe preserves; ABORT
+            # rather than risk wiping the box out from under its own restore source.
+            if staged:
+                try:
+                    os.remove(local)
+                except OSError:
+                    pass
+            dialog.ok(
+                AddonTitle,
+                "Restore failed: could not stage the backup for a clean-clone restore. "
+                "Nothing was changed.",
+            )
+            return
+        # Lazy import breaks the onetap<->wiz cycle: onetap imports wiz lazily (inside
+        # apply()), so importing onetap here at call time - not at module top - is the
+        # lowest-risk way to reuse its proven wipe without an import loop.
+        from resources.lib.modules import onetap
+
+        # Show the SAME progress bar the extract uses so the wipe is not a dead screen for
+        # ~90s. Counts only (note is static) - a per-file name would re-trigger the text
+        # renderer crash ExtractWithProgress was fixed to avoid. Not cancelable: a cancel
+        # mid-wipe would strand a half-wiped box, so we never check p.cancelled() here.
+        with ui.Progress("Wiping the device clean...", heading="Restoring") as wp:
+            onetap._wipe(
+                translatePath("special://home/"),
+                onetap._wipe_excludes(),
+                progress=lambda done, total: wp.items(
+                    done, total, note="Removing old files"
+                ),
+            )
+        # From here on this IS a post-wipe restore: uninterruptible, never early-returns.
+        post_wipe = True
+
+    def _rlog(m):
+        xbmc.log("%s : %s" % (AddonTitle, m), xbmc.LOGINFO)
+
+    # A restore does NOT touch the IPTV client (pvr): it is never disabled, enabled, or
+    # staged here. EZ Maintenance++ has zero IPTV behavior - the user manages IPTV
+    # themselves. The extract below only puts the backed-up files in the right folder.
+
+    # A backup zip is either HOME-anchored (full: members under userdata/ + addons/) or
+    # USERDATA-anchored (a "kodi_settings" backup: bare userdata contents, NO userdata/
+    # prefix). Extract to the MATCHING root - extracting a userdata-anchored zip to HOME is
+    # exactly the bug that scattered settings into the home root and bricked the box.
+    try:
+        _names = zipfile.ZipFile(local).namelist()
+    except Exception:
+        _names = []
+    items = len(_names)
+    anchor = _archive_anchor(_names, hint=anchor_hint)
+    extract_root = control.HOME if anchor == "home" else control.USERDATA
+    _rlog(
+        "restore: anchor=%s -> extract_root=%s (%d members)"
+        % (anchor, extract_root, items)
+    )
+
+    # Skip the temp/ self-reference, recomputed against the ACTUAL extract root. On a
+    # userdata anchor relpath(home/temp, home/userdata) -> '../temp' -> stays None (a
+    # userdata zip has no home temp tree), which is correct.
     skip_prefix = None
     try:
-        rel = os.path.relpath(
-            translatePath("special://temp"), translatePath("special://home/")
-        )
+        rel = os.path.relpath(translatePath("special://temp"), extract_root)
         if not rel.startswith(".."):
             skip_prefix = rel.replace("\\", "/").rstrip("/") + "/"
     except Exception:
@@ -609,10 +650,11 @@ def restore(zipFile, confirm=True, post_wipe=False):
         with ui.Progress("Extracting the backup...", heading="Restoring") as p:
             canceled = ExtractWithProgress(
                 local,
-                control.HOME,
+                extract_root,
                 p,
                 skip_prefix=skip_prefix,
                 cancelable=not post_wipe,
+                skip_member=_extract_skip(anchor, skip_prefix),
             )
     finally:
         if staged:
@@ -622,6 +664,9 @@ def restore(zipFile, confirm=True, post_wipe=False):
                 pass
 
     if canceled and not post_wipe:
+        # The user canceled a (non-wipe) restore that never committed. Nothing was changed on
+        # disk except what the (now-stopped) extract wrote, and no client state was touched, so
+        # a cancel is a true no-op.
         dialog.ok(AddonTitle, "Restore Canceled")
         return
 
@@ -643,14 +688,52 @@ def restore(zipFile, confirm=True, post_wipe=False):
     except Exception:
         pass
 
+    # tvOS durability: the extract wrote userdata/*.xml with plain POSIX I/O, which on Apple
+    # TV BYPASSES Kodi's CTVOSFile VFS - so the restored settings never reach NSUserDefaults
+    # (tvOS's only persistent store) and are shadowed by the stale mirror at boot. Re-write
+    # each restored userdata/*.xml THROUGH xbmcvfs so tvOS vectors it into NSUserDefaults
+    # (durable on the first reopen, no clean shutdown needed). This is a generic settings
+    # durability rewrite - it does NOT enable, disable, or stage the IPTV client (EZ
+    # Maintenance++ has no IPTV behavior). Runs AFTER apply_guisettings/UpdateLocalAddons (so
+    # nothing re-saves defaults over it) and BEFORE the restart prompt. Fully guarded - never
+    # breaks a restore.
+    try:
+        from resources.lib.modules import nsud
+
+        nsud.rewrite_userdata_xml(control.USERDATA, log=_rlog)
+    except Exception:
+        pass
+
+    # A restore clones the SOURCE box's guisettings, so this box now carries the wrong
+    # device name (services.devicename) AND a buffer (filecache.memorysize) sized for the
+    # wrong RAM. Drop a persistent marker so the boot service runs the post-restore tune-up
+    # on the next boot: offer to rename this device, then to retune the buffer for it. Written
+    # HERE - AFTER the extract completes and right before the restart prompt - deliberately:
+    # the pre-extract wipe (wipe/One-Tap paths) runs earlier and would remove it, and the
+    # extract itself would overwrite it. Covers BOTH the normal restore and One-Tap (onetap
+    # calls restore(post_wipe=True), which reaches this same point). The marker keeps its
+    # historical name (.ezm_buffer_prompt) - it now gates the whole combined flow. Guarded: a
+    # marker-write failure must never break the restore.
+    try:
+        from resources.lib.modules import tools
+
+        tools.mark_buffer_prompt_pending()
+    except Exception:
+        pass
+
     ui.ask_restart(
-        "Restore Complete: %d items, %d settings applied.\n"
-        "Kodi must restart to finish. Restart now?" % (items, applied)
+        "Restore Complete: %d items, %d settings applied." % (items, applied)
     )
 
 
 def CreateZip(
-    folder, zip_filename, message_header, message1, exclude_dirs, exclude_files
+    folder,
+    zip_filename,
+    message_header,
+    message1,
+    exclude_dirs,
+    exclude_files,
+    prune_home_root=False,
 ):
     # EZ Maintenance++ : Python's zipfile can only write a LOCAL file. When the backup
     # destination is a Kodi VFS path (nfs://, smb://, ...) build the zip in special://temp
@@ -680,6 +763,7 @@ def CreateZip(
         zip_file = zipfile.ZipFile(
             zip_filename, "w", zipfile.ZIP_DEFLATED, allowZip64=True
         )
+        written_arcs = set()  # arcnames the POSIX walk captured (for the tvOS augment)
         try:
             for dirpath, dirnames, filenames in os.walk(folder):
                 if canceled:
@@ -687,6 +771,15 @@ def CreateZip(
                 try:
                     dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
                     filenames[:] = [f for f in filenames if f not in exclude_files]
+                    # A FULL backup (folder == special://home) must capture ONLY the allowed
+                    # home-level dirs. Stray root userdata pollution (loose guisettings.xml or
+                    # a sibling addon_data/ left by the old userdata-restore-to-HOME bug) would
+                    # otherwise be re-captured and re-scattered on the next restore. Depth-scoped
+                    # to the walk ROOT so the real userdata/addon_data/... is untouched. Never
+                    # set for userdata/dropbox mode, where those names ARE the content.
+                    if prune_home_root and os.path.normpath(dirpath) == abs_src:
+                        dirnames[:] = [d for d in dirnames if d in _HOME_ALLOWED_TOP]
+                        filenames[:] = []
                     for fname in filenames:
                         if p.cancelled():
                             canceled = True
@@ -694,7 +787,31 @@ def CreateZip(
                         count += 1
                         p.items(count, n_item, note="[COLOR lime]%s[/COLOR]" % fname)
                         fpath = os.path.normpath(os.path.join(dirpath, fname))
-                        zip_file.write(fpath, fpath[len(abs_src) + 1 :])
+                        # Forward-slash arcnames (the ZIP convention) so the tvOS augment's
+                        # idempotency check (nsub compares its own '/'-joined arcs) matches -
+                        # os.sep is already '/' on the darwin/tvOS/Android fleet, a no-op there.
+                        arc = fpath[len(abs_src) + 1 :].replace(os.sep, "/")
+                        zip_file.write(fpath, arc)
+                        written_arcs.add(arc)
+                except Exception:
+                    pass
+            # tvOS completeness: the POSIX walk above cannot see the userdata *.xml that live
+            # only in NSUserDefaults (guisettings.xml, profiles.xml, addon settings, ...), so
+            # on Apple TV the backup would silently omit exactly the
+            # settings the owner cares about. Capture them by reading Kodi's NSUserDefaults
+            # plist directly and add any the walk missed. Additive + idempotent - a pure no-op
+            # on Fire TV / desktop (no such plist). Guarded; never breaks a backup. See nsub.py
+            # (and why xbmcvfs reads cannot be used) + docs/plans/atv-restore-*.
+            if not canceled:
+                try:
+                    from resources.lib.modules import nsub
+
+                    def _blog(m):
+                        xbmc.log("%s : %s" % (AddonTitle, m), xbmc.LOGINFO)
+
+                    nsub.capture_nsud_userdata(
+                        zip_file, abs_src, written_arcs, log=_blog
+                    )
                 except Exception:
                     pass
         finally:
@@ -725,13 +842,20 @@ def CreateZip(
 
 
 # EXTRACT ZIP
-def ExtractZip(_in, _out, progress=None, skip_prefix=None, cancelable=True):
+def ExtractZip(
+    _in, _out, progress=None, skip_prefix=None, cancelable=True, skip_member=None
+):
     """Extract _in over _out. `progress` is a ui.Progress (gauge + cancel); None means a
     silent extract. cancelable=False makes the extract UNINTERRUPTIBLE (the post-wipe
     One-Tap path, where a cancel would strand a wiped box)."""
     if progress is not None:
         return ExtractWithProgress(
-            _in, _out, progress, skip_prefix=skip_prefix, cancelable=cancelable
+            _in,
+            _out,
+            progress,
+            skip_prefix=skip_prefix,
+            cancelable=cancelable,
+            skip_member=skip_member,
         )
     return ExtractNOProgress(_in, _out)
 
@@ -747,7 +871,84 @@ def ExtractNOProgress(_in, _out):
     return canceled
 
 
-def ExtractWithProgress(_in, _out, progress, skip_prefix=None, cancelable=True):
+# How often the extract refreshes the progress dialog. See the CRASH FIX note in
+# ExtractWithProgress: redrawing it for every one of thousands of files SIGSEGVs Kodi's
+# native text renderer on Fire OS 8, so we refresh at most every _UPDATE_EVERY files.
+_UPDATE_EVERY = 50
+
+
+# The only top-level dirs that legitimately live at special://home. A HOME-anchored extract
+# member (or a full-backup root entry) whose FIRST path segment is anything else is stray
+# userdata pollution: the on-disk residue of the historical "userdata-mode backup extracted
+# to HOME" bug, which scattered guisettings.xml/addon_data/ as siblings of userdata/.
+_HOME_ALLOWED_TOP = frozenset({"userdata", "addons", "media", "system", "temp"})
+
+
+def _first_seg(name):
+    return (name or "").lstrip("/").replace("\\", "/").split("/", 1)[0]
+
+
+def _archive_anchor(namelist, hint=None):
+    """'home' if any member sits under userdata/ or addons/ (a full/home backup), else
+    'userdata' (a settings backup: bare userdata contents, no userdata/ prefix). `hint`
+    (from a pin type / filename) breaks a tie ONLY on an empty/degenerate archive."""
+    for raw in namelist:
+        if _first_seg(raw) in ("userdata", "addons"):
+            return "home"
+    if not namelist and hint in ("home", "userdata"):
+        return hint
+    return "userdata"
+
+
+def _extract_skip(anchor, skip_prefix):
+    """Return a predicate(name)->bool: True => do NOT extract this member. Drops the temp/
+    self-reference, and on a HOME anchor drops any member whose first segment is not an
+    allowed home-level dir (stray userdata pollution - the on-disk residue of the historical
+    userdata-restore-to-HOME bug). This only CHOOSES what to extract; it never deletes an
+    existing file. Inert on a USERDATA anchor, where addon_data/ and guisettings.xml ARE the
+    real content."""
+
+    def _skip(name):
+        rel = (name or "").lstrip("/").replace("\\", "/")
+        if skip_prefix and rel.startswith(skip_prefix):
+            return True
+        if anchor == "home" and _first_seg(rel) not in _HOME_ALLOWED_TOP:
+            return True
+        return False
+
+    return _skip
+
+
+# NOTE: the boot-time home-root self-heal sweep (sweep_home_root_pollution) was REMOVED. It
+# deleted files at special://home on every boot, and nothing in EZ Maintenance++ may delete
+# files at boot. The anchor-aware extract (_extract_skip / _archive_anchor) prevents the
+# scatter at its source - a userdata backup extracts UNDER userdata/, never at the home root -
+# so there is no pollution to sweep in the first place.
+
+
+def _order_userdata_first(infos):
+    """Defense-in-depth ordering for a restore extract: write userdata/ (irreplaceable
+    settings) FIRST, then everything else, then addons/ LAST (add-ons re-download).
+
+    A backup zip lists userdata/ as its LAST ~70 entries, so a mid-extract failure with
+    the archive's own order would lose ALL settings while the (recoverable) add-ons were
+    already written. Reordering makes settings the first thing on disk. Order within each
+    bucket is preserved (stable)."""
+    userdata, addons, other = [], [], []
+    for it in infos:
+        fn = (getattr(it, "filename", "") or "").lstrip("/")
+        if fn.startswith("userdata/"):
+            userdata.append(it)
+        elif fn.startswith("addons/"):
+            addons.append(it)
+        else:
+            other.append(it)
+    return userdata + other + addons
+
+
+def ExtractWithProgress(
+    _in, _out, progress, skip_prefix=None, cancelable=True, skip_member=None
+):
     count = 0
     extracted = 0
     errors = 0
@@ -756,30 +957,42 @@ def ExtractWithProgress(_in, _out, progress, skip_prefix=None, cancelable=True):
     last_error = ""
     try:
         zin = zipfile.ZipFile(_in, "r")
-        infos = zin.infolist()
-        n_files = len(infos)
-        for item in infos:
+        # Defense-in-depth: extract userdata/ before addons/ so an interrupted extract
+        # keeps the irreplaceable settings and only loses re-downloadable add-ons.
+        ordered = _order_userdata_first(zin.infolist())
+        # Never restore the transient temp tree: a full backup includes a partial copy of
+        # itself at temp/<backup>.zip, and the restore zip is staged in temp - extracting
+        # it would overwrite the source mid-read (Truncated file header). Filter it out up
+        # front so the count/percent below is over the files we actually write.
+        to_extract = [
+            it
+            for it in ordered
+            if not (skip_prefix and it.filename.startswith(skip_prefix))
+            and not (skip_member and skip_member(it.filename))
+        ]
+        skipped = len(ordered) - len(to_extract)
+        n_files = len(to_extract)
+        for item in to_extract:
             # Post-wipe this is off (cancelable=False): the box is already wiped, so a
             # cancel here would strand it - the extract must run to completion.
             if cancelable and progress.cancelled():
                 canceled = True
                 break
-            # Never restore the transient temp tree: a full backup includes a partial
-            # copy of itself at temp/<backup>.zip, and the restore zip is staged in temp
-            # - extracting it would overwrite the source mid-read (Truncated file header).
-            if skip_prefix and item.filename.startswith(skip_prefix):
-                skipped += 1
-                continue
             count += 1
-            try:
-                name = os.path.basename(item.filename)
-            except Exception:
-                name = item.filename
-            # The divide-by-zero guard lives inside ui.Progress.items() (n_files is never
-            # 0 in the loop body - an empty archive has no items to iterate).
-            progress.items(
-                count, n_files, note="[COLOR skyblue][B]%s[/B][/COLOR]" % str(name)
-            )
+            # CRASH FIX (Fire OS 8 sticks): the old code called progress.items() with a
+            # changing per-file basename for EVERY file. Thousands of rapid filename
+            # text-layout redraws SIGSEGV Kodi's native text renderer (CGUIFont::
+            # GetTextWidth <- CGUITextLayout::WrapText <- CGUITextBox::UpdateInfo), which
+            # killed a restore around file ~5600 of 6130 - and a wipe-then-restore is
+            # unsafe with that crash. Refresh the dialog at most every _UPDATE_EVERY files
+            # (plus the first and last), with a SHORT static note - never the per-file
+            # basename. The bar still advances in visible steps and always reaches 100%.
+            if count == 1 or count % _UPDATE_EVERY == 0 or count == n_files:
+                progress.items(
+                    count,
+                    n_files,
+                    note="Extracting file %d of %d" % (count, n_files),
+                )
             try:
                 zin.extract(item, _out)
                 extracted += 1
@@ -801,145 +1014,3 @@ def ExtractWithProgress(_in, _out, progress, skip_prefix=None, cancelable=True):
         level=xbmc.LOGERROR if errors else xbmc.LOGINFO,
     )
     return canceled
-
-
-# INSTALL BUILD
-def buildInstaller(url):
-    destination = dialog.browse(
-        type=0,
-        heading="Select Download Directory",
-        shares="files",
-        useThumbs=True,
-        treatAsFolder=True,
-        enableMultiple=False,
-    )
-    if destination:
-        dest = translatePath(os.path.join(destination, "custom_build.zip"))
-        downloader(url, dest)
-        time.sleep(2)
-        dp.create("Installing Build", "In Progress..." + "\n" + "Please Wait")
-        dp.update(0, "" + "\n" + "Extracting Zip Please Wait")
-        ExtractZip(dest, control.HOME)  # buildInstaller is dead (removed in a later PR)
-        time.sleep(2)
-        dp.close()
-        dialog.ok(
-            AddonTitle,
-            "Installation Complete..."
-            + "\n"
-            + "Your interface will now be reset"
-            + "\n"
-            + "Click ok to Start...",
-        )
-        xbmc.executebuiltin("LoadProfile(Master user)")
-
-
-# DOWNLOADER
-
-try:
-    if PY2:
-        FancyURLopener = urllib.FancyURLopener
-    else:
-        FancyURLopener = urllib.request.FancyURLopener
-
-    class customdownload(FancyURLopener):
-        version = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11"
-
-    def downloader(url, dest, dp=None):
-        if not dp:
-            dp = xbmcgui.DialogProgress()
-            dp.create(AddonTitle)
-        dp.update(0)
-        start_time = time.time()
-        customdownload().retrieve(
-            url, dest, lambda nb, bs, fs, url=url: _pbhook(nb, bs, fs, dp, start_time)
-        )
-
-    def _pbhook(numblocks, blocksize, filesize, dp, start_time):
-        try:
-            percent = min(numblocks * blocksize * 100 / filesize, 100)
-            currently_downloaded = float(numblocks) * blocksize / (1024 * 1024)
-            kbps_speed = numblocks * blocksize / (time.time() - start_time)
-            if kbps_speed > 0:
-                eta = (filesize - numblocks * blocksize) / kbps_speed
-            else:
-                eta = 0
-            kbps_speed = kbps_speed / 1024
-            total = float(filesize) / (1024 * 1024)
-            mbs = "%.02f MB of %.02f MB" % (currently_downloaded, total)
-            e = "Speed: %.02f Kb/s " % kbps_speed
-            e += "ETA: %02d:%02d" % divmod(eta, 60)
-            string = "Downloading... Please Wait..."
-            dp.update(percent, mbs + "\n" + e + "\n" + string)
-        except:
-            percent = 100
-            dp.update(percent)
-            dp.close()
-            return
-
-        if dp.iscanceled():
-            raise Exception("Canceled")
-            dp.close()
-
-except (ImportError, AttributeError):
-    import urllib.request
-
-    def downloader(url, dest, dp=None):
-        if not dp:
-            dp = xbmcgui.DialogProgress()
-            dp.create(AddonTitle)
-        dp.update(0)
-        start_time = time.time()
-        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-        response = urllib.request.urlopen(req)
-
-        filesize = int(response.getheader("Content-Length", 0))
-        downloaded = 0
-        blocksize = 8192
-
-        with open(dest, "wb") as f:
-            while True:
-                chunk = response.read(blocksize)
-                if not chunk:
-                    break
-
-                f.write(chunk)
-                downloaded += len(chunk)
-
-                _pbhook(downloaded, filesize, dp, start_time)
-
-                if dp.iscanceled():
-                    dp.close()
-                    raise Exception("Canceled")
-
-        dp.close()
-
-    def _pbhook(downloaded, filesize, dp, start_time):
-        try:
-            percent = int(min(downloaded * 100 / filesize, 100)) if filesize > 0 else 0
-
-            currently_downloaded = downloaded / (1024 * 1024)
-            total = filesize / (1024 * 1024) if filesize > 0 else 0
-
-            elapsed = time.time() - start_time
-            speed = downloaded / elapsed if elapsed > 0 else 0
-
-            if speed > 0 and filesize > 0:
-                eta = (filesize - downloaded) / speed
-            else:
-                eta = 0
-
-            kbps_speed = speed / 1024
-
-            mbs = "%.02f MB of %.02f MB" % (currently_downloaded, total)
-            e = "Speed: %.02f KB/s " % kbps_speed
-            e += "ETA: %02d:%02d" % divmod(int(eta), 60)
-
-            string = "Downloading... Please Wait..."
-
-            dp.update(percent, mbs + "\n" + e + "\n" + string)
-
-        except:
-            dp.update(100)
-            dp.close()
-
-##############################    END    #########################################

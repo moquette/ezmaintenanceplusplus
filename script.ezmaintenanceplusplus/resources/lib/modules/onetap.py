@@ -97,7 +97,10 @@ def all_pins():
 def infer_type(filename):
     """Best-effort backup type from the file name (informational)."""
     n = (filename or "").lower()
-    if "userdata" in n:
+    # The default userdata backup name is "kodi_settings" (wiz.backup), which has neither
+    # "userdata" nor "full"/"backup" - map settings-style names to userdata so the restore
+    # anchor hint is right. (Non-load-bearing: the zip's own layout is authoritative.)
+    if "userdata" in n or "kodi_settings" in n or "settings" in n:
         return "userdata"
     if "full" in n or "backup" in n:
         return "full"
@@ -333,14 +336,32 @@ def _wipe_excludes():
     return keep
 
 
-def _wipe(home, excludes, keep_files=None):
+def _wipe(home, excludes, keep_files=None, progress=None):
     """Remove everything under `home` except any entry named in `excludes` (matched at any
     depth - protects addons/<this add-on> and temp/) and any absolute path in `keep_files`
     (e.g. Kodi's add-on state DB, so the surviving add-on stays ENABLED). Returns files
-    removed."""
+    removed.
+
+    `progress(removed, total)` is called (throttled, every 100 files) so a long wipe shows
+    a moving bar instead of a dead screen. It is passed COUNTS ONLY - never a per-file name:
+    rapid changing-text redraws crash Kodi's text renderer on some devices (the exact bug
+    wiz.ExtractWithProgress avoids), so the wipe UI must stay count-based."""
     import os
 
     keep_files = keep_files or set()
+
+    # Pre-count so the bar shows a real percent. Cheap: it is just the walk, no per-file I/O.
+    total = 0
+    if progress is not None:
+        for root, dirs, files in os.walk(home, topdown=True):
+            dirs[:] = [d for d in dirs if d not in excludes]
+            total += sum(1 for f in files if os.path.join(root, f) not in keep_files)
+        try:
+            progress(0, total)
+        except Exception:
+            pass
+
+    _UPDATE_EVERY = 100
     removed = 0
     for root, dirs, files in os.walk(home, topdown=True):
         dirs[:] = [d for d in dirs if d not in excludes]
@@ -353,6 +374,16 @@ def _wipe(home, excludes, keep_files=None):
                 removed += 1
             except Exception:
                 pass
+            if progress is not None and removed % _UPDATE_EVERY == 0:
+                try:
+                    progress(removed, total)
+                except Exception:
+                    pass
+    if progress is not None:
+        try:
+            progress(total, total)
+        except Exception:
+            pass
     for root, dirs, _files in os.walk(home, topdown=False):
         for dname in dirs:
             if dname in excludes:
@@ -461,9 +492,13 @@ def apply(slot):
     # the restart prompt - a wiped box is never left stranded by a cancel or a hiccup.
     from resources.lib.modules import wiz
 
+    # Corroborating anchor hint (defense-in-depth; the zip layout is authoritative).
+    hint = {"full": "home", "userdata": "userdata"}.get(
+        pin.get("type") or infer_type(pin.get("src") or "")
+    )
     _wipe(xbmcvfs.translatePath("special://home/"), _wipe_excludes())
     try:
-        wiz.restore(local, confirm=False, post_wipe=True)
+        wiz.restore(local, confirm=False, post_wipe=True, anchor_hint=hint)
     finally:
         _cleanup(local)
 

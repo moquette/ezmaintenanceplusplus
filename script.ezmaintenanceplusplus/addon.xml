@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.01.1" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.13.0" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -11,7 +11,7 @@
   <extension point="xbmc.addon.metadata">
 	<summary>A Streamlined Utility Tool for Kodi</summary>
 	<description>No Bloatware, no Nonsense! Just Keep your Kodi sharp and clean with this utility tool... Now with a Custom Wizard. The "++" fork backs up and restores over Kodi's VFS, so Backup Location / Restore can point straight at a network share (nfs://, smb://) or any VFS path, not just local storage.</description>
-    <language></language>
+    <language>en</language>
     <platform>all</platform>
     <license>The MIT License</license>
     <forum>-</forum>
@@ -21,192 +21,13 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
-2026.07.01.1
- - IMPORTANT data-loss fix: "Keep how many backups" (rotation) no longer deletes a backup
-   you renamed. It now only prunes the tool's own automatic backups (the ones ending in a
-   date stamp); any backup you renamed, or a "keep" in the name, is protected and never
-   auto-deleted. Renaming a backup used to make it the FIRST one deleted; now it is the
-   safest. Applies to Dropbox and Network/Local.
- - "Pick a Dropbox backup" is now a live read of the account you are actually signed into.
-   If you switch Dropbox accounts, the list updates to the new account instead of showing
-   the old account's files until the token refreshed.
- - Menu tidy: the "[ + ]" prefix on empty One-Tap Restore slots is gone.
-2026.07.01.0
- - Consistency overhaul: every backup and restore path now shares one progress + cancel
-   system. Network (SMB/NFS) backups AND restores now show a real progress bar and can be
-   canceled - before, network copies were silent. The network copy is also atomic, so a
-   failed copy can never leave a half-written file behind.
- - The Dropbox restore download can finally be canceled (Cancel used to be ignored), and a
-   canceled download reads as "canceled", not "failed".
- - One-Tap Restore is safer: once it begins wiping, it runs the restore to completion and
-   always offers to restart, so a canceled or interrupted restore can no longer leave the
-   box half-wiped.
- - Fixes: backing up an empty folder no longer errors, progress windows always close, and
-   every dialog and notification now shows the same "EZ Maintenance++" name (a couple used
-   to say "Maintenance").
-2026.06.30.28
- - One-Tap Restore from Dropbox now shows the real download gauge (percent + MB) while
-   fetching, instead of a static "Please wait".
-2026.06.30.27
- - Menu tidy: FRESH START and ONE-TAP RESTORE are now white like the rest of the menu.
-2026.06.30.26
- - Video cache buffer fixed properly for Kodi 21 Omega. Omega ignores the old
-   advancedsettings.xml cache tags, so the tool now sets Kodi's live cache setting directly
-   (no restart needed), recommends a STABLE value from total RAM (the old "free memory / 3"
-   drifted every reboot and could suggest dangerously large values), warns on huge values,
-   shows the current value, and adds Reset to Kodi default (20 MB).
-2026.06.30.25
- - One-Tap Restore is cleaner: the redundant "Pin or change a backup" row is gone (tap
-   an empty slot to pin, tap a filled one for actions), and there are now 10 slots.
-2026.06.30.24
- - One-Tap Restore pin labels are clean: no more doubled "Dropbox" and no raw
-   "unknown" type. If a backup type cannot be guessed from its name, you are now asked
-   (Full / Userdata / Not sure).
-2026.06.30.23
- - Advanced Settings (Buffer Size): the "Use Optimal" button is now focused by default.
-2026.06.30.22
- - Advanced Settings (Buffer Size) now has a Cancel button (a real
-   three-button dialog: Use Optimal / Enter Value / Cancel).
-2026.06.30.21
- - Advanced Settings (Buffer Size) reworked: it now shows your current buffer, writes
-   advancedsettings.xml through Kodi VFS and verifies it saved, uses the correct Kodi
-   19+/Omega cache schema, and offers to restart so the change actually takes effect.
-2026.06.30.20
- - Fresh Start no longer leaves EZ Maintenance++ disabled or looking "gone" after a wipe.
-   It now preserves Kodi's add-on state so the tool comes back ENABLED, re-scans add-ons,
-   ends with a clear message telling you where to find it, then restarts automatically.
-2026.06.30.19
- - Fresh Start now gives you a clean Kodi canvas with only EZ Maintenance++. It no longer
-   tries to switch skins first (that step could hang). It wipes all other add-ons, skins,
-   and settings using the same hardened wipe One-Tap Restore uses, then restarts Kodi (which
-   falls back to the default skin on its own). This add-on, its dependencies, and your
-   backups survive.
-2026.06.30.18
- - One-Tap Restore pin management: tap a pinned backup to get Restore / Rename / Verify /
-   Change / Remove. You can now give a pin a friendly name (e.g. "Golden Full") instead of
-   the raw zip file name.
-2026.06.30.17
- - One-Tap Restore is now a proper menu item, not buried in Settings. Open the add-on and
-   choose ONE-TAP RESTORE: pick a pinned backup to restore it, or pin a new one. Restoring
-   your box no longer lives under Settings.
-2026.06.30.16
- - One-Tap Restore now RESTORES. Each pinned slot has a RESTORE action: it fetches and
-   validates the pinned backup, and only after you confirm does it wipe this Kodi and
-   restore it. The box is never wiped until the backup is downloaded and confirmed a valid
-   zip. Slots now show the pinned zip name and size.
-2026.06.30.15
- - One-Tap Restore (foundation): a new Settings tab to pin a specific backup (a
-   network/local file or a Dropbox backup) to a slot and verify it still exists and is a
-   valid zip. Replaces the old Wizard Creator. One-tap restore-from-pin is the next step.
-2026.06.30.14
- - Authorship cleanup: the add-on's listed author is now its maintainer only. The
-   original EZ Maintenance+ authors are credited in the project README, not in the app.
-2026.06.30.13
- - Fixes the add-on not appearing in the Kodi 19+/Omega add-on browser. It now
-   declares xbmc.python 3.0.0 compatibility; without it Kodi treated the add-on as
-   incompatible and hid it from Program add-ons entirely.
-2026.06.30.12
- - Restore is faster: removed the diagnostic full-CRC scan that was added while tracking
-   down the large-backup corruption (now fixed), which added ~20s to every restore.
-2026.06.30.11
- - The restore download bar now fills correctly (the total size is read from Dropbox's
-   metadata, since the download is streamed without a Content-Length).
-2026.06.30.10
- - The "Downloading from Dropbox" step during restore now shows a real progress bar
-   (percent and MB) instead of a static "Please Wait".
-2026.06.30.9
- - Fixes large-backup restore failing partway (BadZipFile: Truncated file header). A
-   full backup was including a partial copy of itself under temp/, and on restore that
-   entry overwrote the staged zip mid-extraction. Restore now skips the temp/ tree, and
-   backups no longer include temp/ at all. This is what was breaking Apple TV restores.
-2026.06.30.7
- - Restore verifies the downloaded backup is fully readable (CRC) the moment it
-   arrives, before extracting, to pinpoint where a large backup can get corrupted.
-2026.06.30.6
- - Restore now logs exactly how many files it extracted vs errored and verifies the
-   tree on disk afterward, so a restore that does not take effect can be diagnosed
-   precisely instead of silently reporting success.
-2026.06.30.5
- - Restore now works on Apple TV (tvOS), not just Fire TV/Android. After extracting, it
-   re-applies your Kodi settings through Kodi's own API and rescans add-ons (like the
-   official Backup add-on), so the restore survives tvOS's NSUserDefaults/cache behavior
-   instead of silently reverting. It now restarts cleanly (Quit) and reports how many
-   settings were applied.
-2026.06.30.4
- - Restore is now honest and self-checking: it verifies the downloaded backup is a
-   valid, non-empty zip before extracting, reports how many items it restored, and
-   shows a clear error (with the byte count) instead of falsely reporting success when
-   the download came up empty. The streamed download also fails loud on a 0-byte file.
-2026.06.30.3
- - Dropbox sign-in is now more secure and self-contained: it uses PKCE, so the add-on
-   no longer needs (or ships) any app secret, and the sign-in QR is generated right on
-   the device (no outside QR service - works on any network).
- - Long backups are more resilient: the device is kept awake during a backup, and a
-   brief network stall now resumes the current chunk instead of restarting the whole
-   upload.
-2026.06.30.2
- - The sign-in QR is now generated for your build and ships inside the add-on, so it
-   appears even when the device cannot reach an outside QR service (no external
-   dependency). Falls back to a fetched QR, then the plain URL, if needed.
-2026.06.30.1
- - Dropbox upload now shows a real progress bar (percent and MB) instead of a
-   frozen bar, and you can cancel it; a canceled upload never touches your last backup.
- - Dropbox sign-in shows a scannable QR code: point your phone at it, approve, then
-   enter the short code. No more typing a long URL on the remote (falls back to the
-   URL if the QR can't be generated).
-2026.06.30.0
- - Dropbox large-file uploads are now resilient on slow connections (e.g. a Fire TV
-   or Apple TV wifi uplink): smaller upload chunks, each chunk retried with backoff,
-   and the session resumes from Dropbox's own offset instead of restarting the whole
-   upload. Big backups (100 MB and up) that used to time out now complete.
-2026.06.26.2
- - Backup safety fixes: a failed Network/SMB/NFS copy now reports an error and never
-   prunes your last good backup (the failed ship is no longer treated as success).
- - Keep-N rotation now orders backups by the in-name date stamp, not the raw filename,
-   so a renamed/mixed-name backup set can never delete the newest one.
- - Dropbox: single-shot uploads stream from disk (no whole-file buffer); a broken
-   download cleans up its partial temp file and creates the temp folder if missing.
- - Build no longer ships lint/cache cruft (.ruff_cache, __pycache__) inside the zip.
-2026.06.26.1
- - All-in-one backup tool: pick a Destination - Local, Network (SMB/NFS), or Dropbox.
- - Dropbox is one-tap: Settings -> Backup/Restore -> Destination = Dropbox -> Sign in,
-   paste one code, done. No app to create, no keys to type (talks to the Dropbox REST
-   API directly, no SDK). Backup uploads, Restore lists and pulls straight from Dropbox.
- - Keep-N rotation: set how many backups to keep; the oldest are pruned only AFTER a new
-   backup lands, so a failed run never deletes your last good backup.
-2026.06.26.0
- - EZ Maintenance++ : forked from EZ Maintenance+ (aenema, peno).
- - Backup now writes through Kodi VFS: the zip is staged locally then copied to the
-   Backup Location, so nfs:// / smb:// / any network share works (not just local paths).
- - Restore reads the same way: the zip list and the selected zip are pulled over VFS,
-   so you can restore directly from a network share.
-2026.04.05.0
- - Updated for Kodi 22
-2023.01.09.0
- - Added AutoClean Cache functionality every x days at a given hour.
- - Backup always replaced the home folder reference in xml files with special://home
-   Not all addons can handle this replace so it is now possible via a setting to disable this.
- - Backup Cancel didn't work. This is now fixed.
-
-2023.01.01.0
- - Fix a fix on 2022.12.28.0
-
-2022.12.28.0
- - Fix crash with full backup when there are foreign, like Hebrew, characters in xml files
-
-2021.12.19.0
- - Made kodi 19 (Matrix) compatible.
-
-2021.11.03.0
-- Fix Speedtest crash.
-
-2020.12.19.1
-- The plugin was also installed under Video add-ons. Now it only is in Program add-ons where it belongs
-- Clean removed some files created by Common plugin cache or StorageServer or script.common.plugin.cache at kodi startup.
-  This resulted in breaking cache functionality of kodi
-- Upload kodi log file to pastebin didn't always work and the first bytes were binary characters
-- Made all decode calls UTF-8
-- Improved ADVANCED SETTINGS(BUFFER SIZE) functionality
-    </news>
+        v2026.07.13.0: Menu: cleaner thin Title-Case labels. Dropped the bold ALL-CAPS and forced white color so items render in the active skin's native thin font and adapt color on focus.
+        v2026.07.09.1: Boot: size alerts moved off the boot path behind GUI-ready; fixed cache clean skipping dir-only levels; fixed packages count; removed dead wizard/builds machinery
+        v2026.07.09.0: Fix: the post-restore setup steps were numbered backwards. The device-name question is asked first, so it is now labelled 1 of 2, and the video-quality question 2 of 2.
+        2026.07.08.6
+        - Fix (Apple TV only): after a restore, Kodi's File Manager no longer lists every
+        settings file twice in the profile folder. On Apple TV a restore has to copy your
+        settings into Apple's private store so they survive a reopen, and it was also leaving
+        </news>
   </extension>
 </addon>

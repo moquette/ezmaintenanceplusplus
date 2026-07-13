@@ -31,10 +31,16 @@ def _matrix_to_png(matrix, scale):
     n = len(matrix)
     side = n * scale
     raw = bytearray()
+    # 32-bit RGBA (opaque). Kodi's texture loader is unreliable with 8-bit grayscale
+    # PNGs on newer builds (verified: a grayscale QR rendered blank on Kodi 21.3/tvOS
+    # while the sign-in window itself showed) - a truecolor+alpha PNG is the format
+    # skins are told to use and loads everywhere.
+    dark = b"\x00\x00\x00\xff"  # opaque black
+    light = b"\xff\xff\xff\xff"  # opaque white
     for row in matrix:
         line = bytearray([0])  # PNG filter type 0 (None) for this scanline
         for cell in row:
-            line += (b"\x00" if cell else b"\xff") * scale  # dark->black, light->white
+            line += (dark if cell else light) * scale  # dark->black, light->white
         raw += line * scale  # each module row is `scale` identical scanlines
 
     def _chunk(typ, body):
@@ -46,6 +52,8 @@ def _matrix_to_png(matrix, scale):
         )
 
     sig = b"\x89PNG\r\n\x1a\n"
-    ihdr = struct.pack(">IIBBBBB", side, side, 8, 0, 0, 0, 0)  # 8-bit grayscale, opaque
+    ihdr = struct.pack(
+        ">IIBBBBB", side, side, 8, 6, 0, 0, 0
+    )  # 8-bit RGBA (truecolor+alpha)
     idat = zlib.compress(bytes(raw), 9)
     return sig + _chunk(b"IHDR", ihdr) + _chunk(b"IDAT", idat) + _chunk(b"IEND", b"")

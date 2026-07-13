@@ -227,15 +227,41 @@ def _show_auth_prompt(url):
     )
 
 
+_qr_seq = 0
+
+
 def _qr_image(url):
-    """Generate a QR PNG for `url` locally (no network) into special://temp and return
-    its path. Uses the vendored encoder + zlib PNG writer in _qrgen."""
+    """Generate a QR PNG for `url` locally (no network) and return a Kodi special://
+    path for it. Uses the vendored encoder + zlib PNG writer in _qrgen.
+
+    Two hard-won rules baked in here (both cost a blank barcode on Kodi 21.3/tvOS+Fire TV):
+    - FRESH filename every call. Kodi caches textures by path, so reusing one name makes a
+      first failed load stick as a blank even after the file is rewritten - which is exactly
+      what happened when Kodi refused the old grayscale PNG, cached the failure for
+      _dbx_qr.png, and kept drawing blank even after the 32-bit fix until a restart. A unique
+      name always loads fresh (no restart needed).
+    - Hand ControlImage the special:// path, NOT the translatePath'd absolute path. Kodi's
+      texture loader resolves special:// through its own VFS and loads it reliably across
+      platforms; a raw device path (e.g. /storage/emulated/0/... on Fire TV) is fragile."""
     from resources.lib.modules import _qrgen
 
-    real = xbmcvfs.translatePath("special://temp/_dbx_qr.png")
-    with open(real, "wb") as fh:
+    global _qr_seq
+    _qr_seq += 1
+    # best-effort tidy of prior QR pngs so special://temp does not accumulate
+    try:
+        import glob
+
+        for old in glob.glob(xbmcvfs.translatePath("special://temp/_dbx_qr*.png")):
+            try:
+                os.remove(old)
+            except OSError:
+                pass
+    except Exception:
+        pass
+    special = "special://temp/_dbx_qr_%d_%d.png" % (int(time.time()), _qr_seq)
+    with open(xbmcvfs.translatePath(special), "wb") as fh:
         fh.write(_qrgen.make_qr_png_bytes(url))
-    return real
+    return special
 
 
 def _make_qr_window(image_path):

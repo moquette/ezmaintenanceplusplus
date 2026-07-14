@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.13.2" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.14.0" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,9 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+        v2026.07.14.0: Apple TV fix: a restore no longer wipes your customized main menu. Kodi settings are still made durable, but an add-on's own private data is now left on disk where the add-on can actually read it (it was being moved into a store the add-on cannot see, then deleted). Also stops a restore from deleting a Siri Remote key mapping.
+        v2026.07.13.6: Apple TV fix: the Dropbox sign-in barcode now renders on tvOS too. The QR is written through Kodi's own VFS so Apple TV's sandboxed texture loader can read it (it silently can't read files written by plain Python). Fire TV was already fine.
+        v2026.07.13.5: Fix: the Dropbox sign-in barcode renders again on Kodi 21.3. 32-bit QR on a fresh path each time so Kodi can't serve a stale/failed cached texture. Restores the "Set up this box" menu and thin labels.
         v2026.07.13.1: New "Set up this box" menu: adds the mini KodiShare/KodiBackup sources, installs and points Multi Weather at Sacramento, and turns on the RSS ticker (the surviving Foundation setup, moved here from the retired tony7bones setup add-ons).
         v2026.07.13.0: Menu: cleaner thin Title-Case labels. Dropped the bold ALL-CAPS and forced white color so items render in the active skin's native thin font and adapt color on focus.
         v2026.07.09.1: Boot: size alerts moved off the boot path behind GUI-ready; fixed cache clean skipping dir-only levels; fixed packages count; removed dead wizard/builds machinery

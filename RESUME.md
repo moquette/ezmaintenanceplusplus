@@ -2,6 +2,23 @@
 
 Paste this (or point an agent at it) to pick up where we left off.
 
+**REPO STATUS NOTE (2026-07-14):** everything below this line is a historical
+handoff snapshot from 2026-06-30 and is stale on version numbers, test counts,
+and the "deployed copy" workflow it describes - do not trust those specifics.
+What changed 2026-07-14: this repo (`moquette/ezmaintenanceplusplus`, now
+PUBLIC) is the ONE home for EZ Maintenance++ - the add-on source, its full
+test suite (`tests/`, includes the tvOS storage-contract hardware-verification
+gate), and the build/release tooling (`build.sh`, `tools/release.sh`). It used
+to be hand-synced with a second copy of the source living in
+`tony7bones.github.io/addons/script.ezmaintenanceplusplus/`, which drifted
+(tests only existed proxy-side; fixes were made proxy-side without syncing
+back here). That duplication is gone: `tony7bones.github.io` now carries only
+a metadata pointer at `addons/hosted/script.ezmaintenanceplusplus/` (addon.xml
+
+- icon + fanart, no source) and serves the zip from this repo's GitHub
+  Releases - the same pattern already proven for `skin.estuary7`/`moquette/estuary7`.
+  See the "Repo / build / test" section below for the current (accurate) workflow.
+
 ## TL;DR
 
 EZ Maintenance++ (`script.ezmaintenanceplusplus`) is the all-in-one "Swiss Army
@@ -34,14 +51,47 @@ Setup**. See `docs/one-tap-restore.md` for the One-Tap design + as-built notes.
   and adds **Reset to Kodi default (20 MB)**. Also learned: the "3x RAM" rule is folklore -
   Omega allocates ~1x `memorysize` per stream (a single ring buffer, 75% forward / 25% back).
 
-## Repo / build / test
+## Repo / build / test (current, 2026-07-14)
 
-- Repo: `~/Code/moquette/ezmaintenanceplusplus` (its OWN git repo, NOT tony7bones.github.io), branch `main`.
-- Add-on dir: `script.ezmaintenanceplusplus/`. Version **2026.06.30.27**.
-- Build: `./build.sh` -> `dist/script.ezmaintenanceplusplus-<version>.zip` (excludes cache cruft). The Dropbox **client_id is hardcoded** in `dropbox_remote.py` (public under PKCE; no `_appauth.py`, no secret).
-- Deployed copy lives in `~/Code/moquette/tony7bones.github.io/addons/script.ezmaintenanceplusplus/`; to ship a new version use that repo's **`deploy` skill** (edit source here -> sync -> generate_repo -> push; EZM++ is raw-served, no proxy release needed).
-- Tests: `cd repo && python3 -m pytest -q` (`tests/`, 61 passing, mock-Kodi harness).
-- Dropbox creds: built-in App-folder app `tony-7-backup`; key/secret live in the gitignored `script.ezmaintenanceplusplus/resources/lib/modules/_appauth.py` (ships in the zip, NEVER in git) AND in the vault: `cd ~/Code/moquette/vault && bin/vault-get DROPBOX_APP_KEY` / `bin/vault-get DROPBOX_APP_SECRET` (VAULT.md §23).
+- Repo: `~/Code/moquette/ezmaintenanceplusplus` (its OWN git repo, PUBLIC on GitHub -
+  required so a Kodi box can anonymously download a release asset), branch `main`.
+  This is the ONLY place the add-on source is edited - see the repo-status note at
+  the top of this file.
+- Add-on dir: `script.ezmaintenanceplusplus/`. Version is whatever `addon.xml` says
+  (date-stamped `YYYY.MM.DD.N` scheme; check the file, do not trust a number in this
+  handoff doc).
+- Build: `./build.sh` -> `dist/script.ezmaintenanceplusplus-<version>.zip`, a
+  DETERMINISTIC zip (sorted members, fixed 1980-01-01 timestamps - same discipline as
+  `moquette/estuary7`'s `tools/build_skin.py`). `./build.sh --check` builds twice and
+  byte-compares. The Dropbox `client_id` is hardcoded in `dropbox_remote.py` (public
+  under PKCE - no `_appauth.py` file, no secret to inject at build time).
+- Release: `tools/release.sh` builds, tags `v<version>`, publishes the zip as a
+  GitHub Release asset on `moquette/ezmaintenanceplusplus` via `gh release create`,
+  then verifies the asset is anonymously downloadable and its sha256 matches the
+  local build (refuses to leave a broken release in place). `tools/release.sh
+--dry-run` shows the plan without tagging/releasing.
+- Distribution: `tony7bones.github.io` carries only a metadata pointer at
+  `addons/hosted/script.ezmaintenanceplusplus/` (addon.xml + icon.png + fanart.jpg,
+  hand-synced to the released version - same pattern as `addons/hosted/skin.estuary7/`)
+  and its `repository.json` entry's `assets.zip` points at this repo's release asset
+  URL. After cutting a release here, bump that hosted `addon.xml`'s version in
+  `tony7bones.github.io` and ship it via `python3 _tools/release.py --proxy` (it is a
+  proxy-config change, not a first-party add-on source change - `repository.json` is
+  bundled inside the `repository.tony7bones` add-on's own zip).
+- Tests: `cd ~/Code/moquette/ezmaintenanceplusplus && /opt/homebrew/bin/python3 -m
+pytest tests/ -q` (system `python3` on this machine is 3.9, too old for this suite).
+  `tests/` holds the FULL authoritative suite (migrated 2026-07-14 from the proxy
+  repo, where it had lived exclusively - the source of the drift this migration
+  fixed), plus the pre-existing `test_dropbox_remote.py`/`test_kodisettings.py`
+  local to this repo. Includes the tvOS storage-contract hardware-verification gate
+  (`test_storage_change_requires_device_verification.py` + `tools/verify_device.py` +
+  `verification/*.json`) - a change to `nsud.py`/`boxsetup.py` requires a fresh
+  two-class (`tvos`+`android`) device run before it ships; see that test's docstring.
+- Dropbox creds: built-in App-folder app `tony-7-backup`; the PKCE `client_id` is
+  public-by-design and lives directly in `dropbox_remote.py` (`APP_KEY`). The vault
+  entries `DROPBOX_APP_KEY`/`DROPBOX_APP_SECRET` (VAULT.md §23) are a legacy/unused
+  leftover from an earlier (pre-PKCE) auth design - the running code does not read
+  them.
 
 ## What WORKS (proven)
 

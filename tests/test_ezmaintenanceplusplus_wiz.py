@@ -1,0 +1,1050 @@
+"""Coverage for script.ezmaintenanceplusplus's wiz.py port-stripping fix.
+
+wiz.py's backup()/restoreFolder() read download.path/restore.path - both
+Kodi "type=folder" settings, browse-only, with no manual text entry at all.
+Kodi's own network-browse dialog bakes an explicit port into the nfs:// URL
+it hands back (e.g. nfs://host:2049/export/path), and that explicit-port
+form breaks Kodi's own NFS client write path - live-proven, independently,
+on two different boxes (a VfsCopyError / 0-byte copy every time). Since the
+setting can only ever be set via that same dialog, this can recur on any
+future box; _strip_nfs_port() defangs it at the two read sites.
+
+This is a large, pre-existing third-party add-on this repo forks/patches
+(CLAUDE.md: "standardize on the repo's ++ fork"), with no existing test
+harness of its own. The fixture below fakes just enough of xbmc*/xbmcaddon/
+xbmcgui/xbmcvfs/xbmcplugin for wiz.py's own import chain (control.py,
+maintenance.py, tools.py, ui.py) to succeed, so _strip_nfs_port can be
+exercised as the real function inside the real module, not a copy-pasted
+reimplementation of its regex.
+"""
+
+from __future__ import annotations
+
+import importlib
+import sys
+import types
+from pathlib import Path
+
+import pytest
+
+HERE = Path(__file__).parent
+REPO_ROOT = HERE.parent
+ADDON_ROOT = REPO_ROOT / "script.ezmaintenanceplusplus"
+
+
+@pytest.fixture
+def wiz(monkeypatch, tmp_path):
+    monkeypatch.syspath_prepend(str(ADDON_ROOT))
+    for name in list(sys.modules):
+        if name == "resources" or name.startswith("resources."):
+            monkeypatch.delitem(sys.modules, name, raising=False)
+
+    xbmc = types.ModuleType("xbmc")
+    xbmc.translatePath = lambda p: p.replace("special://", str(tmp_path) + "/")
+    xbmc.getLocalizedString = lambda i: str(i)
+    xbmc.getInfoLabel = lambda s: ""
+    xbmc.getCondVisibility = lambda s: False
+    xbmc.getSkinDir = lambda: "skin.estuary"
+    xbmc.log = lambda *a, **k: None
+    xbmc.executebuiltin = lambda *a, **k: None
+    xbmc.executeJSONRPC = lambda cmd: "{}"
+    xbmc.LOGERROR = 1
+    xbmc.LOGWARNING = 2
+    xbmc.LOGINFO = 3
+    xbmc.LOGDEBUG = 4
+    xbmc.LOGFATAL = 0
+    xbmc.LOGNONE = 5
+    xbmc.LOGNOTICE = 3
+    xbmc.PLAYLIST_VIDEO = 1
+    xbmc.sleep = lambda ms: None
+    xbmc.Keyboard = lambda *a, **k: types.SimpleNamespace(
+        doModal=lambda: None, isConfirmed=lambda: False, getText=lambda: ""
+    )
+    xbmc.PlayList = lambda *a, **k: types.SimpleNamespace(
+        clear=lambda: None, add=lambda *a: None
+    )
+    xbmc.Player = lambda *a, **k: types.SimpleNamespace(play=lambda *a, **k: None)
+    xbmc.Monitor = type(
+        "Monitor",
+        (),
+        {"abortRequested": lambda self: False, "waitForAbort": lambda self, t: False},
+    )
+
+    xbmcaddon = types.ModuleType("xbmcaddon")
+
+    class _FakeAddon:
+        def getLocalizedString(self, i):
+            return str(i)
+
+        def getSetting(self, key):
+            return ""
+
+        def setSetting(self, key, value):
+            pass
+
+        def getAddonInfo(self, key):
+            return {
+                "id": "script.ezmaintenanceplusplus",
+                "name": "EZ Maintenance++",
+                "path": str(ADDON_ROOT),
+                "profile": "special://profile/",
+                "version": "0.0.0",
+            }.get(key, "")
+
+    xbmcaddon.Addon = _FakeAddon
+
+    xbmcgui = types.ModuleType("xbmcgui")
+
+    class _FakeDialogProgress:
+        def create(self, *a, **k):
+            pass
+
+        def update(self, *a, **k):
+            pass
+
+        def close(self):
+            pass
+
+        def iscanceled(self):
+            return False
+
+    class _FakeDialog:
+        def ok(self, *a, **k):
+            return False
+
+        def yesno(self, *a, **k):
+            return False
+
+        def notification(self, *a, **k):
+            pass
+
+        def select(self, *a, **k):
+            return -1
+
+    xbmcgui.DialogProgress = _FakeDialogProgress
+    xbmcgui.DialogProgressBG = _FakeDialogProgress
+    xbmcgui.Dialog = _FakeDialog
+    xbmcgui.ListItem = lambda *a, **k: types.SimpleNamespace(
+        setArt=lambda *a, **k: None
+    )
+    xbmcgui.ControlButton = lambda *a, **k: None
+    xbmcgui.ControlImage = lambda *a, **k: None
+
+    class _FakeWindow:
+        def __init__(self, *a, **k):
+            pass
+
+        def getProperty(self, k):
+            return ""
+
+        def setProperty(self, k, v):
+            pass
+
+        def clearProperty(self, k):
+            pass
+
+    xbmcgui.Window = _FakeWindow
+    xbmcgui.WindowDialog = _FakeWindow
+
+    xbmcvfs = types.ModuleType("xbmcvfs")
+    xbmcvfs.translatePath = xbmc.translatePath
+    xbmcvfs.exists = lambda p: Path(p).exists()
+    xbmcvfs.mkdirs = lambda p: Path(p).mkdir(parents=True, exist_ok=True)
+    xbmcvfs.mkdir = lambda p: Path(p).mkdir(parents=True, exist_ok=True)
+    xbmcvfs.rmdir = lambda p: None
+    xbmcvfs.delete = lambda p: None
+    xbmcvfs.listdir = lambda p: ([], [])
+    xbmcvfs.copy = lambda s, d: True
+    xbmcvfs.File = lambda *a, **k: types.SimpleNamespace(
+        read=lambda *a: b"", write=lambda *a: True, close=lambda: None, size=lambda: 0
+    )
+
+    xbmcplugin = types.ModuleType("xbmcplugin")
+    xbmcplugin.addDirectoryItem = lambda *a, **k: None
+    xbmcplugin.endOfDirectory = lambda *a, **k: None
+    xbmcplugin.setContent = lambda *a, **k: None
+    xbmcplugin.setProperty = lambda *a, **k: None
+    xbmcplugin.setResolvedUrl = lambda *a, **k: None
+
+    for name, mod in (
+        ("xbmc", xbmc),
+        ("xbmcaddon", xbmcaddon),
+        ("xbmcgui", xbmcgui),
+        ("xbmcvfs", xbmcvfs),
+        ("xbmcplugin", xbmcplugin),
+    ):
+        monkeypatch.setitem(sys.modules, name, mod)
+
+    return importlib.import_module("resources.lib.modules.wiz")
+
+
+def test_strip_nfs_port_removes_explicit_port(wiz):
+    assert (
+        wiz._strip_nfs_port("nfs://192.168.7.2:2049/Users/moquette/Kodi/Backup/atv-2/")
+        == "nfs://192.168.7.2/Users/moquette/Kodi/Backup/atv-2/"
+    )
+
+
+def test_strip_nfs_port_no_port_unchanged(wiz):
+    path = "nfs://192.168.7.2/Users/moquette/Kodi/Backup/atv-2/"
+    assert wiz._strip_nfs_port(path) == path
+
+
+def test_strip_nfs_port_leaves_non_nfs_paths_alone(wiz):
+    assert (
+        wiz._strip_nfs_port("smb://192.168.7.2/KodiBackup/atv-2/")
+        == "smb://192.168.7.2/KodiBackup/atv-2/"
+    )
+    assert wiz._strip_nfs_port("/local/path") == "/local/path"
+
+
+def test_strip_nfs_port_handles_empty_and_none(wiz):
+    assert wiz._strip_nfs_port("") == ""
+    assert wiz._strip_nfs_port(None) is None
+
+
+def test_strip_nfs_port_bare_host_no_trailing_slash(wiz):
+    # A port on a bare host with no path at all must still be stripped.
+    assert wiz._strip_nfs_port("nfs://192.168.7.2:2049") == "nfs://192.168.7.2"
+
+
+def test_backup_uses_stripped_port_path(wiz, monkeypatch, tmp_path):
+    """End-to-end: backup() must pass the STRIPPED path to CreateZip, not the
+    raw (possibly port-carrying) download.path setting value."""
+    backupdata = tmp_path / "home"
+    backupdata.mkdir()
+    monkeypatch.setattr(wiz.control, "HOME", str(backupdata))
+    monkeypatch.setattr(
+        wiz.control,
+        "setting",
+        lambda key: (
+            "nfs://192.168.7.2:2049/Users/moquette/Kodi/Backup/atv-2/"
+            if key == "download.path"
+            else ""
+        ),
+    )
+    monkeypatch.setattr(wiz.tools, "_get_keyboard", lambda **k: "mybackup")
+
+    captured = {}
+
+    def _fake_create_zip(src, dst, *a, **k):
+        captured["dst"] = dst
+        return False
+
+    monkeypatch.setattr(wiz, "CreateZip", _fake_create_zip)
+    monkeypatch.setattr(wiz, "_rotate_vfs", lambda *a, **k: None)
+    monkeypatch.setattr(
+        wiz,
+        "xbmcaddon",
+        types.SimpleNamespace(
+            Addon=lambda: types.SimpleNamespace(getSetting=lambda k: "false")
+        ),
+    )
+
+    wiz.backup(mode="full")
+    assert "dst" in captured, "CreateZip must have been called"
+    assert ":2049" not in captured["dst"]
+    assert captured["dst"].startswith(
+        "nfs://192.168.7.2/Users/moquette/Kodi/Backup/atv-2/"
+    )
+
+
+def test_backup_opens_native_settings_when_path_unset(wiz, monkeypatch, tmp_path):
+    """backup() with an empty download.path must open the (now-working) NATIVE
+    settings dialog via control.openSettings, not the retired custom screen."""
+    backupdata = tmp_path / "home"
+    backupdata.mkdir()
+    monkeypatch.setattr(wiz.control, "HOME", str(backupdata))
+    monkeypatch.setattr(wiz.control, "setting", lambda key: "")
+
+    calls = []
+    monkeypatch.setattr(wiz.control, "openSettings", lambda *a, **k: calls.append(True))
+
+    wiz.backup(mode="full")
+    assert calls == [True]
+
+
+def test_restore_opens_native_settings_when_path_unset(wiz, monkeypatch):
+    """restoreFolder() with an empty restore.path must open the NATIVE settings
+    dialog via control.openSettings, not the retired custom screen."""
+    monkeypatch.setattr(wiz.control, "setting", lambda key: "")
+
+    calls = []
+    monkeypatch.setattr(wiz.control, "openSettings", lambda *a, **k: calls.append(True))
+
+    wiz.restoreFolder()
+    assert calls == [True]
+
+
+def test_restore_does_not_rewrite_settings_verbatim_restore(wiz, monkeypatch, tmp_path):
+    """A restore now restores the backup EXACTLY as taken - it does NOT re-stamp
+    download.path/restore.path/destination afterward. The user sets the backup path
+    themselves (the native settings dialog works), so restore stays a plain, predictable
+    extract with no magic touching the restored settings."""
+    import zipfile as _zip
+
+    writes = []
+    monkeypatch.setattr(wiz.control, "setting", lambda key: "")
+    monkeypatch.setattr(wiz.control, "setSetting", lambda k, v: writes.append((k, v)))
+    monkeypatch.setattr(wiz.ui, "ask_restart", lambda *a, **k: None)
+
+    src = tmp_path / "some_backup.zip"
+    with _zip.ZipFile(src, "w") as z:
+        z.writestr(
+            "userdata/addon_data/script.ezmaintenanceplusplus/settings.xml",
+            "<settings><setting id='download.path'>"
+            "nfs://192.168.7.2/Kodi/Backup/office/</setting></settings>",
+        )
+        z.writestr("userdata/guisettings.xml", "<settings />")
+
+    wiz.restore(str(src), confirm=False)
+
+    # restore() must NOT setSetting any box-local key - the extracted settings.xml stands.
+    assert not any(
+        k in ("download.path", "restore.path", "destination") for k, _ in writes
+    ), f"restore should not re-stamp box-local settings, but wrote: {writes}"
+
+
+# --------------------------------------------------------------------------- #
+# "Wipe clean before restore" (clean-clone) path + the extract crash fix.
+# --------------------------------------------------------------------------- #
+class _RecordingProgress:
+    """A fake ui.Progress that records every items() note and never cancels, so the
+    extract's dialog-update throttle can be asserted off-device."""
+
+    def __init__(self):
+        self.notes = []
+
+    def cancelled(self):
+        return False
+
+    def items(self, done, total, note=""):
+        self.notes.append(note)
+
+
+def _make_valid_zip(path, files):
+    import zipfile as _zip
+
+    with _zip.ZipFile(path, "w") as z:
+        for name, body in files:
+            z.writestr(name, body)
+    return path
+
+
+def _load_onetap():
+    return importlib.import_module("resources.lib.modules.onetap")
+
+
+def test_restore_wipe_does_not_wipe_on_bad_zip(wiz, monkeypatch, tmp_path):
+    """(a) restore(wipe=True) with a corrupt/short zip must ABORT with the box UNTOUCHED
+    - validation fails, so the wipe is never reached."""
+    onetap = _load_onetap()
+
+    wiped = []
+    restarted = []
+    monkeypatch.setattr(onetap, "_wipe", lambda *a, **k: wiped.append(a))
+    monkeypatch.setattr(wiz.ui, "ask_restart", lambda *a, **k: restarted.append(True))
+    monkeypatch.setattr(wiz.control, "HOME", str(tmp_path / "home"))
+
+    bad = tmp_path / "corrupt.zip"
+    bad.write_bytes(b"this is not a zip file at all")  # size > 0 but not a real zip
+
+    wiz.restore(str(bad), confirm=False, wipe=True)
+
+    assert wiped == [], "the box must NOT be wiped when the zip is invalid"
+    assert restarted == [], "a bad zip must not reach the restart prompt"
+
+
+def test_restore_wipe_validates_then_wipes_then_extracts(wiz, monkeypatch, tmp_path):
+    """(b) restore(wipe=True) with a valid zip must wipe ONLY after validation, then run
+    the (uninterruptible) extract, then reach the restart prompt - in that order."""
+    onetap = _load_onetap()
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(wiz.control, "HOME", str(home))
+
+    events = []
+    monkeypatch.setattr(onetap, "_wipe", lambda *a, **k: events.append("wipe"))
+
+    captured = {}
+
+    def _fake_extract(_in, _out, progress, **kw):
+        events.append("extract")
+        captured["cancelable"] = kw.get("cancelable", True)
+        return False
+
+    monkeypatch.setattr(wiz, "ExtractWithProgress", _fake_extract)
+    monkeypatch.setattr(wiz.ui, "ask_restart", lambda *a, **k: events.append("restart"))
+
+    src = tmp_path / "backup.zip"
+    _make_valid_zip(
+        src,
+        [
+            ("userdata/guisettings.xml", "<settings />"),
+            ("addons/foo/addon.xml", "<a/>"),
+        ],
+    )
+
+    wiz.restore(str(src), confirm=False, wipe=True)
+
+    assert events == ["wipe", "extract", "restart"], events
+    # A wiped box must be driven by an UNINTERRUPTIBLE extract (post_wipe semantics).
+    assert captured["cancelable"] is False
+
+
+def test_wipe_excludes_preserves_addon_deps_and_temp(wiz):
+    """(c) the reused One-Tap wipe excludes must preserve this add-on, its runtime deps,
+    and special://temp (where the validated zip is staged)."""
+    onetap = _load_onetap()
+    ex = onetap._wipe_excludes()
+    assert "temp" in ex
+    assert "script.module.requests" in ex
+    assert "script.ezmaintenanceplusplus" in ex
+
+
+def test_extract_progress_note_is_throttled(wiz, tmp_path):
+    """(d) the extract must NOT redraw the progress dialog with a new filename every file
+    (the Fire OS 8 SIGSEGV). The note is refreshed at most every N files and never carries
+    a per-file basename."""
+    src = tmp_path / "many.zip"
+    files = [("data/file%03d.txt" % i, "x") for i in range(200)]
+    _make_valid_zip(src, files)
+
+    out = tmp_path / "out"
+    out.mkdir()
+    p = _RecordingProgress()
+    wiz.ExtractWithProgress(str(src), str(out), p)
+
+    # Far fewer dialog updates than files (throttled), but still moving.
+    assert 0 < len(p.notes) <= 200 // 10
+    # No note carries a source basename - only the short static "Extracting file X of Y".
+    assert all(n.startswith("Extracting file ") for n in p.notes)
+    assert not any(".txt" in n for n in p.notes)
+    # Every file was still actually extracted.
+    assert len(list(out.rglob("*.txt"))) == 200
+
+
+def test_order_userdata_first_puts_settings_before_addons(wiz):
+    """(e) userdata/ entries must be ordered before addons/ so an interrupted extract
+    keeps the irreplaceable settings."""
+    infos = [
+        types.SimpleNamespace(filename="addons/a/x.py"),
+        types.SimpleNamespace(filename="userdata/guisettings.xml"),
+        types.SimpleNamespace(filename="media/logo.png"),
+        types.SimpleNamespace(filename="addons/b/y.py"),
+        types.SimpleNamespace(filename="userdata/sources.xml"),
+    ]
+    names = [i.filename for i in wiz._order_userdata_first(infos)]
+    last_userdata = max(i for i, n in enumerate(names) if n.startswith("userdata/"))
+    first_addon = min(i for i, n in enumerate(names) if n.startswith("addons/"))
+    assert last_userdata < first_addon, names
+
+
+# --------------------------------------------------------------------------- #
+# Post-restore, per-device video-cache-buffer retune.
+# --------------------------------------------------------------------------- #
+def test_restore_writes_buffer_prompt_marker(wiz, monkeypatch, tmp_path):
+    """(a) a successful restore drops the persistent buffer-prompt marker (AFTER the
+    extract, before the restart) so the boot service knows to retune the buffer."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(wiz.control, "HOME", str(home))
+    monkeypatch.setattr(wiz, "ExtractWithProgress", lambda *a, **k: False)
+    monkeypatch.setattr(wiz.ui, "ask_restart", lambda *a, **k: None)
+
+    tools = wiz.tools
+    # Ensure a clean slate.
+    tools.clear_buffer_prompt_marker()
+    assert not tools.buffer_prompt_pending()
+
+    src = tmp_path / "backup.zip"
+    _make_valid_zip(src, [("userdata/guisettings.xml", "<settings />")])
+
+    wiz.restore(str(src), confirm=False, wipe=False)
+
+    assert tools.buffer_prompt_pending(), "restore must drop the buffer-prompt marker"
+
+
+def test_prompt_buffer_sets_recommended_and_clears(wiz, monkeypatch):
+    """(b) with the marker present, choosing 'Set' calls _set_cache_mb(_recommended_mb())
+    and deletes the marker (so it fires exactly once)."""
+    tools = wiz.tools
+    tools.mark_buffer_prompt_pending()
+    assert tools.buffer_prompt_pending()
+
+    monkeypatch.setattr(tools, "_recommended_mb", lambda: 128)
+    sets = []
+    monkeypatch.setattr(tools, "_set_cache_mb", lambda mb: sets.append(mb) or True)
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)
+
+    shown = tools.prompt_buffer_after_restore()
+
+    assert shown is True
+    assert sets == [128], "must set the device-recommended size"
+    assert not tools.buffer_prompt_pending(), "marker must be cleared after prompting"
+
+
+def test_prompt_buffer_no_marker_no_prompt(wiz, monkeypatch):
+    """(c) no marker => no prompt: the dialog is never shown and nothing is set."""
+    tools = wiz.tools
+    tools.clear_buffer_prompt_marker()
+    assert not tools.buffer_prompt_pending()
+
+    calls = []
+    monkeypatch.setattr(
+        tools.dialog, "select", lambda *a, **k: calls.append("select") or -1
+    )
+    monkeypatch.setattr(tools, "_set_cache_mb", lambda mb: calls.append("set") or True)
+
+    shown = tools.prompt_buffer_after_restore()
+
+    assert shown is False
+    assert calls == [], "no marker must mean no dialog and no cache change"
+
+
+def test_prompt_buffer_let_me_choose_opens_screen_and_clears(wiz, monkeypatch):
+    """'Let me choose' routes to the existing Buffer Size screen and still clears the
+    marker (so a manual choice also disarms the one-time prompt)."""
+    tools = wiz.tools
+    tools.mark_buffer_prompt_pending()
+
+    opened = []
+    monkeypatch.setattr(tools, "advancedSettings", lambda: opened.append(True))
+    monkeypatch.setattr(
+        tools,
+        "_set_cache_mb",
+        lambda mb: (_ for _ in ()).throw(
+            AssertionError("must not auto-set on 'Let me choose'")
+        ),
+    )
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 1)
+
+    shown = tools.prompt_buffer_after_restore()
+
+    assert shown is True
+    assert opened == [True]
+    assert not tools.buffer_prompt_pending()
+
+
+def test_prompt_buffer_keep_current_changes_nothing_but_clears(wiz, monkeypatch):
+    """'Keep current' (or cancel) changes nothing yet still clears the marker."""
+    tools = wiz.tools
+    tools.mark_buffer_prompt_pending()
+
+    monkeypatch.setattr(
+        tools,
+        "_set_cache_mb",
+        lambda mb: (_ for _ in ()).throw(
+            AssertionError("must not set the cache on 'Keep current'")
+        ),
+    )
+    monkeypatch.setattr(
+        tools,
+        "advancedSettings",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("must not open the screen on 'Keep current'")
+        ),
+    )
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 2)
+
+    shown = tools.prompt_buffer_after_restore()
+
+    assert shown is True
+    assert not tools.buffer_prompt_pending()
+
+
+def test_restore_no_wipe_still_overlays(wiz, monkeypatch, tmp_path):
+    """(f) the normal (wipe=False) path is unchanged: it never wipes, it extracts, and it
+    reaches the restart prompt."""
+    onetap = _load_onetap()
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(wiz.control, "HOME", str(home))
+
+    wiped = []
+    monkeypatch.setattr(onetap, "_wipe", lambda *a, **k: wiped.append(a))
+
+    extracted = []
+    monkeypatch.setattr(
+        wiz, "ExtractWithProgress", lambda *a, **k: extracted.append(True) or False
+    )
+    restarted = []
+    monkeypatch.setattr(wiz.ui, "ask_restart", lambda *a, **k: restarted.append(True))
+
+    src = tmp_path / "backup.zip"
+    _make_valid_zip(src, [("userdata/guisettings.xml", "<settings />")])
+
+    wiz.restore(str(src), confirm=False, wipe=False)
+
+    assert wiped == [], "the no-wipe path must never wipe"
+    assert extracted == [True], "the no-wipe path must still extract"
+    assert restarted == [True], "the no-wipe path must still offer a restart"
+
+
+# --------------------------------------------------------------------------- #
+# Post-restore, per-device DEVICE-NAME prompt (runs before the buffer prompt in
+# the combined post-restore tune-up, gated by the SAME marker).
+# --------------------------------------------------------------------------- #
+def test_get_devicename_reads_value(wiz, monkeypatch):
+    """_get_devicename returns the live core-setting value."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_jsonrpc", lambda m, p: {"result": {"value": "Box7"}})
+    assert tools._get_devicename() == "Box7"
+
+
+def test_get_devicename_bad_shape_returns_empty(wiz, monkeypatch):
+    """A JSON-RPC error / wrong id yields '' (never raises) so callers stay guarded."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_jsonrpc", lambda m, p: {})
+    assert tools._get_devicename() == ""
+
+
+def test_set_devicename_success_writes_both_live_and_file(wiz, monkeypatch):
+    """A successful live set ALSO writes guisettings.xml (both-ways persistence: the live
+    set is durable on tvOS, the file write survives a Fire TV / Android unclean shutdown)."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_jsonrpc", lambda m, p: {"result": True})
+    from resources.lib.modules import _kodisettings
+
+    wrote = []
+    monkeypatch.setattr(
+        _kodisettings,
+        "write_guisetting",
+        lambda path, sid, val: wrote.append((sid, val)) or True,
+    )
+    assert tools._set_devicename("NewName") is True
+    assert wrote == [("services.devicename", "NewName")], "must persist to the file too"
+
+
+def test_set_devicename_failure_does_not_touch_file(wiz, monkeypatch):
+    """When the live set fails, the file is NOT written (no half-applied name on disk)."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_jsonrpc", lambda m, p: {"result": False})
+    from resources.lib.modules import _kodisettings
+
+    monkeypatch.setattr(
+        _kodisettings,
+        "write_guisetting",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("must not write the file when the live set failed")
+        ),
+    )
+    assert tools._set_devicename("NewName") is False
+
+
+def test_prompt_devicename_rename_sets_notifies_and_prefills(wiz, monkeypatch):
+    """'Rename' -> keyboard PREFILLED with the current name -> _set_devicename(entered),
+    a confirmation notification, returns True."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)  # Rename
+
+    kb = {}
+
+    def fake_kb(default="", heading="", hidden=False, cancel=""):
+        kb["default"] = default
+        kb["cancel"] = cancel
+        return "Living Room"
+
+    monkeypatch.setattr(tools, "_get_keyboard", fake_kb)
+    sets = []
+    monkeypatch.setattr(tools, "_set_devicename", lambda n: sets.append(n) or True)
+    notes = []
+    monkeypatch.setattr(tools.dialog, "notification", lambda *a, **k: notes.append(a))
+
+    assert tools.prompt_devicename_after_restore() is True
+    assert sets == ["Living Room"]
+    assert kb["default"] == "OfficeBox", (
+        "keyboard must be prefilled with the current name"
+    )
+    assert kb["cancel"] == "OfficeBox", "cancel must fall back to the current name"
+    assert notes, "a confirmation notification must be shown"
+
+
+@pytest.mark.parametrize(
+    "select_ret, kb_ret, why",
+    [
+        (1, "Living Room", "Keep"),
+        (-1, "Living Room", "cancel/back on the first select"),
+        (0, "", "empty entry"),
+        (0, "   ", "whitespace-only entry"),
+        (0, "OfficeBox", "name unchanged"),
+    ],
+)
+def test_prompt_devicename_no_change_paths(wiz, monkeypatch, select_ret, kb_ret, why):
+    """Every non-rename path leaves the device name untouched (no _set_devicename call)."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: select_ret)
+    monkeypatch.setattr(tools, "_get_keyboard", lambda **k: kb_ret)
+    monkeypatch.setattr(
+        tools,
+        "_set_devicename",
+        lambda n: (_ for _ in ()).throw(AssertionError("must not set on: " + why)),
+    )
+    assert tools.prompt_devicename_after_restore() is False, why
+
+
+def test_prompt_devicename_set_fails_shows_error_no_notification(wiz, monkeypatch):
+    """A rejected name (live set returns False) surfaces an error and shows NO success
+    notification (the silent-no-op gap the reviewers flagged)."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)
+    monkeypatch.setattr(tools, "_get_keyboard", lambda **k: "Living Room")
+    monkeypatch.setattr(tools, "_set_devicename", lambda n: False)
+    notes = []
+    monkeypatch.setattr(tools.dialog, "notification", lambda *a, **k: notes.append(a))
+    errs = []
+    monkeypatch.setattr(tools.ui, "error", lambda *a, **k: errs.append(a))
+
+    assert tools.prompt_devicename_after_restore() is False
+    assert notes == [], "no success notification when the set failed"
+    assert errs, "a failure message must be surfaced"
+
+
+def test_prompt_devicename_notification_raise_still_true(wiz, monkeypatch):
+    """If the set succeeds but the notification call raises, the rename still counts (True)."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)
+    monkeypatch.setattr(tools, "_get_keyboard", lambda **k: "Living Room")
+    monkeypatch.setattr(tools, "_set_devicename", lambda n: True)
+
+    def boom(*a, **k):
+        raise RuntimeError("notification backend down")
+
+    monkeypatch.setattr(tools.dialog, "notification", boom)
+    assert tools.prompt_devicename_after_restore() is True
+
+
+def test_prompt_after_restore_runs_devicename_before_buffer(wiz, monkeypatch):
+    """The combined flow runs the device-name step BEFORE the buffer step (identity first)."""
+    tools = wiz.tools
+    tools.mark_buffer_prompt_pending()
+    order = []
+    monkeypatch.setattr(
+        tools, "prompt_devicename_after_restore", lambda: order.append("devicename")
+    )
+    monkeypatch.setattr(
+        tools, "prompt_buffer_after_restore", lambda: order.append("buffer") or True
+    )
+    assert tools.prompt_after_restore() is True
+    assert order == ["devicename", "buffer"], order
+
+
+def test_prompt_after_restore_no_marker_noop(wiz, monkeypatch):
+    """No marker => neither step runs and nothing is prompted."""
+    tools = wiz.tools
+    tools.clear_buffer_prompt_marker()
+    calls = []
+    monkeypatch.setattr(
+        tools, "prompt_devicename_after_restore", lambda: calls.append("d")
+    )
+    monkeypatch.setattr(
+        tools, "prompt_buffer_after_restore", lambda: calls.append("b") or False
+    )
+    assert tools.prompt_after_restore() is False
+    assert calls == []
+
+
+def test_prompt_after_restore_devicename_raise_still_clears_marker(wiz, monkeypatch):
+    """Exactly-once holds even if the device-name step RAISES: the buffer step still runs
+    and clears the marker, so the whole flow never re-fires on the next boot."""
+    tools = wiz.tools
+    tools.mark_buffer_prompt_pending()
+
+    def boom():
+        raise RuntimeError("devicename step blew up")
+
+    monkeypatch.setattr(tools, "prompt_devicename_after_restore", boom)
+    monkeypatch.setattr(
+        tools.dialog, "select", lambda *a, **k: 2
+    )  # buffer: Keep current
+
+    assert tools.prompt_after_restore() is True
+    assert not tools.buffer_prompt_pending(), "marker must be cleared despite the raise"
+
+
+def test_write_guisetting_updates_existing_and_clears_default(wiz, tmp_path):
+    """write_guisetting overwrites an existing <setting> and drops its default='true' marker
+    so Kodi treats the value as user-set."""
+    import xml.etree.ElementTree as ET
+
+    from resources.lib.modules import _kodisettings
+
+    p = tmp_path / "guisettings.xml"
+    p.write_text(
+        '<settings version="2">'
+        '<setting id="services.devicename" default="true">Kodi</setting>'
+        "</settings>"
+    )
+    assert _kodisettings.write_guisetting(str(p), "services.devicename", "Living Room")
+    node = [
+        n
+        for n in ET.parse(str(p)).getroot().iter("setting")
+        if n.get("id") == "services.devicename"
+    ][0]
+    assert node.text == "Living Room"
+    assert node.get("default") is None
+
+
+def test_write_guisetting_creates_missing_element(wiz, tmp_path):
+    """If the setting isn't present yet, it is created."""
+    import xml.etree.ElementTree as ET
+
+    from resources.lib.modules import _kodisettings
+
+    p = tmp_path / "guisettings.xml"
+    p.write_text(
+        '<settings version="2"><setting id="other.thing">x</setting></settings>'
+    )
+    assert _kodisettings.write_guisetting(str(p), "services.devicename", "Box9")
+    node = [
+        n
+        for n in ET.parse(str(p)).getroot().iter("setting")
+        if n.get("id") == "services.devicename"
+    ]
+    assert node and node[0].text == "Box9"
+
+
+def test_write_guisetting_missing_file_returns_false(wiz, tmp_path):
+    """A missing guisettings.xml is a guarded no-op (returns False, never raises)."""
+    from resources.lib.modules import _kodisettings
+
+    assert (
+        _kodisettings.write_guisetting(
+            str(tmp_path / "nope.xml"), "services.devicename", "X"
+        )
+        is False
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Extract-root contract (bugs #1/#2/#3/#7): a restore must extract to the root the zip is
+# anchored at, and drop stray HOME-root pollution.
+# --------------------------------------------------------------------------- #
+def test_archive_anchor_home_vs_userdata(wiz):
+    assert wiz._archive_anchor(["userdata/guisettings.xml", "addons/x/y"]) == "home"
+    assert (
+        wiz._archive_anchor(
+            ["guisettings.xml", "addon_data/pvr.iptvsimple/instance-settings-1.xml"]
+        )
+        == "userdata"
+    )
+    assert wiz._archive_anchor([], hint="home") == "home"
+    assert wiz._archive_anchor([]) == "userdata"  # degenerate default
+
+
+def test_extract_skip_predicate(wiz):
+    skip_home = wiz._extract_skip("home", "temp/")
+    assert skip_home("temp/x.zip") is True  # temp self-ref
+    assert skip_home("userdata/guisettings.xml") is False  # allowed
+    assert (
+        skip_home("addon_data/pvr.iptvsimple/instance-settings-1.xml") is True
+    )  # stray
+    assert skip_home("guisettings.xml") is True  # stray root file
+    skip_ud = wiz._extract_skip("userdata", None)
+    # on a userdata anchor addon_data/ and guisettings.xml ARE the real content -> keep
+    assert skip_ud("addon_data/pvr.iptvsimple/instance-settings-1.xml") is False
+    assert skip_ud("guisettings.xml") is False
+
+
+def _prep_restore(wiz, monkeypatch, tmp_path):
+    """control.HOME + control.USERDATA as real tmp dirs; ask_restart stubbed."""
+    home = tmp_path / "home"
+    (home / "userdata").mkdir(parents=True)
+    monkeypatch.setattr(wiz.control, "HOME", str(home))
+    monkeypatch.setattr(wiz.control, "USERDATA", str(home / "userdata"))
+    monkeypatch.setattr(wiz.ui, "ask_restart", lambda *a, **k: None)
+    return home
+
+
+def test_restore_userdata_zip_lands_under_userdata_not_home(wiz, monkeypatch, tmp_path):
+    """THE regression guard: a userdata-anchored 'kodi_settings' zip must extract UNDER
+    userdata/, never scattered at the HOME root (the bug that bricked the box)."""
+    home = _prep_restore(wiz, monkeypatch, tmp_path)
+    src = tmp_path / "kodi_settings_202607081313.zip"
+    _make_valid_zip(
+        src,
+        [
+            ("guisettings.xml", "<settings/>"),
+            ("addon_data/pvr.iptvsimple/instance-settings-1.xml", "<i/>"),
+            ("sources.xml", "<sources/>"),
+        ],
+    )
+
+    wiz.restore(str(src), confirm=False)
+
+    assert (home / "userdata" / "guisettings.xml").exists()
+    assert (
+        home / "userdata" / "addon_data" / "pvr.iptvsimple" / "instance-settings-1.xml"
+    ).exists()
+    assert not (home / "guisettings.xml").exists(), "must NOT scatter into HOME root"
+    assert not (home / "addon_data").exists(), "must NOT scatter into HOME root"
+
+
+def test_restore_full_zip_still_lands_at_home(wiz, monkeypatch, tmp_path):
+    """A home-anchored full backup extracts to HOME unchanged (regression guard)."""
+    home = _prep_restore(wiz, monkeypatch, tmp_path)
+    src = tmp_path / "kodi_backup_202607081313.zip"
+    _make_valid_zip(
+        src,
+        [
+            ("userdata/guisettings.xml", "<settings/>"),
+            ("addons/plugin.x/addon.xml", "<a/>"),
+        ],
+    )
+
+    wiz.restore(str(src), confirm=False)
+
+    assert (home / "userdata" / "guisettings.xml").exists()
+    assert (home / "addons" / "plugin.x" / "addon.xml").exists()
+
+
+def test_extract_filter_drops_stray_root_pollution(wiz, monkeypatch, tmp_path):
+    """A polluted FULL backup carrying BOTH the real userdata/ copy AND stray root copies:
+    only the userdata/ copies land; the strays are dropped (breaks the crash feedback loop)."""
+    home = _prep_restore(wiz, monkeypatch, tmp_path)
+    src = tmp_path / "kodi_backup_polluted.zip"
+    _make_valid_zip(
+        src,
+        [
+            ("userdata/addon_data/pvr.iptvsimple/instance-settings-1.xml", "<real/>"),
+            ("userdata/guisettings.xml", "<settings/>"),
+            ("addons/plugin.x/addon.xml", "<a/>"),
+            # stray HOME-root pollution (must be dropped):
+            ("addon_data/pvr.iptvsimple/instance-settings-1.xml", "<stray/>"),
+            ("guisettings.xml", "<stray/>"),
+        ],
+    )
+
+    wiz.restore(str(src), confirm=False)
+
+    assert (
+        home / "userdata" / "addon_data" / "pvr.iptvsimple" / "instance-settings-1.xml"
+    ).exists()
+    assert not (home / "addon_data").exists(), "stray root addon_data must be dropped"
+    assert not (home / "guisettings.xml").exists(), (
+        "stray root guisettings must be dropped"
+    )
+
+
+def test_createzip_prunes_home_root(wiz, tmp_path):
+    """A FULL backup (prune_home_root=True) captures only allowed home-level dirs; stray
+    root pollution is NOT re-captured. prune_home_root=False keeps everything (userdata mode)."""
+    import zipfile as _zip
+
+    home = tmp_path / "home"
+    (home / "userdata" / "addon_data").mkdir(parents=True)
+    (home / "userdata" / "guisettings.xml").write_text("<s/>")
+    (home / "addons" / "plugin.x").mkdir(parents=True)
+    (home / "addons" / "plugin.x" / "addon.xml").write_text("<a/>")
+    # stray pollution at home root:
+    (home / "addon_data" / "pvr.iptvsimple").mkdir(parents=True)
+    (home / "addon_data" / "pvr.iptvsimple" / "instance-settings-1.xml").write_text(
+        "<x/>"
+    )
+    (home / "guisettings.xml").write_text("<stray/>")
+
+    class _P:
+        def cancelled(self):
+            return False
+
+        def items(self, *a, **k):
+            pass
+
+    import contextlib
+
+    @contextlib.contextmanager
+    def _prog(*a, **k):
+        yield _P()
+
+    import unittest.mock as mock
+
+    with mock.patch.object(wiz.ui, "Progress", _prog):
+        out = tmp_path / "full.zip"
+        wiz.CreateZip(
+            str(home), str(out), "h", "m", ["temp"], [".log"], prune_home_root=True
+        )
+        names = set(_zip.ZipFile(out).namelist())
+        out2 = tmp_path / "nopr.zip"
+        wiz.CreateZip(str(home), str(out2), "h", "m", ["temp"], [".log"])
+        names2 = set(_zip.ZipFile(out2).namelist())
+
+    assert "userdata/guisettings.xml" in names and "addons/plugin.x/addon.xml" in names
+    assert not any(n.startswith("addon_data/") for n in names), "stray root pruned"
+    assert "guisettings.xml" not in names, "loose root file pruned"
+    # without pruning the strays ARE captured (proves userdata-mode is unaffected):
+    assert any(n.startswith("addon_data/") for n in names2)
+    assert "guisettings.xml" in names2
+
+
+def test_sweep_and_iptv_removed_from_wiz(wiz):
+    """SAFETY BY CONSTRUCTION: the boot-time home-root delete sweep and the entire IPTV
+    subsystem are gone from wiz. Nothing here deletes files at boot, and a restore never
+    touches, enables, disables, or stages the IPTV client."""
+    # The sweep function no longer exists as an attribute (nothing can call it).
+    assert not hasattr(wiz, "sweep_home_root_pollution")
+    assert not hasattr(wiz, "_USERDATA_STRAY_NAMES")
+
+    src = (ADDON_ROOT / "resources" / "lib" / "modules" / "wiz.py").read_text(
+        encoding="utf-8"
+    )
+    for gone in (
+        "stage_iptv_disabled",
+        "mark_iptv_autoenable_pending",
+        "set_pvr_enabled",
+        "pvr_is_enabled",
+        "def sweep_home_root_pollution",
+    ):
+        assert gone not in src, "wiz.py must no longer contain %r" % gone
+
+
+def test_restore_does_not_toggle_any_addon(wiz, monkeypatch, tmp_path):
+    """A restore must not enable or disable ANY add-on. The restored files are placed and the
+    settings are made durable, but no client state is flipped (that is what crashed the box)."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+
+    calls = []
+    monkeypatch.setattr(
+        wiz.xbmc,
+        "executeJSONRPC",
+        lambda payload: calls.append(payload) or '{"result":"OK"}',
+    )
+    monkeypatch.setattr(wiz, "ExtractWithProgress", lambda *a, **k: False)  # completes
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(src, [("guisettings.xml", "<s/>")])
+
+    wiz.restore(str(src), confirm=False, wipe=False)
+
+    assert not any("SetAddonEnabled" in c for c in calls), (
+        "a restore must never enable/disable an add-on"
+    )
+
+
+def test_post_restore_step_numbers_match_the_order_they_run_in():
+    """`prompt_after_restore` runs the device-name step FIRST, then the buffer step.
+    The headings said the opposite, so the first thing a restored box asked was
+    labelled "2 of 2"."""
+    from pathlib import Path
+
+    src = (
+        Path(__file__).parent.parent
+        / "script.ezmaintenanceplusplus"
+        / "resources"
+        / "lib"
+        / "modules"
+        / "tools.py"
+    ).read_text(encoding="utf-8")
+
+    flow = src[src.index("def prompt_after_restore") :]
+    assert flow.index("prompt_devicename_after_restore()") < flow.index(
+        "prompt_buffer_after_restore()"
+    ), "device name runs first"
+
+    assert '"Finish setup (1 of 2): Device name"' in src
+    assert '"Finish setup (2 of 2): Video quality"' in src

@@ -1,0 +1,145 @@
+"""HARDWARE GATE: a change to the tvOS storage-contract code may not ship unverified.
+
+WHY THIS EXISTS
+---------------
+Our own docs have carried the action item "add a hardware-verification gate to the EZM
+release checklist" UNCHECKED since 2026-07-08. In the meantime we shipped storage fix after
+storage fix "verified in code", several of which were wrong on the device - and on
+2026-07-14 an incident doc claimed "Hardware-confirmed" for a build that had never run on a
+box. A checklist line a human ticks is exactly the thing that failed. This is the mechanical
+version.
+
+THE RULE
+--------
+The storage-contract source (nsud.py, boxsetup.py) is fingerprinted. When it changes, the
+last device run no longer covers the code, so shipping requires a FRESH verification
+artifact (verification/<version>.json) that:
+
+  1. is for the CURRENT addon version (addon.xml at HEAD), and
+  2. carries the CURRENT storage fingerprint (so it certifies THIS code, not older code), and
+  3. has an entry for BOTH device classes (tvos AND android - the fix must work on the box
+     that has the bug AND the box that must stay a no-op), and
+  4. reports each box running the version under review (the generator enforces this at pull
+     time; we re-check it here so a hand-edited artifact still fails).
+
+The artifact is produced only by tools/verify_device.py, which PULLS the evidence off a
+live box over JSON-RPC. It cannot be satisfied by typing prose. See that file's header.
+
+ESCAPE HATCH (loud, recorded, never silent)
+-------------------------------------------
+A genuine hotfix that cannot wait for a device run may ship by committing an artifact with
+{"waived": "<reason>"} for a class. That is a deliberate, reviewable act in git history -
+the opposite of a checklist quietly left unticked.
+"""
+
+import hashlib
+import json
+import pathlib
+import re
+
+import pytest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+ADDON_XML = ROOT / "script.ezmaintenanceplusplus/addon.xml"
+NSUD = ROOT / "script.ezmaintenanceplusplus/resources/lib/modules/nsud.py"
+BOXSETUP = ROOT / "script.ezmaintenanceplusplus/resources/lib/modules/boxsetup.py"
+VERIFY_DIR = ROOT / "verification"
+
+# MUST match verify_device.CONTRACT_FILES.
+CONTRACT_FILES = (NSUD, BOXSETUP)
+REQUIRED_CLASSES = ("tvos", "android")
+
+
+def _fingerprint():
+    h = hashlib.sha256()
+    for f in sorted(CONTRACT_FILES):
+        h.update(f.read_bytes())
+    return h.hexdigest()
+
+
+def _addon_version():
+    txt = ADDON_XML.read_text()
+    m = re.search(r'id="script\.ezmaintenanceplusplus"[^>]*version="([^"]+)"', txt)
+    return m.group(1)
+
+
+def _artifact_path():
+    return VERIFY_DIR / ("%s.json" % _addon_version())
+
+
+def _contract_changed_since_last_verification():
+    """True if the storage code differs from every fingerprint we have ever verified."""
+    verified = set()
+    if VERIFY_DIR.is_dir():
+        for p in VERIFY_DIR.glob("*.json"):
+            try:
+                verified.add(json.loads(p.read_text()).get("storage_fingerprint"))
+            except (ValueError, OSError):
+                continue
+    return _fingerprint() not in verified
+
+
+def test_storage_contract_change_has_a_device_run():
+    """If nsud/boxsetup changed, a fresh two-class device artifact must exist for this version.
+
+    Skipped only when the storage code is byte-identical to something already verified -
+    i.e. this commit did not touch the contract, so no new device run is owed.
+    """
+    if not _contract_changed_since_last_verification():
+        pytest.skip("storage contract unchanged since a prior verified run")
+
+    path = _artifact_path()
+    version = _addon_version()
+    assert path.exists(), (
+        "The storage-contract code (nsud.py / boxsetup.py) changed, so it needs a fresh "
+        "device run before it can ship, and there is no artifact for the current version.\n"
+        "  Deploy this build to a real Fire TV AND a real Apple TV, then run:\n"
+        "    python3 tools/verify_device.py --host <firetv-ip>  --class android\n"
+        "    python3 tools/verify_device.py --host <appletv-ip> --class tvos\n"
+        "  (tvOS has no adb; the tool pulls evidence over Kodi JSON-RPC.)\n"
+        '  A genuine hotfix may ship with {"waived": "<reason>"} per class - loud and '
+        "recorded, never a silently unticked box.\n"
+        "  Expected artifact: verification/%s.json" % version
+    )
+
+    doc = json.loads(path.read_text())
+    assert doc.get("storage_fingerprint") == _fingerprint(), (
+        "verification/%s.json exists but certifies DIFFERENT storage code than is committed "
+        "here (its fingerprint does not match nsud.py+boxsetup.py at HEAD). A stale artifact "
+        "cannot cover new code - re-run verify_device.py on a box carrying THIS build."
+        % version
+    )
+
+    devices = doc.get("devices", {})
+    for cls in REQUIRED_CLASSES:
+        assert cls in devices, (
+            "verification/%s.json has no '%s' entry. A storage change must be proven on BOTH "
+            "a Fire TV (android) and an Apple TV (tvos) - the fix must work where the bug is "
+            "AND stay a no-op where it isn't." % (version, cls)
+        )
+        entry = devices[cls]
+        if entry.get("waived"):
+            continue  # deliberate, recorded bypass
+        assert entry.get("addon_version_on_box") == version, (
+            "The '%s' verification for %s was captured on a box running %s, not %s. Verify on "
+            "a box that actually has this build installed."
+            % (cls, version, entry.get("addon_version_on_box"), version)
+        )
+        assert "skinshortcuts_duplicates" in entry, (
+            "The '%s' artifact is missing the live skinshortcuts listing - it was not produced "
+            "by verify_device.py's device pull. Do not hand-write these." % cls
+        )
+
+
+def test_fingerprint_helper_matches_the_generator():
+    """The gate and the generator must fingerprint the SAME files, or the gate is blind.
+
+    verify_device.py computes the fingerprint the artifacts are stamped with; if these two
+    lists ever drift, an artifact could 'match' while covering different code.
+    """
+    gen = (ROOT / "tools/verify_device.py").read_text()
+    for f in CONTRACT_FILES:
+        assert f.name in gen, (
+            "%s is in this gate's CONTRACT_FILES but not in verify_device.py - the "
+            "fingerprints will disagree. Keep the two lists in lockstep." % f.name
+        )

@@ -49,9 +49,16 @@ if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
   exit 1
 fi
 
-git tag -f "$TAG"
+# --target main (NOT a local tag): the tag GitHub creates for this release must
+# resolve against origin/main, never an unpushed local commit. `git tag -f`
+# would tag local HEAD, and gh would then push THAT tag (and everything it
+# points to - i.e. whatever you have locally, committed or not) to make it
+# resolvable remotely. Anchoring to the branch name instead means a release
+# can never smuggle out local work that hasn't been reviewed and pushed on
+# its own terms.
 gh release create "$TAG" "$ZIP" \
   --repo "$REPO" \
+  --target main \
   --title "EZ Maintenance++ ${VERSION}" \
   --notes "sha256: ${SHA256}"
 

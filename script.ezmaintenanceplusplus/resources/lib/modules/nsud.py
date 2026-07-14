@@ -98,6 +98,76 @@ def _vfs_rewrite_once(posix_src, special_dst):
             pass
 
 
+def _should_vector(rel):
+    """True iff `rel` is a file KODI ITSELF reads through its VFS, and therefore the ONLY
+    class of file that needs vectoring into NSUserDefaults on tvOS.
+
+    This is the scoping our own incident doc demanded and 2026.07.08.6 never delivered:
+    "the rewrite OVER-APPLIES to every *.xml rather than only the files that genuinely
+    need durability" -> "a tvOS durability rewrite ... must be scoped to exactly the files
+    that need it".
+
+    Proven from Kodi's tvOS source (Omega):
+    - `CTVOSFile::Exists` (TVOSFile.cpp:113-122) checks the NSUserDefaults KEY FIRST and
+      only falls back to `CPosixFile`. So a key SHADOWS the disk file - that, not any
+      disk-rewrite, is why a file-only restore "reverts".
+    - `CPreflightHandler::MigrateUserdataXMLToNSUserDefaults` (PreflightHandler.mm:81-93)
+      returns early once `UserdataMigrated` is set: Kodi does NOT rewrite disk from the
+      mirror on launch. Vectoring is therefore needed ONLY to defeat that shadowing.
+    - `CTVOSDirectory::GetDirectory` (TVOSDirectory.cpp:48-105) lists POSIX files and then
+      `items.Add()`s every NSUserDefaults key WITHOUT deduping -> a file present in both
+      layers is listed TWICE (the File Manager duplicate bug).
+
+    So we vector exactly what Kodi reads via the VFS and nothing else:
+      * top-level `userdata/*.xml` (guisettings, profiles, sources, RssFeeds, favourites...)
+      * `addon_data/<id>/settings.xml` and `addon_data/<id>/instance-settings-*.xml` - BOTH
+        are owned and read by Kodi's own add-on-settings framework through the VFS, not by
+        the add-on with plain open(). (No IPTV special-casing: this is a generic rule about
+        who READS the file, and it happens to include pvr.iptvsimple's instance settings the
+        same as any other add-on's.)
+
+    Everything ELSE under `addon_data/` is treated as an add-on's PRIVATE data and is left
+    alone. PROVEN for `script.skinshortcuts` (a Python add-on): it never calls
+    `xbmcvfs.File()` at all - it guards with `xbmcvfs.exists()` (which finds the key -> True)
+    and then parses the REAL PATH with ElementTree/`open()` (which raises), swallows it, and
+    silently falls back to the skin's SHIPPED DEFAULT menu. That mixed-mode access is exactly
+    what made a restore wipe the owner's customized main menu. For OTHER add-ons (esp. binary
+    ones, which can persist private xml via `kodi::vfs::CFile` -> the same VFS) this is an
+    ASSUMPTION, not a proof; the conservative choice is still to leave the file on disk, since
+    a POSIX copy is readable by BOTH access styles while an NSUserDefaults-only file is
+    readable by only one.
+
+    Leaving those files as plain POSIX is exactly how they behave on Fire TV / desktop.
+
+    NOTE - a claim this module used to make is FALSE: Kodi does NOT re-materialize the disk
+    file from NSUserDefaults on the next launch. `MigrateUserdataXMLToNSUserDefaults`
+    (PreflightHandler.mm:81-93) returns early once `UserdataMigrated` is set, and nothing in
+    TVOSFile/TVOSDirectory/PreflightHandler ever writes a key back out to POSIX. A vectored
+    file simply gets SERVED from the key forever. That is why dropping the POSIX copy of a
+    file whose owner reads it with plain `open()` is unrecoverable.
+
+    DURABILITY BOUNDARY (deliberate): on tvOS the whole Kodi home lives under
+    `Library/Caches` (Apple mandates it; Documents is write-prohibited), so it is purgeable
+    under storage pressure. We do NOT try to buy durability for private add-on data by
+    vectoring it: NSUserDefaults is a SHARED ~500 KB budget that Kodi never enforces or checks
+    (TVOSNSUserDefaults.mm SetKeyData), so pushing a menu file that grows with every shortcut
+    into it risks silently evicting/truncating `guisettings.xml`. The durability boundary for
+    private add-on data is this add-on's own BACKUP, not NSUserDefaults.
+    """
+    rel = (rel or "").replace("\\", "/").lstrip("/")
+    base = os.path.basename(rel)
+    # Kodi's own WantsFile() (TVOSFile.cpp:41-44) EXCLUDES customcontroller.SiriRemote*, so
+    # such a file is served by CPosixFile, NOT CTVOSFile. An xbmcvfs write to it is a plain
+    # POSIX write and the read-back is a POSIX read of the same file: `_vector_confirmed`
+    # would ALWAYS pass without a single byte ever reaching NSUserDefaults, and we would then
+    # os.remove() the ONLY copy. Never vector (and therefore never drop) it.
+    if base.lower().startswith("customcontroller.siriremote"):
+        return False
+    if "addon_data/" not in rel:
+        return True  # top-level userdata xml: Kodi reads it through the VFS
+    return base == "settings.xml" or base.startswith("instance-settings-")
+
+
 def _vector_confirmed(special_dst, posix_src):
     """Read the just-vectored file BACK through xbmcvfs (on tvOS this reads NSUserDefaults)
     and confirm it byte-matches the POSIX source. Returns True ONLY on a full, non-empty
@@ -171,6 +241,15 @@ def rewrite_userdata_xml(
                 if rel in excl or any(rel.startswith(p) for p in prefixes):
                     skipped += 1
                     continue
+                if not _should_vector(rel):
+                    # An add-on's PRIVATE data (addon_data/<id>/* that is not settings.xml).
+                    # Its owner reads it with plain open(), never through Kodi's VFS, so a
+                    # NSUserDefaults key buys nothing, duplicates the File Manager entry, and
+                    # (once the POSIX copy was dropped) made the file unreadable to its owner
+                    # - which silently reset the skinshortcuts main menu on every restore.
+                    # Leave it as a plain POSIX file, exactly as on Fire TV / desktop.
+                    skipped += 1
+                    continue
                 special = _special_for(rel)
                 if _vfs_rewrite_once(posix, special):
                     written += 1
@@ -180,6 +259,9 @@ def rewrite_userdata_xml(
                     # launch. Read-back (not just the write bool) guards the tvOS store
                     # silently truncating a large key. Guarded; a failed remove just leaves
                     # the (harmless) duplicate, never an exception.
+                    # Only files Kodi reads THROUGH its VFS reach here (see _should_vector),
+                    # so dropping the POSIX shadow is correct for exactly those and can no
+                    # longer orphan an add-on's private data (the skinshortcuts menu bug).
                     if drop and _vector_confirmed(special, posix):
                         try:
                             os.remove(posix)
@@ -215,6 +297,13 @@ def persist_one(rel, log=None):
     special = _special_for(rel)
     posix = xbmcvfs.translatePath(special)
     try:
+        if not _should_vector(rel):
+            # An add-on's PRIVATE data: its owner reads it with plain open(), never through
+            # Kodi's VFS. Vectoring buys nothing, duplicates the File Manager entry, and
+            # dropping the POSIX copy would make it unreadable to its owner. Leave it alone.
+            if log:
+                log("nsud.persist_one: %s is private add-on data - left on disk" % rel)
+            return True
         if not _vfs_rewrite_once(posix, special):
             if log:
                 log("nsud.persist_one: vector failed for %s (POSIX stands)" % rel)

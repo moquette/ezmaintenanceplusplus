@@ -220,6 +220,17 @@ def _write_weather_settings(settings):
         el.text = val
     with open(xml_path, "w", encoding="utf-8") as f:
         f.write(ET.tostring(root, encoding="unicode"))
+    # tvOS-safe persist, exactly as _add_sources does for sources.xml. Kodi core
+    # loads an add-on's settings.xml through its OWN VFS, so on Apple TV that read
+    # is served from NSUserDefaults FIRST (CTVOSFile::Exists/Open check the key
+    # before the disk file). A plain POSIX write alone therefore (a) leaves a stale
+    # key silently SHADOWING the bytes we just wrote - the weather location never
+    # applies, with no error - and (b) dual-layers the file so File Manager lists it
+    # twice. This call was missing here while its sibling 90 lines up had it.
+    # A no-op rewrite of identical bytes on Fire TV / desktop.
+    from resources.lib.modules import nsud
+
+    nsud.persist_one("addon_data/weather.multi/settings.xml", log=_log)
 
 
 def setup_weather(interactive=True):

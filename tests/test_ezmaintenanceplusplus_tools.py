@@ -129,3 +129,46 @@ def test_buffer_prompt_marker_roundtrip(tools):
     assert tools.mod.buffer_prompt_pending() is True
     tools.mod.clear_buffer_prompt_marker()
     assert tools.mod.buffer_prompt_pending() is False
+
+
+def test_first_run_arms_tuneup_on_fresh_install(tools):
+    """A genuinely fresh install (no flag, no settings.xml) arms the tune-up marker
+    and writes the first-run flag, exactly once."""
+    import os
+
+    assert tools.mod.buffer_prompt_pending() is False
+    assert tools.mod.arm_first_run_tuneup() is True
+    assert tools.mod.buffer_prompt_pending() is True
+    assert os.path.exists(tools.mod.FIRST_RUN_FLAG)
+    # Second boot: flag present, no re-arm even after the prompt cleared the marker.
+    tools.mod.clear_buffer_prompt_marker()
+    assert tools.mod.arm_first_run_tuneup() is False
+    assert tools.mod.buffer_prompt_pending() is False
+
+
+def test_first_run_suppressed_on_upgraded_box(tools):
+    """A box that ran an older EZM++ (its settings.xml already exists when the flag is
+    first checked) gets the flag written but is NOT prompted: shipping the feature must
+    not re-prompt the whole fleet."""
+    import os
+
+    d = os.path.dirname(tools.mod.FIRST_RUN_FLAG)
+    if not os.path.isdir(d):
+        os.makedirs(d)
+    with open(os.path.join(d, "settings.xml"), "w") as f:
+        f.write("<settings/>")
+    assert tools.mod.arm_first_run_tuneup() is False
+    assert tools.mod.buffer_prompt_pending() is False
+    assert os.path.exists(tools.mod.FIRST_RUN_FLAG)
+    # And it stays quiet on every later boot.
+    assert tools.mod.arm_first_run_tuneup() is False
+    assert tools.mod.buffer_prompt_pending() is False
+
+
+def test_first_run_never_clears_a_pending_restore_marker(tools):
+    """If a restore already armed the tune-up (marker present when the first-run check
+    happens, e.g. first boot after restoring onto a fresh box), the first-run check must
+    leave it pending."""
+    tools.mod.mark_buffer_prompt_pending()
+    tools.mod.arm_first_run_tuneup()
+    assert tools.mod.buffer_prompt_pending() is True

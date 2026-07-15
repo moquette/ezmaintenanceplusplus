@@ -208,9 +208,21 @@ def advancedSettings():
 # unreliable here) that survives the restart; the boot service (service.py) checks it once
 # Kodi is ready and calls prompt_buffer_after_restore(). The file lives in this add-on's
 # own data dir, which the restore wipe preserves and the extract writes AFTER (see wiz.py).
+#
+# Since 2026.07.15.1 the SAME marker is also armed on the add-on's first-ever run
+# (owner request 2026-07-15: a brand-new box deserves the same name+buffer offer a
+# restored one gets). See arm_first_run_tuneup(); the prompts and the exactly-once
+# clearing are shared with the restore path unchanged.
 # --------------------------------------------------------------------------- #
 BUFFER_PROMPT_MARKER = translatePath(
     "special://home/userdata/addon_data/script.ezmaintenanceplusplus/.ezm_buffer_prompt"
+)
+
+# First-ever-run flag: written the first time the boot service looks for it, making that
+# check exactly-once for the lifetime of this install (a rebuilt box has no addon_data,
+# so it legitimately counts as a first run again).
+FIRST_RUN_FLAG = translatePath(
+    "special://home/userdata/addon_data/script.ezmaintenanceplusplus/.ezm_first_run"
 )
 
 
@@ -242,6 +254,30 @@ def clear_buffer_prompt_marker():
             os.remove(BUFFER_PROMPT_MARKER)
     except Exception:
         pass
+
+
+def arm_first_run_tuneup():
+    """On the add-on's FIRST-EVER run, arm the same tune-up the restore path uses (name
+    the device, size the buffer), so a brand-new box gets the offer too. Exactly-once
+    via FIRST_RUN_FLAG, which is written on the first check REGARDLESS of outcome. An
+    UPGRADED box (this add-on's settings.xml already exists when the flag is first
+    checked, i.e. EZM++ ran before this feature) gets the flag but NOT the prompt, so
+    shipping this does not re-prompt the whole fleet. Never raises; returns True iff
+    the tune-up was armed."""
+    try:
+        if os.path.exists(FIRST_RUN_FLAG):
+            return False
+        d = os.path.dirname(FIRST_RUN_FLAG)
+        if not os.path.isdir(d):
+            os.makedirs(d)
+        established = os.path.exists(os.path.join(d, "settings.xml"))
+        with open(FIRST_RUN_FLAG, "w") as f:
+            f.write("1")
+        if established:
+            return False
+        return mark_buffer_prompt_pending()
+    except Exception:
+        return False
 
 
 # NOTE: EZ Maintenance++ has NO IPTV behavior. The former post-restore IPTV auto-enable

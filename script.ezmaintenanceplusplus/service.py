@@ -144,6 +144,20 @@ def _startup_checks():
         maintenance.clearCache()
 
 
+def _maybe_arm_first_run():
+    """On the add-on's first-ever run, arm the SAME tune-up marker the restore path
+    drops (rename this device / retune the buffer), so a brand-new box gets the offer
+    a restored one does. Exactly-once per install via tools.FIRST_RUN_FLAG; a box that
+    already ran an older EZM++ (its settings.xml exists) is flagged without prompting.
+    Fully guarded: nothing here may block or crash the boot service."""
+    try:
+        from resources.lib.modules import tools
+
+        tools.arm_first_run_tuneup()
+    except Exception:
+        pass
+
+
 def _maybe_prompt_after_restore(monitor):
     """On the FIRST boot after a restore, run the post-restore tune-up: offer to rename THIS
     device and to retune the video cache buffer for it (a restore cloned the source box's name
@@ -175,8 +189,10 @@ if __name__ == "__main__":
     # IPTV client back on by itself - both proved unsafe on a real box. Nothing at boot deletes
     # files or enables IPTV; the user turns IPTV on deliberately. The extract-root fix (a
     # restore puts files in the right folder) stands, and the only boot action is the optional
-    # post-restore tune-up prompt below (rename device / video cache buffer).
+    # tune-up prompt below (rename device / video cache buffer), armed by a restore or by
+    # the add-on's first-ever run.
 
+    _maybe_arm_first_run()
     _maybe_prompt_after_restore(monitor)
 
     if _wait_kodi_ready(monitor):

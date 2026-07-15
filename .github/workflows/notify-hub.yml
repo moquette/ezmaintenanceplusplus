@@ -1,0 +1,19 @@
+# On every published release, ask the Tony.7.Bones hub to rebuild its static
+# catalog (repository_dispatch -> pages.yml). Failure mode is benign: the
+# hub's daily cron picks the release up within 24h anyway.
+name: Notify hub of release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch hub rebuild
+        env:
+          GH_TOKEN: ${{ secrets.T7B_DISPATCH_TOKEN }}
+        run: >
+          gh api repos/tony7bones/tony7bones.github.io/dispatches
+          -f event_type=ezmpp-release

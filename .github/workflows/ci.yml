@@ -1,0 +1,59 @@
+name: CI
+
+# EZ Maintenance++ is the single source of truth for this add-on (source, tests,
+# build/release tooling). This workflow runs the enforcement suite on every push so the
+# guards actually fire in CI, not only when someone remembers to run pytest locally -
+# which was the exact gap that let regressions ship before the tests existed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pytest ruff
+
+      - name: Run the full test suite
+        run: python3 -m pytest tests/ -q
+
+      # The full suite above already runs these. This named re-run exists so a broken
+      # tvOS storage guard fails as its OWN loudly-named check, not a needle in the log:
+      #  - the chokepoint lint (no raw userdata write bypassing nsud)
+      #  - the hardware-verification gate (a storage-contract change needs a device run)
+      #  - the sandbox-IO contract (ControlImage write-through / VFS foreign-local-read)
+      - name: tvOS storage guards (chokepoint / hardware gate / sandbox IO)
+        run: >
+          python3 -m pytest -q
+          tests/test_no_raw_userdata_writer.py
+          tests/test_storage_change_requires_device_verification.py
+          tests/test_tvos_sandbox_io_contract.py
+
+      # Scoped to tests/ + tools/ deliberately: the add-on source under
+      # script.ezmaintenanceplusplus/ carries pre-existing ruff findings inherited from
+      # the upstream fork (bare excepts, etc.) that predate this repo. Linting it here
+      # would fail CI on legacy code untouched by any change; that cleanup is a separate,
+      # behavior-preserving task, not a CI gate.
+      - name: Lint (tests + tooling)
+        run: ruff check tests/ tools/
+
+      # Determinism + packagability: the release zip must build headlessly and byte-stably
+      # (sorted members, fixed timestamps). Guards against a change that breaks the build
+      # before release.sh is ever run.
+      - name: Build smoke (deterministic zip)
+        run: python3 tools/build.py

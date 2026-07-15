@@ -90,7 +90,11 @@ again:
   - a machine-generated hardware-verification gate: it pulls live device evidence over
     Kodi's JSON-RPC and fails the suite if `nsud.py`/`boxsetup.py` changed without a fresh
     `verification/<version>.json` artifact to back it up. "Fixed in code" is not a claim
-    this add-on gets to make unverified anymore.
+    this add-on gets to make unverified anymore. Scoped deliberately to just those two
+    files, not every module touching `xbmcvfs` (`control.py`/`wiz.py`/`maintenance.py`/
+    `onetap.py` were audited and do no raw userdata writes - the chokepoint lint above
+    already covers them) - see the rationale and tracked follow-up in that tool's own
+    `CONTRACT_FILES` comment.
 
 ## Repo, build, and tests
 

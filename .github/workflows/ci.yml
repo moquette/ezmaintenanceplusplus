@@ -48,9 +48,23 @@ jobs:
       # script.ezmaintenanceplusplus/ carries pre-existing ruff findings inherited from
       # the upstream fork (bare excepts, etc.) that predate this repo. Linting it here
       # would fail CI on legacy code untouched by any change; that cleanup is a separate,
-      # behavior-preserving task, not a CI gate.
+      # behavior-preserving task, not a CI gate. tests/test_addon_source_lint_debt.py is
+      # the tracked, visible marker for that debt (xfail, never a silent skip).
       - name: Lint (tests + tooling)
         run: ruff check tests/ tools/
+
+      # GAP 2 (2026-07-14): queries this repo's own GitHub Releases and only fails on a
+      # REGRESSION (addon.xml behind the latest published release) or a CONTRADICTION (a
+      # release tag matching addon.xml exists with a missing/mismatched asset) - never
+      # merely because addon.xml is ahead of the latest release, which is the normal,
+      # legitimate state between "bump addon.xml + push" and running tools/release.sh
+      # (see that script's header and tools/check_release_consistency.py's docstring for
+      # why a naive gate here would be mis-designed). A network failure degrades to a
+      # warning, not a gate failure - see that module's "NETWORK POSTURE" section.
+      - name: Release existence gate (regression / contradiction only)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 tools/check_release_consistency.py
 
       # Determinism + packagability: the release zip must build headlessly and byte-stably
       # (sorted members, fixed timestamps). Guards against a change that breaks the build

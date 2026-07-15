@@ -30,6 +30,20 @@ ESCAPE HATCH (loud, recorded, never silent)
 A genuine hotfix that cannot wait for a device run may ship by committing an artifact with
 {"waived": "<reason>"} for a class. That is a deliberate, reviewable act in git history -
 the opposite of a checklist quietly left unticked.
+
+FINGERPRINT SCOPE (GAP 3, reviewed 2026-07-14)
+-----------------------------------------------
+CONTRACT_FILES is deliberately just (nsud.py, boxsetup.py), not every module that
+imports xbmcvfs (control.py, wiz.py, maintenance.py, onetap.py also do). Those four were
+audited at review time: none writes a userdata/addon_data XML outside the sanctioned
+nsud path - they only stage/verify/delete backup ZIPs, a generic VFS operation that
+behaves identically on every platform and carries no NSUserDefaults-shadow risk. They
+are already covered for the risk that matters (an unguarded raw userdata write) by
+tests/test_no_raw_userdata_writer.py's AST lint, which walks every .py file in the
+add-on except nsud.py itself - not just these two. Widening this tuple was considered
+and not done: it would invalidate the current verification/<version>.json fingerprint
+for zero new coverage. See tools/verify_device.py's matching comment for the full
+rationale and the tracked follow-up condition.
 """
 
 import hashlib

@@ -51,6 +51,29 @@ BOXSETUP = ROOT / "script.ezmaintenanceplusplus/resources/lib/modules/boxsetup.p
 VERIFY_DIR = ROOT / "verification"
 
 # The source whose change demands a fresh device run. Keep in lockstep with the gate test.
+#
+# SCOPE DECISION (GAP 3, reviewed 2026-07-14): nsud.py + boxsetup.py are the ONLY two
+# modules that WRITE userdata through the tvOS vectoring path (nsud.py IS the vectoring
+# chokepoint; boxsetup.py is the module the 2026-07-14 incident and its follow-up review
+# found doing raw userdata writes). Other xbmcvfs/special://profile-touching modules
+# (control.py, wiz.py, maintenance.py, onetap.py) were audited when this decision was
+# made: none of them write a userdata/addon_data XML outside the sanctioned nsud path -
+# they stage/verify/delete backup ZIPs (onetap.py's _verify_vfs reads a zip header;
+# wiz.py stages+copies backup archives; control.py/maintenance.py only translatePath a
+# few directories) - operations that behave identically on every Kodi platform and are
+# NOT subject to the NSUserDefaults-shadow hazard this gate exists to catch. They are
+# already covered for the ACTUAL risk (an unguarded raw userdata write) by
+# tests/test_no_raw_userdata_writer.py, whose AST lint walks EVERY .py file in the
+# add-on (except this chokepoint) - not just these two.
+#
+# Widening CONTRACT_FILES to include those four modules was considered and deliberately
+# NOT done: it would invalidate every existing verification/<version>.json fingerprint
+# (forcing an immediate re-run on both device classes) for zero new coverage, since the
+# chokepoint lint already scans them and reports nothing to catch. If a future change
+# adds a genuine raw userdata write to one of those files, the chokepoint lint catches
+# it immediately regardless of this list. Tracked follow-up: if one of those modules
+# ever grows a NEW vectoring-relevant write (not just VFS-generic file I/O), add it here
+# AND re-run tools/verify_device.py against both device classes in the same change.
 CONTRACT_FILES = (NSUD, BOXSETUP)
 
 

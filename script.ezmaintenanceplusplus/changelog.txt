@@ -51,3 +51,10 @@ v2022.12.28.0
  - Clearing recently played channels now offers a Kodi restart. The home-screen
    widget reads the PVR "last played" list from the running manager's memory, so
    the cleared list only shows after Kodi reloads.
+
+2026.07.15.4
+ - Apple TV: the restart prompt now uses the honest "close and reopen Kodi"
+   wording on tvOS. It was detected only as non-Android and mislabelled
+   "Restart now?", but Kodi cannot self-restart on tvOS (Quit only closes).
+   Fixes the wording for the new channel-clear restart offer and for every
+   restore / Fresh Start prompt on Apple TV.

@@ -499,6 +499,18 @@ def test_ask_restart_android_says_close_not_restart(ui):
     assert "Restore Complete: 5 items" in cap["message"]  # status line preserved
 
 
+def test_ask_restart_tvos_says_close_not_restart(ui):
+    # Apple TV: System.Platform.TVOS true, Android false. Kodi cannot self-restart
+    # on tvOS either (Quit only closes), so it must get the close-and-reopen wording,
+    # not the desktop "Restart now?" - the Android-only check used to miss this.
+    ui.xbmc.getCondVisibility = lambda cond: cond == "System.Platform.TVOS"
+    cap = _capture_yesno(ui)
+    assert ui.ask_restart("Cleared 2 recently played channels.") is False
+    assert "close" in cap["message"].lower()
+    assert "restart now" not in cap["message"].lower()
+    assert cap["yes"] == "Close now"
+
+
 def test_ask_restart_desktop_still_says_restart(ui):
     ui.xbmc.getCondVisibility = lambda cond: False  # desktop
     cap = _capture_yesno(ui)

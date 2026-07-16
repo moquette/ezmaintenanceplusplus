@@ -551,16 +551,20 @@ def restart():
 def ask_restart(status="", heading=None):
     """Offer to finish the restore/wipe. The wording is HONEST per platform:
 
-    On Fire TV / Android, Kodi CANNOT restart itself - `RestartApp` is desktop-only, so
-    `restart()` can only `Quit`. Promising "Restart now?" there is misleading (it just
-    closes). So on Android we say "close now, then reopen Kodi"; on desktop, where Quit
-    does relaunch cleanly, we say "restart".
+    On Fire TV / Android AND Apple TV / tvOS, Kodi CANNOT restart itself -
+    `RestartApp` is desktop-only, so `restart()` can only `Quit`. Promising "Restart
+    now?" there is misleading (it just closes). So on those appliances we say "close
+    now, then reopen Kodi"; on desktop, where Quit does relaunch cleanly, we say
+    "restart". tvOS is detected the same way nsud does (System.Platform.TVOS) - it is
+    NOT Android, so the Android-only check used to give it the wrong wording.
 
     `status` is an optional line shown above the prompt (e.g. "Restore Complete: ...").
     Returns True and acts (Quit) if the user accepts. Callers on the post-wipe path MUST
     always reach this, even after a partial restore.
     """
-    if xbmc.getCondVisibility("System.Platform.Android"):
+    if xbmc.getCondVisibility("System.Platform.Android") or xbmc.getCondVisibility(
+        "System.Platform.TVOS"
+    ):
         prompt = "Kodi needs to close to finish.\nClose Kodi now, then reopen it."
         yeslabel, nolabel = "Close now", "Later"
     else:

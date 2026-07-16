@@ -46,3 +46,8 @@ v2022.12.28.0
  - Maintenance: new "Clear Recently Played Channels" resets the PVR recently-
    played list. The write happens with the PVR manager paused so the running
    client cannot clobber it; it is a no-op with a notice when none are found.
+
+2026.07.15.3
+ - Clearing recently played channels now offers a Kodi restart. The home-screen
+   widget reads the PVR "last played" list from the running manager's memory, so
+   the cleared list only shows after Kodi reloads.

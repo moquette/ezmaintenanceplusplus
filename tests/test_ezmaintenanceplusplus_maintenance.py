@@ -650,6 +650,48 @@ def test_clear_recent_channels_noop_when_none_found(maint, tmp_path, monkeypatch
     assert calls == [], "must not disable pvrmanager when nothing is found"
 
 
+def test_clear_recent_channels_verbose_offers_restart(maint, tmp_path, monkeypatch):
+    """After clearing (verbose), the user is offered a restart - the home widget
+    reads the PVR manager's memory and only updates on a Kodi reload."""
+    dbdir = tmp_path / "db"
+    dbdir.mkdir()
+    _make_pvr_db(dbdir / "TV46.db", [1700000000])
+    monkeypatch.setattr(maint, "databasePath", str(dbdir))
+    monkeypatch.setattr(
+        maint,
+        "_jsonrpc",
+        lambda m, p: (
+            {"result": {"value": True}} if m == "Settings.GetSettingValue" else {}
+        ),
+    )
+    monkeypatch.setattr(maint.xbmc, "sleep", lambda ms: None)
+    restarts = []
+    maint.ui.ask_restart = lambda status="", **k: restarts.append(status)
+    maint.clearRecentChannels(mode="verbose")
+    assert len(restarts) == 1, "verbose clear must offer a restart"
+    assert "reload" in restarts[0].lower()
+
+
+def test_clear_all_offers_restart_only_when_channels_cleared(maint, monkeypatch):
+    monkeypatch.setattr(maint, "clearCache", lambda mode="verbose": None)
+    monkeypatch.setattr(maint, "purgePackages", lambda mode="verbose": None)
+    monkeypatch.setattr(maint, "deleteThumbnails", lambda mode="verbose": None)
+    restarts, notes = [], []
+    maint.ui.ask_restart = lambda status="", **k: restarts.append(status)
+    maint.ui.notify = lambda msg, **k: notes.append(msg)
+
+    # channels cleared -> restart offered, no plain notify
+    monkeypatch.setattr(maint, "clearRecentChannels", lambda mode="verbose": 3)
+    maint.clearAll()
+    assert len(restarts) == 1 and notes == []
+
+    # nothing cleared -> plain "All Cleaned", no restart
+    restarts.clear()
+    monkeypatch.setattr(maint, "clearRecentChannels", lambda mode="verbose": 0)
+    maint.clearAll()
+    assert restarts == [] and notes == ["All Cleaned"]
+
+
 def test_clear_all_runs_every_cleaner_silently_then_notifies(maint, monkeypatch):
     ran = []
     monkeypatch.setattr(

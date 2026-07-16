@@ -187,11 +187,16 @@ def clearRecentChannels(mode="verbose"):
     """Clear the PVR 'recently played channels' list by resetting iLastWatched in
     the current TV/Radio databases. No-op (with a notice) when none are found.
 
-    The write happens INSIDE a PVR-disabled window: a running PVR manager holds
-    the channel rows in memory and writes them back on shutdown, so a naive edit
-    is silently clobbered (the Kodi settings-clobber class this project knows
-    well). Disabling pvrmanager forces the flush + release; the reset then sticks
-    and is re-read when the manager comes back. pvrmanager is always restored.
+    Two things are needed and both are hardware-proven:
+
+    1. The write happens inside a PVR-disabled window so the running client
+       cannot clobber the reset (the Kodi settings-clobber class).
+    2. Kodi must be RESTARTED afterward for the change to show. The home widget
+       reads ``pvr://channels/tv/*?view=lastplayed``, which Kodi serves from the
+       PVR manager's IN-MEMORY channel state - not the disk DB. A skin reload and
+       a pvrmanager pause/resume both leave the stale channel on screen; only a
+       full restart reloads lastplayed from the (now-cleared) database. So in
+       verbose mode we offer a restart after clearing.
     """
     dbs = _pvr_databases()
     if _count_recent_channels(dbs) == 0:
@@ -215,24 +220,30 @@ def clearRecentChannels(mode="verbose"):
                 "Settings.SetSettingValue",
                 {"setting": "pvrmanager.enabled", "value": True},
             )
-    if mode == "verbose":
-        ui.notify(
-            "Cleared %d recently played channel(s)" % cleared,
-            icon=iconpath,
-            time_ms=3000,
+    if mode == "verbose" and cleared:
+        ui.ask_restart(
+            "Cleared %d recently played channel(s). Kodi must reload for the "
+            "home screen to update." % cleared
         )
     return cleared
 
 
 def clearAll(mode="verbose"):
     """One action that runs every clean: cache, packages, thumbnails, and (if any
-    are found) the recently played channels."""
+    are found) the recently played channels. Offers a restart when channels were
+    cleared, since the home widget only reflects that after a Kodi reload."""
     clearCache(mode="silent")
     purgePackages(mode="silent")
     deleteThumbnails(mode="silent")
-    clearRecentChannels(mode="silent")
+    cleared = clearRecentChannels(mode="silent")
     if mode == "verbose":
-        ui.notify("All Cleaned", icon=iconpath, time_ms=3000)
+        if cleared:
+            ui.ask_restart(
+                "All cleaned, including %d recently played channel(s). Kodi must "
+                "reload for the home screen to update." % cleared
+            )
+        else:
+            ui.notify("All Cleaned", icon=iconpath, time_ms=3000)
 
 
 def determineNextMaintenance():

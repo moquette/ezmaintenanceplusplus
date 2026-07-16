@@ -224,6 +224,7 @@ def test_backup_uses_stripped_port_path(wiz, monkeypatch, tmp_path):
         ),
     )
     monkeypatch.setattr(wiz.tools, "_get_keyboard", lambda **k: "mybackup")
+    monkeypatch.setattr(wiz.ui, "confirm", lambda *a, **k: True)  # accept the name
 
     captured = {}
 
@@ -246,6 +247,86 @@ def test_backup_uses_stripped_port_path(wiz, monkeypatch, tmp_path):
     assert ":2049" not in captured["dst"]
     assert captured["dst"].startswith(
         "nfs://192.168.7.2/Users/moquette/Kodi/Backup/atv-2/"
+    )
+
+
+def _stub_backup_env(wiz, monkeypatch, tmp_path, keyboard_name="mybackup"):
+    """Common backup() stubs: a HOME to zip, an nfs download.path, a keyboard
+    name, and no-op rotation + addon settings. Returns nothing; callers add the
+    ui.confirm / CreateZip stubs they care about."""
+    backupdata = tmp_path / "home"
+    backupdata.mkdir()
+    monkeypatch.setattr(wiz.control, "HOME", str(backupdata))
+    monkeypatch.setattr(
+        wiz.control,
+        "setting",
+        lambda key: (
+            "nfs://192.168.7.2/Users/moquette/Kodi/Backup/atv-2/"
+            if key == "download.path"
+            else ""
+        ),
+    )
+    monkeypatch.setattr(wiz.tools, "_get_keyboard", lambda **k: keyboard_name)
+    monkeypatch.setattr(wiz, "_rotate_vfs", lambda *a, **k: None)
+    monkeypatch.setattr(
+        wiz,
+        "xbmcaddon",
+        types.SimpleNamespace(
+            Addon=lambda: types.SimpleNamespace(getSetting=lambda k: "false")
+        ),
+    )
+
+
+def test_backup_aborts_when_name_confirm_declined(wiz, monkeypatch, tmp_path):
+    """Declining the new name-confirm prompt must abort BEFORE any zip is built -
+    parity with restore's confirm, and no partial work on a cancel."""
+    _stub_backup_env(wiz, monkeypatch, tmp_path)
+    called = {"zip": False}
+
+    def _no_zip(*a, **k):
+        called["zip"] = True
+        return False
+
+    monkeypatch.setattr(wiz, "CreateZip", _no_zip)
+    monkeypatch.setattr(wiz.ui, "confirm", lambda *a, **k: False)  # user cancels
+    wiz.backup(mode="full")
+    assert called["zip"] is False, "declining the confirm must abort before CreateZip"
+
+
+def test_backup_confirm_shows_final_filename_then_proceeds(wiz, monkeypatch, tmp_path):
+    """Confirming proceeds to the zip build, and the confirm message shows the
+    FINAL filename (spaces->_, auto timestamp, .zip) so the user reviews it."""
+    _stub_backup_env(wiz, monkeypatch, tmp_path, keyboard_name="Living Room")
+    seen = {}
+
+    def _capture_confirm(message, **k):
+        seen["msg"] = message
+        return True
+
+    monkeypatch.setattr(wiz.ui, "confirm", _capture_confirm)
+    captured = {}
+    monkeypatch.setattr(
+        wiz, "CreateZip", lambda src, dst, *a, **k: captured.__setitem__("dst", dst)
+    )
+    wiz.backup(mode="full")
+    assert "Living_Room" in seen.get("msg", ""), "confirm must show the final name"
+    assert seen["msg"].rstrip().endswith(".zip"), "confirm must show the .zip filename"
+    assert "dst" in captured, "confirming must proceed to CreateZip"
+
+
+def test_backup_dropbox_has_name_confirm_before_zip():
+    """The Dropbox backup path must gate the same way: a ui.confirm on the final
+    name BEFORE the zip build. Asserted at the source level (the runtime path
+    imports dropbox_remote, whose module-load side effects are out of scope
+    here); the local path's confirm behavior is exercised end-to-end above."""
+    import inspect
+
+    from resources.lib.modules import wiz as wizmod
+
+    src = inspect.getsource(wizmod._backup_dropbox)
+    assert "ui.confirm" in src, "_backup_dropbox must confirm the name"
+    assert src.index("ui.confirm") < src.index("CreateZip"), (
+        "the confirm must come BEFORE the zip build"
     )
 
 

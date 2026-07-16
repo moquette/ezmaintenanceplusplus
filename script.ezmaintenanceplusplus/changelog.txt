@@ -34,3 +34,8 @@ v2022.12.28.0
  - First-ever run now offers the same two-step tune-up a restore does: name this
    device, then size the video cache buffer for it. Exactly-once per install;
    boxes that already ran EZ Maintenance++ are not re-prompted by the update.
+
+2026.07.15.1
+ - Backup now confirms the final backup name (with its auto timestamp) before it
+   starts, matching the restore confirm. Cancelling that prompt writes nothing.
+   Applies to local, network, and Dropbox backups.

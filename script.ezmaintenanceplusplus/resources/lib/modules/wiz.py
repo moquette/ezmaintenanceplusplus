@@ -191,6 +191,16 @@ def backup(mode="full"):
     today = re.sub("[^0-9]", "", str(today))
     zipDATE = "_%s.zip" % today
     name = re.sub(" ", "_", name) + zipDATE
+    # Confirm the final filename (with the auto timestamp) BEFORE committing to the
+    # zip build - parity with restore's confirm. The name also decides rotation
+    # protection (see _rotate_vfs), so a fat-fingered name is worth catching here.
+    if not ui.confirm(
+        "Create this backup?\n\n%s" % name,
+        heading=AddonTitle,
+        yeslabel="Back up",
+        nolabel="Cancel",
+    ):
+        return
     backup_zip = translatePath(os.path.join(backupdir, name))
     exclude_database = [".pyo", ".log"]
 
@@ -252,6 +262,15 @@ def _backup_dropbox(mode, defaultName, BACKUPDATA):
     today = datetime.now().strftime("%Y%m%d%H%M")
     today = re.sub("[^0-9]", "", str(today))
     name = re.sub(" ", "_", name) + ("_%s.zip" % today)
+    # Confirm the final filename before committing (parity with the local/network
+    # path and with restore's confirm).
+    if not ui.confirm(
+        "Create this Dropbox backup?\n\n%s" % name,
+        heading=AddonTitle,
+        yeslabel="Back up",
+        nolabel="Cancel",
+    ):
+        return
 
     try:
         maintenance.clearCache(mode="silent")

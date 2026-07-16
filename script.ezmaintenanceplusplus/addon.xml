@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.15.0" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.15.1" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,7 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+        v2026.07.15.1: Backup now confirms the final backup name (with its auto timestamp) before it starts, matching the restore confirm. Cancelling at that prompt does nothing - no partial backup is written. Applies to local, network, and Dropbox backups.
         v2026.07.15.0: New: a brand-new box now gets the same two-step tune-up a restored one does (name this device, then size the video buffer for it), on the add-on's first-ever run. Boxes that already ran EZ Maintenance++ are not re-prompted by this update.
         v2026.07.14.1: Apple TV fix: the weather location now actually applies. It was written straight to disk, where a stale Apple TV settings key could silently hide it from Kodi, so the setting appeared to save and never took effect. Added a build check that fails if any code writes a Kodi settings file that way again.
         v2026.07.14.0: Apple TV fix: a restore no longer wipes your customized main menu. Kodi settings are still made durable, but an add-on's own private data is now left on disk where the add-on can actually read it (it was being moved into a store the add-on cannot see, then deleted). Also stops a restore from deleting a Siri Remote key mapping.

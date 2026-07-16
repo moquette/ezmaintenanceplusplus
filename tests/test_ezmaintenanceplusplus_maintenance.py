@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import sqlite3
 import sys
 import types
 from pathlib import Path
@@ -586,6 +587,92 @@ def test_public_cleaners_verbose_notify(maint, tmp_path):
     ]
 
 
+def _make_pvr_db(path, last_watched_values):
+    con = sqlite3.connect(str(path))
+    con.execute(
+        "CREATE TABLE channels (idChannel INTEGER PRIMARY KEY, "
+        "iLastWatched INTEGER, iLastWatchedGroupId INTEGER)"
+    )
+    for i, lw in enumerate(last_watched_values, 1):
+        con.execute(
+            "INSERT INTO channels (idChannel, iLastWatched, iLastWatchedGroupId) "
+            "VALUES (?, ?, ?)",
+            (i, lw, lw),
+        )
+    con.commit()
+    con.close()
+
+
+def test_clear_recent_channels_resets_only_watched(maint, tmp_path, monkeypatch):
+    dbdir = tmp_path / "db"
+    dbdir.mkdir()
+    _make_pvr_db(dbdir / "TV46.db", [1700000000, 0, 1700000100])  # 2 recent, 1 not
+    monkeypatch.setattr(maint, "databasePath", str(dbdir))
+    calls = []
+
+    def fake_rpc(method, params):
+        calls.append((method, params.get("setting"), params.get("value")))
+        if method == "Settings.GetSettingValue":
+            return {"result": {"value": True}}  # pvr manager currently on
+        return {"result": "OK"}
+
+    monkeypatch.setattr(maint, "_jsonrpc", fake_rpc)
+    monkeypatch.setattr(maint.xbmc, "sleep", lambda ms: None)
+
+    cleared = maint.clearRecentChannels(mode="silent")
+    assert cleared == 2
+    con = sqlite3.connect(str(dbdir / "TV46.db"))
+    remaining = con.execute(
+        "SELECT COUNT(*) FROM channels WHERE iLastWatched > 0"
+    ).fetchone()[0]
+    con.close()
+    assert remaining == 0, "every recent-watch timestamp must be reset"
+    sets = [c for c in calls if c[0] == "Settings.SetSettingValue"]
+    assert sets == [
+        ("Settings.SetSettingValue", "pvrmanager.enabled", False),
+        ("Settings.SetSettingValue", "pvrmanager.enabled", True),
+    ], "must disable pvrmanager around the write, then re-enable it (clobber-safe)"
+
+
+def test_clear_recent_channels_noop_when_none_found(maint, tmp_path, monkeypatch):
+    dbdir = tmp_path / "db"
+    dbdir.mkdir()
+    _make_pvr_db(dbdir / "TV46.db", [0, 0])  # nothing recently played
+    monkeypatch.setattr(maint, "databasePath", str(dbdir))
+    calls = []
+    monkeypatch.setattr(maint, "_jsonrpc", lambda m, p: calls.append(m) or {})
+    notes = []
+    maint.ui.notify = lambda msg, **k: notes.append(msg)
+
+    cleared = maint.clearRecentChannels(mode="verbose")
+    assert cleared == 0
+    assert notes == ["No recently played channels"]
+    assert calls == [], "must not disable pvrmanager when nothing is found"
+
+
+def test_clear_all_runs_every_cleaner_silently_then_notifies(maint, monkeypatch):
+    ran = []
+    monkeypatch.setattr(
+        maint, "clearCache", lambda mode="verbose": ran.append(("cache", mode))
+    )
+    monkeypatch.setattr(
+        maint, "purgePackages", lambda mode="verbose": ran.append(("pkg", mode))
+    )
+    monkeypatch.setattr(
+        maint, "deleteThumbnails", lambda mode="verbose": ran.append(("thumb", mode))
+    )
+    monkeypatch.setattr(
+        maint, "clearRecentChannels", lambda mode="verbose": ran.append(("chan", mode))
+    )
+    notes = []
+    maint.ui.notify = lambda msg, **k: notes.append(msg)
+
+    maint.clearAll()
+    assert [r[0] for r in ran] == ["cache", "pkg", "thumb", "chan"]
+    assert all(r[1] == "silent" for r in ran), "sub-cleaners must run silently"
+    assert notes == ["All Cleaned"]
+
+
 def test_clean_tree_swallows_rmtree_and_unlink_errors(maint, tmp_path, monkeypatch):
     root = tmp_path / "junk"
     _mktree(root, {"a.txt": b"x", "sub/b.txt": b"y"})
@@ -673,7 +760,7 @@ def test_plugin_root_menu_renders(monkeypatch, tmp_path):
 
 def test_plugin_maintenance_submenu_renders_without_service(monkeypatch, tmp_path):
     # The plugin process reads getNextMaintenance() BEFORE the service may have
-    # set the window property - must render the three cleaners, not crash.
+    # set the window property - must render the cleaners, not crash.
     rec = _Recorder()
     _install_fakes(monkeypatch, tmp_path, rec)
     _import_plugin(
@@ -682,5 +769,9 @@ def test_plugin_maintenance_submenu_renders_without_service(monkeypatch, tmp_pat
         rec,
         ["plugin://script.ezmaintenanceplusplus/", "7", "?action=maintenance"],
     )
-    assert len(rec.dir_items) == 3  # Clear Cache / Packages / Thumbnails
+    # Clear All / Cache / Packages / Thumbnails / Recently Played Channels
+    assert len(rec.dir_items) == 5
+    actions = [i for i in rec.dir_items]
+    assert any("action=clear_all" in a for a in actions)
+    assert any("action=clear_channels" in a for a in actions)
     assert rec.end_dirs == [True]

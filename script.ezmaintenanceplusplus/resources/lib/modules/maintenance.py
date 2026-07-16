@@ -2,6 +2,9 @@ import xbmc
 import xbmcaddon
 import xbmcgui
 import os
+import glob
+import json
+import sqlite3
 import xbmcvfs
 import math
 import time
@@ -109,6 +112,127 @@ def purgePackages(mode="verbose"):
     _clean_tree(purgePath)
     if mode == "verbose":
         ui.notify("Clean Packages Completed", icon=iconpath, time_ms=3000)
+
+
+def _jsonrpc(method, params):
+    try:
+        return json.loads(
+            xbmc.executeJSONRPC(
+                json.dumps(
+                    {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+                )
+            )
+        )
+    except Exception:
+        return {}
+
+
+def _pvr_databases():
+    """The CURRENT TV and Radio PVR databases (highest-numbered schema of each).
+
+    Kodi migrates the PVR DB across versions as TV<N>.db / Radio<N>.db and uses
+    the highest number; older ones are stale and left alone.
+    """
+    out = []
+    for prefix in ("TV", "Radio"):
+
+        def _num(p):
+            digits = "".join(c for c in os.path.basename(p) if c.isdigit())
+            return int(digits) if digits else 0
+
+        cands = sorted(
+            glob.glob(os.path.join(databasePath, prefix + "[0-9]*.db")), key=_num
+        )
+        if cands:
+            out.append(cands[-1])
+    return out
+
+
+def _count_recent_channels(dbs):
+    total = 0
+    for db in dbs:
+        try:
+            con = sqlite3.connect(db)
+            try:
+                total += con.execute(
+                    "SELECT COUNT(*) FROM channels WHERE iLastWatched > 0"
+                ).fetchone()[0]
+            finally:
+                con.close()
+        except sqlite3.Error:
+            pass
+    return total
+
+
+def _reset_recent_channels(dbs):
+    cleared = 0
+    for db in dbs:
+        try:
+            con = sqlite3.connect(db)
+            try:
+                cur = con.execute(
+                    "UPDATE channels SET iLastWatched = 0, iLastWatchedGroupId = 0 "
+                    "WHERE iLastWatched > 0"
+                )
+                cleared += cur.rowcount
+                con.commit()
+            finally:
+                con.close()
+        except sqlite3.Error:
+            pass
+    return cleared
+
+
+def clearRecentChannels(mode="verbose"):
+    """Clear the PVR 'recently played channels' list by resetting iLastWatched in
+    the current TV/Radio databases. No-op (with a notice) when none are found.
+
+    The write happens INSIDE a PVR-disabled window: a running PVR manager holds
+    the channel rows in memory and writes them back on shutdown, so a naive edit
+    is silently clobbered (the Kodi settings-clobber class this project knows
+    well). Disabling pvrmanager forces the flush + release; the reset then sticks
+    and is re-read when the manager comes back. pvrmanager is always restored.
+    """
+    dbs = _pvr_databases()
+    if _count_recent_channels(dbs) == 0:
+        if mode == "verbose":
+            ui.notify("No recently played channels", icon=iconpath, time_ms=3000)
+        return 0
+
+    r = _jsonrpc("Settings.GetSettingValue", {"setting": "pvrmanager.enabled"})
+    was_on = bool((r.get("result") or {}).get("value"))
+    try:
+        if was_on:
+            _jsonrpc(
+                "Settings.SetSettingValue",
+                {"setting": "pvrmanager.enabled", "value": False},
+            )
+            xbmc.sleep(2000)  # let the manager flush its in-memory state + release
+        cleared = _reset_recent_channels(dbs)
+    finally:
+        if was_on:
+            _jsonrpc(
+                "Settings.SetSettingValue",
+                {"setting": "pvrmanager.enabled", "value": True},
+            )
+    if mode == "verbose":
+        ui.notify(
+            "Cleared %d recently played channel(s)" % cleared,
+            icon=iconpath,
+            time_ms=3000,
+        )
+    return cleared
+
+
+def clearAll(mode="verbose"):
+    """One action that runs every clean: cache, packages, thumbnails, and (if any
+    are found) the recently played channels."""
+    clearCache(mode="silent")
+    purgePackages(mode="silent")
+    deleteThumbnails(mode="silent")
+    clearRecentChannels(mode="silent")
+    if mode == "verbose":
+        ui.notify("All Cleaned", icon=iconpath, time_ms=3000)
 
 
 def determineNextMaintenance():

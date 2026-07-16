@@ -39,3 +39,10 @@ v2022.12.28.0
  - Backup now confirms the final backup name (with its auto timestamp) before it
    starts, matching the restore confirm. Cancelling that prompt writes nothing.
    Applies to local, network, and Dropbox backups.
+
+2026.07.15.2
+ - Maintenance: new "Clear All" runs cache, packages, thumbnails, and (if any
+   are found) the recently played channels in one action.
+ - Maintenance: new "Clear Recently Played Channels" resets the PVR recently-
+   played list. The write happens with the PVR manager paused so the running
+   client cannot clobber it; it is a no-op with a notice when none are found.

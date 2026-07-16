@@ -145,9 +145,18 @@ def MAINTENANCE():
             isFolder=False,
             iconImage="DefaultIconInfo.png",
         )
+    CreateDir("Clear All", "url", "clear_all", ADDON_ICON, ADDON_FANART, "")
     CreateDir("Clear Cache", "url", "clear_cache", ADDON_ICON, ADDON_FANART, "")
     CreateDir("Clear Packages", "url", "clear_packages", ADDON_ICON, ADDON_FANART, "")
     CreateDir("Clear Thumbnails", "url", "clear_thumbs", ADDON_ICON, ADDON_FANART, "")
+    CreateDir(
+        "Clear Recently Played Channels",
+        "url",
+        "clear_channels",
+        ADDON_ICON,
+        ADDON_FANART,
+        "",
+    )
 
 
 def BOX_SETUP():
@@ -339,6 +348,16 @@ elif action == "adv_settings":
     from resources.lib.modules import tools
 
     tools.advancedSettings()
+
+elif action == "clear_all":
+    from resources.lib.modules import maintenance
+
+    maintenance.clearAll()
+
+elif action == "clear_channels":
+    from resources.lib.modules import maintenance
+
+    maintenance.clearRecentChannels()
 
 elif action == "clear_cache":
     from resources.lib.modules import maintenance

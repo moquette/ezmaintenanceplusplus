@@ -148,6 +148,7 @@ jobs:
       # on the idempotent no-op). Benign on failure: the hub cron still catches it.
       - name: Dispatch hub catalog rebuild
         if: steps.pub.outputs.published == '1'
+        continue-on-error: true # benign: the hub's daily cron catches the release within 24h
         env:
           GH_TOKEN: ${{ secrets.T7B_DISPATCH_TOKEN }}
         run: >

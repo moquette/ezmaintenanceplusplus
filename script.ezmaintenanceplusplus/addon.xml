@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.16.0" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.16.1" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,7 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+        v2026.07.16.1: Verified live on real hardware (Fire TV and Apple TV): full backup captures IPTV on both, restore brings it back exactly with strays swept and the IPTV client paused/resumed, and reporting is honest. No functional change from v2026.07.16.0 - this release records the hardware verification and moves publishing to CI.
         v2026.07.16.0: Full backup now truly means full: IPTV (pvr.iptvsimple) settings are captured on Apple TV and Fire TV and restored exactly as backed up, with stray instance files swept safely after the extract. Backups carry a manifest and every backup/restore/wipe reports honestly (a partial result is reported as INCOMPLETE, never "Complete"). Wipes on Apple TV clear both storage layers so old settings can no longer resurrect, a one-time cleanup removes stale hidden settings copies from earlier versions, restores briefly pause the IPTV client so restored settings stick, and a Tools menu adds "Purge stale tvOS keys" and "Verify backup archive".
         v2026.07.15.4: Apple TV: the "close and reopen Kodi" prompt now shows correctly on tvOS (it was mislabelled "Restart", which only closes Kodi there). Affects the new channel-clear restart offer and every restore/Fresh Start prompt.
         v2026.07.15.3: Clearing recently played channels now offers a Kodi restart, because the home-screen widget reads the live PVR list from memory and only reflects the cleared list after a reload.

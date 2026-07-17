@@ -79,3 +79,10 @@ v2022.12.28.0
    hidden settings copies left by 2026.07.08.x-2026.07.13.x, materializing any
    key-only file to disk first so nothing is ever lost.
  - New Tools menu: "Purge stale tvOS keys" and "Verify backup archive".
+
+2026.07.16.1
+ - Verified live on real hardware (Fire TV + Apple TV): full backup captures
+   IPTV on both OSes, restore brings it back exactly (strays swept, IPTV client
+   paused and resumed), honest reporting confirmed. No functional change from
+   2026.07.16.0 - this release records the hardware verification and the move to
+   CI-driven publishing.

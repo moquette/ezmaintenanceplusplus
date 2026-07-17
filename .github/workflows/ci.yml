@@ -67,7 +67,89 @@ jobs:
         run: python3 tools/check_release_consistency.py
 
       # Determinism + packagability: the release zip must build headlessly and byte-stably
-      # (sorted members, fixed timestamps). Guards against a change that breaks the build
-      # before release.sh is ever run.
+      # (sorted members, fixed timestamps). Guards against a change that breaks the build.
       - name: Build smoke (deterministic zip)
         run: python3 tools/build.py
+
+  # Publishing is CI's job, not a hand-run script. This publishes the GitHub Release
+  # asset automatically once `test` is green on main - and that is SAFE precisely
+  # because `test` includes the hardware-verification gate
+  # (test_storage_change_requires_device_verification): CI cannot go green on a
+  # storage-contract change unless verification/<version>.json (pulled live from a real
+  # Fire TV AND Apple TV) is committed alongside it. So auto-publish can never ship an
+  # unverified storage change - the gate blocks the green this job depends on.
+  #
+  # Idempotent: if the tag for addon.xml's current version already exists, this is a
+  # no-op (a re-push of the same version publishes nothing). A release therefore happens
+  # exactly once per version bump, with no human running tools/release.sh. That script
+  # is retained only for a manual/offline re-cut; the normal path is this job.
+  publish:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the deterministic release zip
+        run: python3 tools/build.py
+
+      - name: Publish the GitHub Release asset (once per version) + verify
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ADDON=script.ezmaintenanceplusplus
+          REPO="${GITHUB_REPOSITORY}"
+          VERSION=$(grep '<addon ' "$ADDON/addon.xml" | grep -oE 'version="[^"]+"' | head -1 | sed 's/version="//; s/"//')
+          ZIP="dist/${ADDON}-${VERSION}.zip"
+          TAG="v${VERSION}"
+          SHA256=$(shasum -a 256 "$ZIP" | awk '{print $1}')
+          ASSET_URL="https://github.com/${REPO}/releases/download/${TAG}/${ADDON}-${VERSION}.zip"
+          echo "version=${VERSION} tag=${TAG} sha256=${SHA256}"
+
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "release ${TAG} already exists - nothing to publish (idempotent no-op)."
+            exit 0
+          fi
+
+          # --target main: the tag resolves against the pushed branch, never local work.
+          gh release create "$TAG" "$ZIP" \
+            --repo "$REPO" \
+            --target "${GITHUB_SHA}" \
+            --title "EZ Maintenance++ ${VERSION}" \
+            --notes "sha256: ${SHA256}"
+
+          echo "verifying the asset is anonymously downloadable and byte-correct..."
+          TMP=$(mktemp).zip
+          curl -sSfL "$ASSET_URL" -o "$TMP"
+          DOWNLOADED_SHA=$(shasum -a 256 "$TMP" | awk '{print $1}')
+          rm -f "$TMP"
+          if [ "$DOWNLOADED_SHA" != "$SHA256" ]; then
+            echo "FATAL: published asset sha256 mismatch (expected ${SHA256}, got ${DOWNLOADED_SHA})" >&2
+            exit 1
+          fi
+          echo "OK - ${ASSET_URL} sha256-verified against the CI build"
+          echo "published=1" >> "$GITHUB_OUTPUT"
+        id: pub
+
+      # A release created with GITHUB_TOKEN does NOT emit a `release: published`
+      # event (GitHub suppresses it to prevent recursive runs), so notify-hub.yml
+      # will not auto-fire for a CI-published release. Dispatch the hub catalog
+      # rebuild directly here so the fleet sees the new build within minutes, not
+      # the daily-cron's up-to-24h. Only when this run actually published (skipped
+      # on the idempotent no-op). Benign on failure: the hub cron still catches it.
+      - name: Dispatch hub catalog rebuild
+        if: steps.pub.outputs.published == '1'
+        env:
+          GH_TOKEN: ${{ secrets.T7B_DISPATCH_TOKEN }}
+        run: >
+          gh api repos/tony7bones/tony7bones.github.io/dispatches
+          -f event_type=ezmpp-release

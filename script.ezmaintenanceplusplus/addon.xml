@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.17.6" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.17.7" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,7 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+        v2026.07.17.7: Apple TV restore accuracy - the stray IPTV-instance cleanup during a restore no longer falsely reports 'needs attention'. It verified its deletions against a lagging system file (the same false-failure cause fixed for boot cleanup in the last release), so a perfectly good restore could report a partial one. It now checks live storage. No change to what gets deleted or kept; restores that succeed say so.
         v2026.07.17.6: Apple TV boot fix - the stale-key cleanup no longer fights the Estuary 7 skin's menu storage. It now recognizes the skin's own menu keys as legitimate and leaves them alone, verifies its work against live storage instead of a lagging system file (which made every successful cleanup look failed and re-run forever on every start), and finishes exactly once. Also fixes the log viewer and pastebin uploader silently doing nothing on a crash-damaged log: damaged logs now display and upload with the unreadable bytes marked, cancel and empty-list cases exit cleanly, and failures are logged instead of swallowed.
         v2026.07.17.5: Apple TV restore hardening. The restored skin now comes back reliably - it is written straight to storage instead of relying on a flaky on-screen confirmation. A restore that fully succeeded says "Restore Complete" with no false "needs attention", while a genuine partial loss (including on the merge/Dropbox path) is now correctly reported. Fixes a Fresh Start bug that could wipe a box then wrongly say nothing happened.
         v2026.07.17.4: Fix - "needs attention" now fires only on a genuinely broken restore (settings did not apply, IPTV could not re-enable, duplicate/stray instances, a shadowed restored file). tvOS housekeeping that does not affect the restored box is logged, not alarmed. A restore that landed cleanly says "Restore Complete". Carries v2026.07.17.1/.2/.3.

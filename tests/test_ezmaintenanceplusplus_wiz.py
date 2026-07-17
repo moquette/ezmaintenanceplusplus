@@ -1823,9 +1823,11 @@ def test_restore_sweep_drops_nsud_key_without_posix_file(wiz, monkeypatch, tmp_p
         "/userdata/guisettings.xml": b"g",
     }
     monkeypatch.setattr(nsud, "_find_nsud_plist", lambda: ("plist", store))
-    monkeypatch.setattr(nsud, "_load_plist", lambda _p: {})  # post-delete re-read: gone
     deleted = []
     monkeypatch.setattr(nsud.xbmcvfs, "delete", lambda p: deleted.append(p))
+    # Verification now reads the LIVE layer (listdir dup-count), not a plist
+    # re-read: after the drop the key is gone, so the name is no longer listed.
+    monkeypatch.setattr(nsud, "_vfs_dir_names", lambda _reldir: [])
 
     src = tmp_path / "kodi_settings_x.zip"
     _make_valid_zip(
@@ -2309,7 +2311,9 @@ def test_failed_member_is_named_in_the_log(wiz, monkeypatch, tmp_path):
     )
 
 
-def test_revector_miss_on_merge_path_is_attention_not_silent(wiz, monkeypatch, tmp_path):
+def test_revector_miss_on_merge_path_is_attention_not_silent(
+    wiz, monkeypatch, tmp_path
+):
     """audit Finding A/B: on the MERGE path (add-on-top / Dropbox) a tvOS re-vector
     miss can leave a SURVIVING stale key shadowing the restored file - a silent loss.
     It MUST surface as needs-attention, never a silent 'Restore Complete'."""

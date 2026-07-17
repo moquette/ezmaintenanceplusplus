@@ -186,3 +186,18 @@ v2026.07.17.6
 - Reviewed by two fix agents and two adversarial QA agents; tvOS hardware
   verification on atv2 recorded in verification/2026.07.17.6.json (android class
   waived: the changed storage path is tvOS-gated and never executes on Fire OS).
+
+v2026.07.17.7
+- Fixed the restore-time stray IPTV-instance sweep's false-failure reporting:
+  it verified key drops by re-reading the NSUserDefaults backing plist, which
+  cfprefsd flushes lazily on tvOS, so a successful drop looked failed and a clean
+  restore could report PARTIAL / "needs attention". Verification now reads the
+  LIVE key layer via the xbmcvfs.listdir dup-count, the same doctrine the
+  v2026.07.17.6 boot purge fix uses. No change to what the sweep deletes or keeps;
+  the duplicate-instance brick guard is unchanged, a genuinely surviving key is
+  still detected and reported.
+- Reviewed by one adversarial QA agent; its test-fidelity finding (the two-layer
+  fake modelled a missing directory as still observable) was fixed so a stuck key
+  in that shape cannot pass green. tvOS hardware verification on atv2 recorded in
+  verification/2026.07.17.7.json (android waived: the sweep's key layer is
+  tvOS-only).

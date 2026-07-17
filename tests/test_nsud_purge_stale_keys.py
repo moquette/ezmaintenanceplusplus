@@ -115,13 +115,17 @@ def env(monkeypatch, tmp_path):
         # CTVOSDirectory::GetDirectory (TVOSDirectory.cpp:48-106): the POSIX
         # entries first, then every LIVE key's basename appended WITHOUT dedupe -
         # the observable nsud's post-delete verification rides.
+        # Source-accurate missing-dir behavior (QA finding F1, 2026-07-17): when
+        # the POSIX dir does not exist, GetDirectory returns false BEFORE the key
+        # append is ever reached, and xbmcvfs.listdir swallows that into ([], []).
+        # The key layer is NOT observable through a missing dir - modelling it as
+        # observable let a stuck-key state pass green that hardware would mask.
         assert special_dir.startswith("special://home/userdata")
         rel = special_dir[len("special://home/userdata") :].strip("/")
         real = userdata.joinpath(*rel.split("/")) if rel else userdata
-        try:
-            entries = sorted(os.listdir(str(real)))
-        except OSError:
-            entries = []
+        if not real.is_dir():
+            return ([], [])
+        entries = sorted(os.listdir(str(real)))
         files = [n for n in entries if (real / n).is_file()]
         dirs = [n for n in entries if (real / n).is_dir()]
         prefix = KEY_PREFIX + (rel + "/" if rel else "")
@@ -509,9 +513,7 @@ def test_profile_prefixed_skin_sidecar_is_never_purged(env):
     skin-maintained as the master profile's and must be kept, both layers
     untouched."""
     env.enable_tvos()
-    profile_sidecar = (
-        "profiles/Kids/addon_data/script.skinshortcuts/mainmenu.DATA.xml"
-    )
+    profile_sidecar = "profiles/Kids/addon_data/script.skinshortcuts/mainmenu.DATA.xml"
     env.seed_plist({KEY_PREFIX + profile_sidecar: b"<menu>kids menu</menu>"})
 
     result = env.mod.purge_stale_keys(str(env.userdata))
@@ -538,3 +540,104 @@ def test_directory_shaped_twin_does_not_satisfy_only_copy_check(env):
     assert result == (0, 0, 0, 1), "only-copy key must be kept and counted failed"
     assert env.deleted == [], "no delete may be issued while the key is the only copy"
     assert KEY_PREFIX + stale in env.plist_keys()
+
+
+# ---------------------------------------------------------------------------
+# sweep_iptv_instances: the restore-time stray sweep shares the purge's
+# verification doctrine (live-layer dup-count, never a plist re-read). These
+# pin the v2026.07.17.7 fix for the same cfprefsd-lag false-failure class.
+# ---------------------------------------------------------------------------
+
+IPTV_DIR = "addon_data/pvr.iptvsimple/"
+ARMED = [IPTV_DIR + "settings.xml"]  # archive carries iptv addon_data -> sweep armed
+
+
+def test_sweep_key_drop_survives_cfprefsd_flush_lag(env):
+    """A successfully dropped stray-instance key must count REMOVED even while
+    the stale on-disk plist snapshot still shows it (the restore's false
+    'needs attention' class)."""
+    env.enable_tvos()
+    stray = IPTV_DIR + "instance-settings-2.xml"
+    env.seed_plist({KEY_PREFIX + stray: b"<iptv-stray/>"})
+    env.state["flush_lag"] = True  # delete drops the LIVE key; plist stays stale
+
+    removed, failed = env.mod.sweep_iptv_instances(str(env.userdata), ARMED)
+
+    assert (removed, failed) == (1, []), (
+        "the lagging plist snapshot must not turn a successful sweep into a "
+        "failed one - that is the purge's atv2 defect, in the restore path"
+    )
+    assert KEY_PREFIX + stray in env.plist_keys(), (
+        "precondition: the stale snapshot really does still show the key"
+    )
+
+
+def test_sweep_stuck_key_still_counts_failed(env):
+    """Dup-count verification must not go blind: a key whose delete silently
+    did nothing (lying True) is still listed in the live layer and must be
+    reported failed - it would shadow the restored config.
+
+    The POSIX dir is seeded because that is the hardware-guaranteed shape at
+    sweep time (the sweep runs post-extract; arming requires the archive to
+    carry files under this exact dir). A MISSING dir makes the key layer
+    unobservable on real Kodi (listdir returns empty before the key append) -
+    that state is a loud PARTIAL restore already, not this test's subject."""
+    env.enable_tvos()
+    _write(env.userdata, IPTV_DIR + "settings.xml", b"<iptv/>")
+    stray = IPTV_DIR + "instance-settings-3.xml"
+    key = KEY_PREFIX + stray
+    env.seed_plist({key: b"<iptv-stray/>"})
+    env.state["stuck_keys"] = {key}
+
+    removed, failed = env.mod.sweep_iptv_instances(str(env.userdata), ARMED)
+
+    assert (removed, failed) == (0, [stray])
+    assert key in env.plist_keys()
+
+
+def test_sweep_multiple_strays_one_dir_mixed_outcome(env):
+    """QA promotion: several strays in one dir through the cached listing -
+    the clean drop counts removed, the stuck one counts failed, each exactly
+    once (the listing is taken once per dir strictly AFTER all deletes)."""
+    env.enable_tvos()
+    _write(env.userdata, IPTV_DIR + "settings.xml", b"<iptv/>")
+    clean = IPTV_DIR + "instance-settings-5.xml"
+    stuck = IPTV_DIR + "instance-settings-6.xml"
+    env.seed_plist({KEY_PREFIX + clean: b"<a/>", KEY_PREFIX + stuck: b"<b/>"})
+    env.state["stuck_keys"] = {KEY_PREFIX + stuck}
+    env.state["flush_lag"] = True
+
+    removed, failed = env.mod.sweep_iptv_instances(str(env.userdata), ARMED)
+
+    assert (removed, failed) == (1, [stuck])
+
+
+def test_sweep_dual_layer_stray_removed_cleanly(env):
+    """A stray present in BOTH layers (POSIX file + key) sweeps clean: both
+    copies gone, counted removed once, nothing failed."""
+    env.enable_tvos()
+    stray = IPTV_DIR + "instance-settings-4.xml"
+    env.seed_plist({KEY_PREFIX + stray: b"<iptv-stray/>"})
+    _write(env.userdata, stray, b"<iptv-stray/>")
+    env.state["flush_lag"] = True
+
+    removed, failed = env.mod.sweep_iptv_instances(str(env.userdata), ARMED)
+
+    assert (removed, failed) == (1, [])
+    assert not (env.userdata / stray).exists()
+
+
+def test_sweep_carried_instance_is_never_touched(env):
+    """An instance file the archive carries is not a stray: neither layer may
+    be touched, in any lag state."""
+    env.enable_tvos()
+    carried = IPTV_DIR + "instance-settings-1.xml"
+    env.seed_plist({KEY_PREFIX + carried: b"<iptv-carried/>"})
+    _write(env.userdata, carried, b"<iptv-carried/>")
+    env.state["flush_lag"] = True
+
+    removed, failed = env.mod.sweep_iptv_instances(str(env.userdata), ARMED + [carried])
+
+    assert (removed, failed) == (0, [])
+    assert env.deleted == []
+    assert (env.userdata / carried).read_bytes() == b"<iptv-carried/>"

@@ -626,9 +626,14 @@ def sweep_iptv_instances(userdata_root, archive_rels=None, log=None):
     config it already had. Enumerates BOTH layers - the POSIX listing AND (tvOS) the
     NSUserDefaults plist - because an instance key can exist with no disk file:
     exactly the residue that produced the duplicate numbering. Every key drop is
-    VERIFIED by re-reading the plist afterward (xbmcvfs.delete's boolean lies on
-    tvOS); a surviving key is counted FAILED, never removed. archive_rels are the
-    archive's userdata-relative paths. Returns (removed, failed_list); never raises.
+    VERIFIED against the LIVE key layer via the xbmcvfs.listdir dup-count
+    (xbmcvfs.delete's boolean lies on tvOS, and re-reading the backing plist is
+    worse: cfprefsd flushes it lazily, so a just-dropped key still shows in the
+    snapshot and a SUCCESSFUL drop counts as failed - the same false-failure
+    class the v2026.07.17.6 purge fix closed). A name still listed beyond its
+    surviving POSIX file means the key survived and is counted FAILED, never
+    removed. archive_rels are the archive's userdata-relative paths. Returns
+    (removed, failed_list); never raises.
     """
     removed = 0
     failed = set()
@@ -692,14 +697,26 @@ def sweep_iptv_instances(userdata_root, archive_rels=None, log=None):
                 pass
             if os.path.exists(posix):
                 failed.add(rel)
-        # xbmcvfs.delete's boolean lies (True even when nothing happened), so the
-        # KEY layer is confirmed against the store itself: re-read the plist; a
-        # stray key still present will shadow the restore and counts as FAILED.
-        after = _load_plist(plist_path) if plist_path else None
-        if after is not None:
-            for rel in strays:
-                if (_NSUD_KEY_PREFIX + rel) in after:
-                    failed.add(rel)
+        # xbmcvfs.delete's boolean lies (True even when nothing happened), and the
+        # backing plist lags the live store (cfprefsd flushes lazily), so the KEY
+        # layer is confirmed against the LIVE layer: xbmcvfs.listdir merges POSIX
+        # names and key names with no dedupe (TVOSDirectory.cpp), so a swept name
+        # listed MORE times than its surviving POSIX file accounts for means the
+        # key survived - it will shadow the restore and counts as FAILED. When no
+        # listing is observable the drop is trusted: CTVOSFile::Delete removes
+        # the key unconditionally for any translatable path (TVOSFile.cpp:101-111).
+        _dir_names = {}
+        for rel in strays:
+            reldir, base = rel.rsplit("/", 1)
+            if reldir not in _dir_names:
+                _dir_names[reldir] = _vfs_dir_names(reldir)
+            names = _dir_names[reldir]
+            if names is None:
+                continue  # unobservable: trust the drop
+            posix = os.path.join(userdata_root, *rel.split("/"))
+            expected = 1 if os.path.isfile(posix) else 0
+            if names.count(base) > expected:
+                failed.add(rel)
         removed = len(strays) - len(failed)
         if log and (removed or failed):
             log(

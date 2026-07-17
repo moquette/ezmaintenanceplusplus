@@ -1892,9 +1892,9 @@ def _iptv_profile_prefixes(namelist, anchor):
 def _sweep_iptv_instances(namelist, anchor, log=None):
     """Adapter: compute the archive's userdata-relative paths and delegate the IPTV
     stray-instance sweep to nsud.sweep_iptv_instances - the two-layer delete plus
-    plist read-back verification live with the rest of the tvOS storage machinery
-    (inside the hardware gate's fingerprint), not here. Runs AFTER the extract; see
-    restore(). Returns (removed, failed_list); never raises."""
+    live-layer (listdir dup-count) verification live with the rest of the tvOS
+    storage machinery (inside the hardware gate's fingerprint), not here. Runs
+    AFTER the extract; see restore(). Returns (removed, failed_list); never raises."""
     try:
         rels = [r for r in (_userdata_rel(m, anchor) for m in namelist) if r]
         from resources.lib.modules import nsud

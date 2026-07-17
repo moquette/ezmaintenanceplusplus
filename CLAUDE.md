@@ -80,6 +80,55 @@ regress:
 - Kodi does **not** re-materialize a disk file from its NSUserDefaults mirror. A key
   shadows the disk; nothing ever copies it back.
 
+## The backup/restore contract (owner-decided 2026-07-16)
+
+These are the rules every session must hold the backup/restore/wipe code to
+(implementation landing 2026-07-16; treat any older behavior in the tree as a bug,
+not a spec):
+
+- **Full means full.** A full backup captures EVERYTHING on both OSes, INCLUDING
+  `addon_data/pvr.iptvsimple`. The 2026.07.08.5 "zero IPTV" backup exclusion is
+  REVERSED - do not reintroduce it. The only exclusions are the add-on's own
+  `settings.xml` (it carries the Dropbox token) and `special://home/temp` at the
+  ROOT only.
+- **Two-layer tvOS capture, loud failures.** A tvOS backup reads BOTH layers: the
+  POSIX walk plus the NSUserDefaults plist capture (`nsub.py`), IPTV included. A
+  tvOS capture failure FAILS the backup loudly; a backup never silently omits what
+  it could not read.
+- **Manifest + truthful reporting.** Every backup embeds `backup_manifest.json`
+  (`{"created","source_os","entries","failed":[...]}`). Restore verifies the
+  extract against it and reports extracted/skipped/failed truthfully; a partial
+  restore is reported as PARTIAL, never "Complete".
+- **Instance-settings sweep; one bounded toggle.** Restore sweeps the target's
+  STRAY `instance-settings-*.xml` AFTER the extract (files the archive does not
+  carry; a cancel can never destroy config the box already had) so pvr.iptvsimple
+  state exactly equals the archive (the duplicate-instance brick guard). The ONLY
+  sanctioned add-on toggle anywhere is the restore-scoped PVR pause: when the
+  archive carries IPTV config and pvr.iptvsimple is enabled, restore disables it
+  for the extract window and ALWAYS re-enables it afterward (cancel path
+  included; a re-enable failure is reported loudly). Without the pause, the live
+  client flushes stale in-memory instance settings over the restored files at
+  the next clean shutdown (hardware-proven, kodi-settings-clobber.md). There is
+  still ZERO boot-time automation and restore never installs or stages add-ons.
+- **Two-layer wipe.** A wipe on tvOS (One-Tap clean wipe, Fresh Start) clears BOTH
+  layers - the POSIX files AND the NSUserDefaults keys - with the same exclusions.
+  A POSIX-only wipe leaves stale keys that shadow the restored files; that bug
+  class is closed, do not regress it.
+- **Stale-key purge semantics.** `nsud.purge_stale_keys` (a one-shot service
+  migration plus a manual menu action) clears the vector-everything-era stale
+  keys. It MUST materialize any key-only file to disk first - the purge never
+  destroys the only copy of anything.
+- **Verification widened, gate unchanged.** `tools/verify_device.py` gains
+  restore_contract checks (IPTV inventory, profile fingerprint, duplicate-listing,
+  shadow probe) and a `--diff` mode. Hardware verification stays owner-gated and
+  REQUIRED before release; this contract widens what the gate checks, it does not
+  weaken the gate.
+
+The tvOS storage facts above remain true and load-bearing under this contract: a
+key SHADOWS the disk file, Kodi never re-materializes a disk file from a key, and
+`xbmcvfs.delete()` on tvOS drops only the key while leaving the POSIX file. The
+two-layer wipe and the purge exist BECAUSE of those facts.
+
 ## House rules (inherited from the fleet's workflow)
 
 - implement -> TEST -> gate (pytest + ruff green) -> adversarial QA -> REAL-DEVICE

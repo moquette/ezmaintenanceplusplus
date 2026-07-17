@@ -794,9 +794,10 @@ def test_plugin_root_menu_renders(monkeypatch, tmp_path):
     _import_plugin(
         monkeypatch, tmp_path, rec, ["plugin://script.ezmaintenanceplusplus/", "7", ""]
     )
-    # 9 menu rows + the non-clickable version row.
-    # (Went 8 -> 9 in 2026.07.13.1 when "Set up this box" was added.)
-    assert len(rec.dir_items) == 10
+    # 10 menu rows + the non-clickable version row.
+    # (Went 8 -> 9 in 2026.07.13.1 when "Set up this box" was added; 9 -> 10 on
+    # 2026-07-16 when the "Tools" folder landed: stale-key purge + backup verify.)
+    assert len(rec.dir_items) == 11
     assert rec.end_dirs == [True]
 
 

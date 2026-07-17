@@ -3,7 +3,8 @@ THROUGH xbmcvfs, so Kodi vectors each file into NSUserDefaults.
 
 Why this exists (root cause, verified in Kodi's tvOS source `xbmc/platform/darwin/tvos/`):
 tvOS gives an app ~500 KB of normal app-directory storage, so Kodi stores `userdata/*.xml`
-in the app's NSUserDefaults and rewrites the on-disk files from that mirror on launch. A
+in the app's NSUserDefaults; a key SHADOWS the disk file (reads check the key FIRST) and
+Kodi NEVER copies a key back to disk (corrected fact, see CLAUDE.md and the NOTE below). A
 `.xml` write THROUGH xbmcvfs is dispatched to `CTVOSFile::Write` ->
 `CTVOSNSUserDefaults::SetKeyDataFromPath(..., synchronize=true)` -> `[NSUserDefaults
 synchronize]`, i.e. persisted to the only durable tvOS store BEFORE the call returns, with
@@ -28,7 +29,9 @@ Hard rules (see docs/plans/atv-restore-*.md and the adversarial review that prod
   and service.py int()-parses those at import -> would crash the boot service).
 """
 
+import gzip
 import os
+import re
 
 import xbmcvfs
 
@@ -221,8 +224,10 @@ def rewrite_userdata_xml(
     userdata file twice (see the tvOS-restore-duplicate-userdata incident). After a
     CONFIRMED vector (``_vfs_rewrite_once`` returned True, i.e. the bytes are in
     NSUserDefaults), and ONLY when ``_is_tvos()`` positively confirms Apple TV, remove the
-    now-redundant POSIX copy so only the coherent CTVOSFile/NSUserDefaults entity remains;
-    Kodi re-materializes the disk file from NSUserDefaults on the next launch. This is
+    now-redundant POSIX copy so only the coherent CTVOSFile/NSUserDefaults entity remains.
+    The key is then the ONLY copy - Kodi never re-materializes a disk file from a key
+    (corrected fact; the opposite claim caused the 2026-07-14 data loss) - a conscious
+    zero-fallback trade made only for files Kodi itself reads through the VFS. This is
     ordered write-then-delete (never delete a file whose content is not already durably in
     NSUserDefaults) and is a strict no-op on Fire TV / Android / desktop, where the same
     ``special://`` path IS the POSIX file. ``drop_posix_on_tvos=False`` disables it entirely
@@ -318,3 +323,292 @@ def persist_one(rel, log=None):
         return True
     except Exception:  # noqa: BLE001 - never abort the caller
         return False
+
+
+# --------------------------------------------------------------------------- #
+# Stale-key purge (the vector-everything-era cleanup).
+# --------------------------------------------------------------------------- #
+
+# NSUserDefaults key namespace Kodi uses for vectored userdata files
+# (TVOSNSUserDefaults::IsKeyFromPath: the path under <home>/userdata -> "/userdata/<rel>").
+_NSUD_KEY_PREFIX = "/userdata/"
+
+
+def _load_plist(path):
+    """Load one binary/xml plist; None on any failure (never raises)."""
+    try:
+        import plistlib
+
+        with open(path, "rb") as fh:
+            return plistlib.load(fh)
+    except Exception:
+        return None
+
+
+def _find_nsud_plist():
+    """Locate Kodi's NSUserDefaults backing store: the plist at
+    `<sandbox>/Library/Preferences/<bundle-id>.plist`. Same resolution as nsub.py's
+    capture (kept local so nsud never imports nsub): from special://home
+    (.../Library/Caches/Kodi on tvOS) walk up to Library/Preferences and pick the
+    .plist that actually holds `/userdata/*` keys - confirmed by CONTENT, never by
+    name alone. Returns (path, loaded_dict) or (None, None). This shape only
+    resolves on tvOS; on Fire TV / desktop the dir does not exist (or holds no such
+    plist), so callers no-op."""
+    try:
+        home = xbmcvfs.translatePath("special://home")
+    except Exception:
+        return (None, None)
+    prefs = os.path.normpath(os.path.join(home, "..", "..", "Preferences"))
+    try:
+        names = [n for n in os.listdir(prefs) if n.endswith(".plist")]
+    except OSError:
+        return (None, None)
+    names.sort(key=lambda n: ("kodi" not in n.lower(), n))
+    for name in names:
+        path = os.path.join(prefs, name)
+        data = _load_plist(path)
+        if data is None:
+            continue
+        if any(isinstance(k, str) and k.startswith(_NSUD_KEY_PREFIX) for k in data):
+            return (path, data)
+    return (None, None)
+
+
+def _decode_key_value(v):
+    """An NSUserDefaults plist value -> the real file bytes. Kodi gzip-compresses the
+    value (small ones may be stored raw). Returns bytes, or None if empty/undecodable."""
+    try:
+        raw = bytes(v)
+    except Exception:
+        return None
+    if not raw:
+        return None
+    if raw[:2] == b"\x1f\x8b":  # gzip magic
+        try:
+            return gzip.decompress(raw)
+        except Exception:
+            return None
+    return raw
+
+
+def purge_stale_keys(userdata_root, log=None):
+    """Purge NSUserDefaults keys left over from the vector-everything era. tvOS ONLY.
+
+    EZM++ 2026.07.08.2 through 2026.07.13.x vectored EVERY restored userdata *.xml into
+    NSUserDefaults. `_should_vector` was later scoped down to only the files Kodi itself
+    reads through its VFS, but the stale keys for the now-out-of-scope files (add-on
+    private xml such as script.skinshortcuts' *.DATA.xml) are still in the store - and a
+    key SHADOWS the POSIX file (CTVOSFile::Exists/Open check the key FIRST,
+    TVOSFile.cpp:113-122), so a restored or hand-copied file silently never applies.
+    This is the general cleanup: enumerate every `/userdata/*` key and drop the ones the
+    current policy would not have created.
+
+    Per key:
+      * IN-SCOPE (`_should_vector(rel)` True): KEPT, always. On tvOS the key IS the live
+        durable store for that file; purging it would destroy the setting.
+      * customcontroller.SiriRemote* or any non-.xml relpath: KEPT and NEVER passed to
+        xbmcvfs.delete. Kodi's WantsFile (TVOSFile.cpp:39-45) excludes those paths from
+        CTVOSFile, so the delete would dispatch to CPosixFile and remove the REAL disk
+        file - the only copy. (No such key should exist, since only VFS writes create
+        keys; this is a hard guard, not an expectation.)
+      * OUT-OF-SCOPE: purged. SAFETY FIRST: if no POSIX file exists at
+        `<userdata_root>/<rel>` the key is the ONLY copy of that file, so its decoded
+        content is materialized to disk with plain open() BEFORE the key is dropped.
+        Plain open() is deliberate twice over: on tvOS an xbmcvfs write to a userdata
+        xml goes to NSUserDefaults and never reaches disk, and the out-of-scope files
+        are exactly the ones whose owners read them with plain open(). A key that cannot
+        be decoded or written is KEPT and counted failed - the purge never destroys the
+        only copy of anything.
+
+    The drop itself is `xbmcvfs.delete("special://home/userdata/<rel>")`: on tvOS that
+    dispatches to CTVOSFile::Delete -> DeleteKeyFromPath, which removes ONLY the key and
+    (for WantsFile-eligible paths) never touches the POSIX file - the one job that API
+    is actually good for. Its boolean return is True whether or not a key existed
+    (TVOSNSUserDefaults.mm:188-202), so every deletion is confirmed by re-reading the
+    plist afterwards; an unconfirmed delete counts as failed, never as purged.
+
+    Hard-gated: a strict (0, 0, 0, 0) no-op unless `_is_tvos()` positively confirms
+    Apple TV (and the NSUserDefaults plist resolves, which it only does there). Fully
+    guarded, never raises. Returns (materialized, purged, kept, failed)."""
+    materialized = purged = kept = failed = 0
+    if not _is_tvos() or not userdata_root:
+        return (0, 0, 0, 0)
+    to_purge = []  # (rel, key) pairs safe to drop (any only-copy already on disk)
+    plist_path = None
+    try:
+        plist_path, store = _find_nsud_plist()
+        if not store:
+            return (0, 0, 0, 0)
+        for key in sorted(k for k in store if isinstance(k, str)):
+            if not key.startswith(_NSUD_KEY_PREFIX):
+                continue  # bookkeeping keys like 'UserdataMigrated'
+            rel = key[len(_NSUD_KEY_PREFIX) :].replace("\\", "/").lstrip("/")
+            if not rel:
+                continue
+            base = os.path.basename(rel).lower()
+            if not base.endswith(".xml") or base.startswith(
+                "customcontroller.siriremote"
+            ):
+                # WantsFile excludes these paths, so xbmcvfs.delete would be a POSIX
+                # delete of the real disk file. Keep the key, touch nothing.
+                kept += 1
+                continue
+            if _should_vector(rel):
+                kept += 1  # in-scope: the key is the live store - NEVER purge
+                continue
+            posix = os.path.join(userdata_root, *rel.split("/"))
+            if not os.path.exists(posix):
+                # The key is the ONLY copy. Materialize it to disk first, or keep it.
+                data = _decode_key_value(store[key])
+                if data is None:
+                    failed += 1
+                    if log:
+                        log(
+                            "nsud.purge_stale_keys: %s is key-only and undecodable "
+                            "- key kept" % rel
+                        )
+                    continue
+                try:
+                    d = os.path.dirname(posix)
+                    if d:
+                        os.makedirs(d, exist_ok=True)
+                    with open(posix, "wb") as fh:
+                        fh.write(data)
+                except OSError:
+                    failed += 1
+                    if log:
+                        log(
+                            "nsud.purge_stale_keys: could not materialize %s "
+                            "- key kept" % rel
+                        )
+                    continue
+                materialized += 1
+            to_purge.append((rel, key))
+        for rel, _key in to_purge:
+            try:
+                # tvOS: drops ONLY the NSUserDefaults key; the POSIX file stands.
+                xbmcvfs.delete(_special_for(rel))
+            except Exception:
+                pass  # confirmation below counts it as failed
+        # xbmcvfs.delete's boolean lies (True even when nothing happened), so confirm
+        # against the store itself: re-read the plist and count only vanished keys.
+        after = _load_plist(plist_path) if plist_path else None
+        remaining = set(after) if after is not None else None
+        for _rel, key in to_purge:
+            if remaining is not None and key not in remaining:
+                purged += 1
+            else:
+                failed += 1
+    except Exception:  # noqa: BLE001 - never abort the caller (counts stand as-is)
+        pass
+    if log:
+        log(
+            "nsud.purge_stale_keys: %d materialized, %d purged, %d kept, %d failed"
+            % (materialized, purged, kept, failed)
+        )
+    return (materialized, purged, kept, failed)
+
+
+# --------------------------------------------------------------------------- #
+# IPTV stray-instance sweep (the 2026-07-08 duplicate-instance brick guard).
+# Lives HERE - with the rest of the tvOS two-layer storage machinery, inside the
+# hardware gate's fingerprint - and is called by wiz.restore() AFTER the extract.
+# --------------------------------------------------------------------------- #
+_IPTV_ADDON_DATA = "addon_data/pvr.iptvsimple/"
+_INSTANCE_XML_RE = re.compile(r"^instance-settings-\d+\.xml$", re.IGNORECASE)
+_PROFILE_IPTV_RE = re.compile(
+    r"^(profiles/[^/]+/)addon_data/pvr\.iptvsimple/", re.IGNORECASE
+)
+
+
+def sweep_iptv_instances(userdata_root, archive_rels=None, log=None):
+    """Delete the target's STRAY pvr.iptvsimple instance-settings-*.xml: files the
+    ARCHIVE does not carry, under the profile prefixes where the archive DOES carry
+    pvr.iptvsimple addon_data. Called after the extract (the archive's own instance
+    files were just written in place), so a canceled restore never costs the box the
+    config it already had. Enumerates BOTH layers - the POSIX listing AND (tvOS) the
+    NSUserDefaults plist - because an instance key can exist with no disk file:
+    exactly the residue that produced the duplicate numbering. Every key drop is
+    VERIFIED by re-reading the plist afterward (xbmcvfs.delete's boolean lies on
+    tvOS); a surviving key is counted FAILED, never removed. archive_rels are the
+    archive's userdata-relative paths. Returns (removed, failed_list); never raises.
+    """
+    removed = 0
+    failed = set()
+    try:
+        rels_in = [str(r).replace("\\", "/").lstrip("/") for r in (archive_rels or [])]
+        prefixes = set()
+        carried = set()
+        for rel in rels_in:
+            if rel.lower().startswith(_IPTV_ADDON_DATA):
+                prefixes.add("")
+            else:
+                m = _PROFILE_IPTV_RE.match(rel)
+                if not m:
+                    continue
+                prefixes.add(m.group(1))
+            base = rel.rsplit("/", 1)[-1]
+            if _INSTANCE_XML_RE.match(base):
+                carried.add(rel.lower())
+        if not prefixes:
+            return (0, [])
+        targets = set()
+        for prefix in prefixes:
+            posix_dir = os.path.join(
+                userdata_root, *(prefix + _IPTV_ADDON_DATA).rstrip("/").split("/")
+            )
+            try:
+                names = os.listdir(posix_dir)
+            except OSError:
+                names = []
+            for nm in names:
+                if _INSTANCE_XML_RE.match(nm):
+                    targets.add(prefix + _IPTV_ADDON_DATA + nm)
+        plist_path, store = _find_nsud_plist()
+        if store:
+            for key in store:
+                if not (isinstance(key, str) and key.startswith(_NSUD_KEY_PREFIX)):
+                    continue
+                rel = key[len(_NSUD_KEY_PREFIX) :].replace("\\", "/").lstrip("/")
+                base = rel.rsplit("/", 1)[-1]
+                if not _INSTANCE_XML_RE.match(base):
+                    continue
+                for prefix in prefixes:
+                    if rel == prefix + _IPTV_ADDON_DATA + base:
+                        targets.add(rel)
+                        break
+        strays = sorted(t for t in targets if t.lower() not in carried)
+        if not strays:
+            return (0, [])
+        for rel in strays:
+            try:
+                # tvOS: drops ONLY the NSUserDefaults key (verified below); on Fire
+                # TV / desktop this IS the POSIX delete.
+                xbmcvfs.delete(_special_for(rel))
+            except Exception:
+                pass  # the layer checks below count it as failed
+            posix = os.path.join(userdata_root, *rel.split("/"))
+            try:
+                if os.path.exists(posix):
+                    os.remove(posix)
+            except OSError:
+                pass
+            if os.path.exists(posix):
+                failed.add(rel)
+        # xbmcvfs.delete's boolean lies (True even when nothing happened), so the
+        # KEY layer is confirmed against the store itself: re-read the plist; a
+        # stray key still present will shadow the restore and counts as FAILED.
+        after = _load_plist(plist_path) if plist_path else None
+        if after is not None:
+            for rel in strays:
+                if (_NSUD_KEY_PREFIX + rel) in after:
+                    failed.add(rel)
+        removed = len(strays) - len(failed)
+        if log and (removed or failed):
+            log(
+                "nsud.sweep_iptv_instances: removed %d stray(s), failed %d (%s)"
+                % (removed, len(failed), ", ".join(sorted(failed)[:5]) or "none")
+            )
+    except Exception:  # noqa: BLE001 - never abort the caller (restore reports counts)
+        failed.add("sweep aborted")
+    return (removed, sorted(failed))

@@ -69,7 +69,15 @@ def CATEGORIES():
         "",
         isFolder=True,
     )
-    # CreateDir('Tools','ur','tools',ADDON_ICON,ADDON_FANART,'', isFolder=True)
+    CreateDir(
+        "Tools",
+        "ur",
+        "tools",
+        ADDON_ICON,
+        ADDON_FANART,
+        "",
+        isFolder=True,
+    )
 
     CreateDir(
         "Maintenance",
@@ -168,6 +176,265 @@ def BOX_SETUP():
     CreateDir("Enable RSS ticker", "url", "setup_rss", ADDON_ICON, ADDON_FANART, "")
 
 
+def TOOLS():
+    CreateDir(
+        "Purge stale tvOS keys",
+        "url",
+        "purge_stale_tvos_keys",
+        ADDON_ICON,
+        ADDON_FANART,
+        "Apple TV only: write key-only userdata files back to disk, then purge "
+        "stale NSUserDefaults keys.",
+    )
+    CreateDir(
+        "Verify backup archive",
+        "url",
+        "verify_backup_archive",
+        ADDON_ICON,
+        ADDON_FANART,
+        "Read-only check of a backup zip: entry count, manifest, failed list, "
+        "IPTV data, top-level layout. Restores nothing.",
+    )
+
+
+# ###########################################################################################
+# ##################################### OWNER TOOLS #########################################
+
+
+def _is_tvos():
+    """Apple TV detection via Kodi's own platform condition (the same condition
+    nsud uses). Defaults to False (the safe answer) on any error."""
+    try:
+        return bool(xbmc.getCondVisibility("System.Platform.TVOS"))
+    except Exception:
+        return False
+
+
+# The four counters nsud.purge_stale_keys reports, in its result order.
+PURGE_COUNT_LABELS = ("materialized", "purged", "kept", "failed")
+
+
+def summarize_purge_result(result):
+    """Render nsud.purge_stale_keys()'s (materialized, purged, kept, failed) result
+    as dialog lines. Each field may be an int or a list of names (its len() is the
+    count); a dict carrying the same four keys is accepted too. Returns None when the
+    shape is unrecognized so the caller can fall back to showing the raw value."""
+    values = None
+    if isinstance(result, dict):
+        if all(k in result for k in PURGE_COUNT_LABELS):
+            values = [result[k] for k in PURGE_COUNT_LABELS]
+    elif isinstance(result, (tuple, list)) and len(result) == len(PURGE_COUNT_LABELS):
+        values = list(result)
+    if values is None:
+        return None
+    counts = []
+    for value in values:
+        if isinstance(value, bool):
+            return None
+        try:
+            counts.append(int(value))
+        except (TypeError, ValueError):
+            try:
+                counts.append(len(value))
+            except TypeError:
+                return None
+    return "Materialized: %d\nPurged: %d\nKept: %d\nFailed: %d" % tuple(counts)
+
+
+def PURGE_STALE_TVOS_KEYS():
+    """Owner tool (tvOS only): have nsud write any key-only userdata file back to
+    disk, then purge the stale NSUserDefaults keys, and report the counts."""
+    if not _is_tvos():
+        ui.done(
+            "Purge stale tvOS keys applies to Apple TV (tvOS) only.\n"
+            "This device keeps its userdata files on disk with no NSUserDefaults "
+            "shadow, so there is nothing to purge here."
+        )
+        return
+    from resources.lib.modules import nsud
+
+    # The purge may land in a later build than this menu item; degrade gracefully
+    # instead of raising AttributeError on a live box.
+    if not hasattr(nsud, "purge_stale_keys"):
+        ui.error(
+            "Purge stale tvOS keys is not available in this build.\n"
+            "Update EZ Maintenance++ to a build that ships nsud.purge_stale_keys."
+        )
+        return
+    if not ui.confirm(
+        "Scan NSUserDefaults for stale userdata keys?\n"
+        "Any key-only file is written back to disk first; the purge never "
+        "destroys the only copy of anything.",
+        yeslabel="Purge",
+        nolabel="Cancel",
+    ):
+        return
+    try:
+        result = nsud.purge_stale_keys(control.USERDATA)
+    except Exception as e:
+        ui.error("Purge failed: %s: %s" % (type(e).__name__, e))
+        return
+    summary = summarize_purge_result(result)
+    if summary is None:
+        summary = "Result: %r" % (result,)
+    ui.done("Stale tvOS key purge finished.\n%s" % summary)
+
+
+# The manifest wiz.backup embeds ({"created","source_os","entries","failed":[...]}).
+BACKUP_MANIFEST_NAME = "backup_manifest.json"
+# Any entry under this addon_data path means the archive carries IPTV client state,
+# whether the zip is anchored at home/ ("userdata/addon_data/...") or at userdata/.
+IPTV_ADDON_DATA_MARKER = "addon_data/pvr.iptvsimple/"
+
+
+def analyze_backup_zip(zip_path):
+    """Read-only analysis of a backup zip (never extracts, never restores).
+
+    Returns a dict:
+      total_entries     - int, every member in the archive
+      manifest_present  - bool, backup_manifest.json anywhere in the archive
+      manifest_failed   - list[str], the manifest's "failed" list ([] if absent)
+      iptv_present      - bool, any addon_data/pvr.iptvsimple/ entry
+      composition       - {"userdata": n, "addons": n, "media": n, "other": n}
+                          counted by each member's top-level path segment
+
+    Raises whatever zipfile raises on an unreadable/corrupt archive; the caller
+    turns that into a dialog."""
+    import json
+    import zipfile
+
+    report = {
+        "total_entries": 0,
+        "manifest_present": False,
+        "manifest_failed": [],
+        "iptv_present": False,
+        "composition": {"userdata": 0, "addons": 0, "media": 0, "other": 0},
+    }
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        names = zf.namelist()
+        report["total_entries"] = len(names)
+        manifest_member = None
+        for member in names:
+            norm = member.replace("\\", "/").lstrip("/")
+            if not norm:
+                continue
+            top = norm.split("/", 1)[0]
+            if top in report["composition"]:
+                report["composition"][top] += 1
+            else:
+                report["composition"]["other"] += 1
+            if norm.split("/")[-1] == BACKUP_MANIFEST_NAME and manifest_member is None:
+                manifest_member = member
+                report["manifest_present"] = True
+            if IPTV_ADDON_DATA_MARKER in norm:
+                report["iptv_present"] = True
+        if manifest_member is not None:
+            try:
+                data = json.loads(zf.read(manifest_member).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                data = None
+            if isinstance(data, dict):
+                failed = data.get("failed")
+                if isinstance(failed, list):
+                    report["manifest_failed"] = [str(item) for item in failed]
+    return report
+
+
+def format_backup_report(report, zip_name=""):
+    """Turn analyze_backup_zip()'s dict into the owner-facing dialog text."""
+    comp = report["composition"]
+    lines = []
+    if zip_name:
+        lines.append("Backup archive: %s" % zip_name)
+    lines.append("Total entries: %d" % report["total_entries"])
+    lines.append(
+        "Manifest (%s): %s"
+        % (BACKUP_MANIFEST_NAME, "present" if report["manifest_present"] else "MISSING")
+    )
+    failed = report["manifest_failed"]
+    if failed:
+        shown = ", ".join(failed[:5])
+        extra = len(failed) - 5
+        if extra > 0:
+            shown += ", and %d more" % extra
+        lines.append("Manifest failed items (%d): %s" % (len(failed), shown))
+    elif report["manifest_present"]:
+        lines.append("Manifest failed items: none")
+    lines.append(
+        "IPTV (pvr.iptvsimple) data: %s" % ("yes" if report["iptv_present"] else "no")
+    )
+    lines.append(
+        "Top level: userdata=%d, addons=%d, media=%d, other=%d"
+        % (comp["userdata"], comp["addons"], comp["media"], comp["other"])
+    )
+    return "\n".join(lines)
+
+
+def VERIFY_BACKUP_ARCHIVE():
+    """Owner tool: pick a backup zip (same restore.path picker restore uses), open
+    it READ-ONLY, and report what is inside. Never extracts, never restores."""
+    zipFolder = control.setting("restore.path")
+    try:
+        # Reuse wiz's baked-nfs-port fix when this build has it (see wiz.py: Kodi's
+        # browse dialog bakes :2049 into nfs:// paths, which then fail to list).
+        from resources.lib.modules import wiz
+
+        if hasattr(wiz, "_strip_nfs_port"):
+            zipFolder = wiz._strip_nfs_port(zipFolder)
+    except Exception:
+        pass
+    if zipFolder == "" or zipFolder is None:
+        control.infoDialog("Please Setup a Zip Files Location first")
+        control.openSettings()
+        return
+    try:
+        _dirs, _files = xbmcvfs.listdir(zipFolder)
+    except Exception:
+        _files = []
+    names = [f for f in _files if f.endswith(".zip")]
+    if not names:
+        ui.error("No backup zips found in:\n%s" % zipFolder)
+        return
+    select = control.selectDialog(names)
+    if select == -1:
+        return
+    chosen = names[select]
+    source = translatePath(os.path.join(zipFolder, chosen))
+    local = source
+    temp_special = None
+    if "://" in source:
+        # Remote share: zipfile cannot open a VFS URL, so stage a read-only copy in
+        # temp (the source archive itself is never touched).
+        temp_special = "special://temp/ezmpp_verify_%s" % chosen
+        try:
+            with ui.Progress(
+                "Fetching backup for verification...", heading=AddonTitle
+            ) as p:
+                outcome = ui.copy_with_progress(source, temp_special, progress=p)
+        except Exception:
+            ui.error("Could not fetch that backup from the share for verification.")
+            return
+        if outcome != ui.COPY_OK:
+            return  # user cancelled the fetch; nothing to report
+        local = translatePath(temp_special)
+    try:
+        try:
+            report = analyze_backup_zip(local)
+        except Exception as e:
+            ui.error(
+                "Could not read that zip (corrupt or not a zip?)\n%s: %s"
+                % (type(e).__name__, e)
+            )
+            return
+    finally:
+        if temp_special is not None:
+            try:
+                os.remove(translatePath(temp_special))
+            except OSError:
+                pass
+    ui.done(format_backup_report(report, chosen))
+
+
 # ###########################################################################################
 # ###########################################################################################
 
@@ -187,15 +454,22 @@ def FRESHSTART(mode="verbose"):
             return
     # The wipe is a single step (no per-item progress); the context-managed gauge shows a
     # 'Wiping install...' spinner and is always closed.
+    wipe_failed = None  # None = the wipe itself never ran (import failure / raise)
     with ui.Progress("Wiping install...", heading=AddonTitle):
         try:
             from resources.lib.modules import onetap
 
             # keep_addon_db() preserves Kodi's add-on state DB so EZ Maintenance++ comes
             # back ENABLED after the restart (not disabled/"gone", which was the bad UX).
-            onetap._wipe(HOME, onetap._wipe_excludes(), onetap.keep_addon_db())
-        except Exception:
-            pass
+            _f, _k, wipe_failed = onetap._wipe(
+                HOME, onetap._wipe_excludes(), onetap.keep_addon_db()
+            )
+        except Exception as e:
+            xbmc.log(
+                "%s : Fresh Start wipe FAILED: %s: %s"
+                % (AddonTitle, type(e).__name__, e),
+                level=xbmc.LOGERROR,
+            )
         try:
             xbmc.executebuiltin(
                 "UpdateLocalAddons"
@@ -203,11 +477,28 @@ def FRESHSTART(mode="verbose"):
         except Exception:
             pass
     if mode != "silent":
-        ui.done(
-            "Clean slate ready. Kodi will restart now.\n\n"
-            "After it restarts, EZ Maintenance++ is under Add-ons > Program add-ons "
-            "(if it is off, open it there and choose Enable)."
-        )
+        # Honest completion: "Clean slate ready" is only ever claimed when the wipe
+        # ran AND removed everything it was asked to. A wipe that never ran, or that
+        # left survivors (on tvOS: NSUserDefaults keys that resurrect old settings),
+        # says so plainly instead of pretending.
+        if wipe_failed is None:
+            ui.done(
+                "Fresh Start FAILED: the wipe did not run. Nothing was removed. "
+                "See the log."
+            )
+            return
+        if wipe_failed:
+            ui.done(
+                "Fresh Start INCOMPLETE: %d item(s) could not be removed and may "
+                "carry old settings over (see the log). Kodi will restart now."
+                % wipe_failed
+            )
+        else:
+            ui.done(
+                "Clean slate ready. Kodi will restart now.\n\n"
+                "After it restarts, EZ Maintenance++ is under Add-ons > Program add-ons "
+                "(if it is off, open it there and choose Enable)."
+            )
         ui.restart()
 
 
@@ -413,6 +704,15 @@ elif action == "dbtest":
 
 elif action == "box_setup":
     BOX_SETUP()
+
+elif action == "tools":
+    TOOLS()
+
+elif action == "purge_stale_tvos_keys":
+    PURGE_STALE_TVOS_KEYS()
+
+elif action == "verify_backup_archive":
+    VERIFY_BACKUP_ARCHIVE()
 
 elif action == "setup_all_box":
     from resources.lib.modules import boxsetup

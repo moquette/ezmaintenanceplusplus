@@ -31,19 +31,19 @@ A genuine hotfix that cannot wait for a device run may ship by committing an art
 {"waived": "<reason>"} for a class. That is a deliberate, reviewable act in git history -
 the opposite of a checklist quietly left unticked.
 
-FINGERPRINT SCOPE (GAP 3, reviewed 2026-07-14)
------------------------------------------------
-CONTRACT_FILES is deliberately just (nsud.py, boxsetup.py), not every module that
-imports xbmcvfs (control.py, wiz.py, maintenance.py, onetap.py also do). Those four were
-audited at review time: none writes a userdata/addon_data XML outside the sanctioned
-nsud path - they only stage/verify/delete backup ZIPs, a generic VFS operation that
-behaves identically on every platform and carries no NSUserDefaults-shadow risk. They
-are already covered for the risk that matters (an unguarded raw userdata write) by
-tests/test_no_raw_userdata_writer.py's AST lint, which walks every .py file in the
-add-on except nsud.py itself - not just these two. Widening this tuple was considered
-and not done: it would invalidate the current verification/<version>.json fingerprint
-for zero new coverage. See tools/verify_device.py's matching comment for the full
-rationale and the tracked follow-up condition.
+FINGERPRINT SCOPE (widened 2026-07-16; original GAP 3 review 2026-07-14)
+------------------------------------------------------------------------
+The 2026-07-14 review scoped CONTRACT_FILES to (nsud.py, boxsetup.py) because the
+other xbmcvfs importers "only stage/verify/delete backup ZIPs ... no
+NSUserDefaults-shadow risk". That justification is FALSE as of 2026-07-16 and its
+tracked follow-up condition has triggered: onetap.py now deletes NSUserDefaults keys
+(_wipe_nsud_keys, the two-layer wipe), nsud.py hosts the two-layer IPTV instance
+sweep wiz.restore() delegates to, and nsub.py's plist capture is the ONLY source of
+NSUD-resident settings in a tvOS backup (its silent omission WAS the 2026-07-08
+incident). All three are storage-contract mutations of exactly the class this gate
+exists for, and the AST write-lint cannot catch them (it lints raw WRITES, not
+deletes/wipes/captures). CONTRACT_FILES therefore includes nsud, boxsetup, nsub,
+onetap - and wiz.py, whose restore orchestration decides when each of those runs.
 """
 
 import hashlib
@@ -57,10 +57,13 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 ADDON_XML = ROOT / "script.ezmaintenanceplusplus/addon.xml"
 NSUD = ROOT / "script.ezmaintenanceplusplus/resources/lib/modules/nsud.py"
 BOXSETUP = ROOT / "script.ezmaintenanceplusplus/resources/lib/modules/boxsetup.py"
+NSUB = ROOT / "script.ezmaintenanceplusplus/resources/lib/modules/nsub.py"
+ONETAP = ROOT / "script.ezmaintenanceplusplus/resources/lib/modules/onetap.py"
+WIZ = ROOT / "script.ezmaintenanceplusplus/resources/lib/modules/wiz.py"
 VERIFY_DIR = ROOT / "verification"
 
 # MUST match verify_device.CONTRACT_FILES.
-CONTRACT_FILES = (NSUD, BOXSETUP)
+CONTRACT_FILES = (NSUD, BOXSETUP, NSUB, ONETAP, WIZ)
 REQUIRED_CLASSES = ("tvos", "android")
 
 
@@ -82,14 +85,22 @@ def _artifact_path():
 
 
 def _contract_changed_since_last_verification():
-    """True if the storage code differs from every fingerprint we have ever verified."""
+    """True if the storage code differs from every fingerprint we have ever verified.
+
+    Only COMPLETE artifacts count: one carrying an entry (or an explicit waiver)
+    for EVERY required device class. Without this, a single-class pull would mint
+    a 'verified' fingerprint and the gate would skip with the other class never
+    run - an incomplete verification must leave the gate demanding the rest."""
     verified = set()
     if VERIFY_DIR.is_dir():
         for p in VERIFY_DIR.glob("*.json"):
             try:
-                verified.add(json.loads(p.read_text()).get("storage_fingerprint"))
+                doc = json.loads(p.read_text())
             except (ValueError, OSError):
                 continue
+            devices = doc.get("devices", {})
+            if all(k in devices for k in REQUIRED_CLASSES):
+                verified.add(doc.get("storage_fingerprint"))
     return _fingerprint() not in verified
 
 

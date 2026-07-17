@@ -19,6 +19,49 @@ a metadata pointer at `addons/hosted/script.ezmaintenanceplusplus/` (addon.xml
   Releases - the same pattern already proven for `skin.estuary7`/`moquette/estuary7`.
   See the "Repo / build / test" section below for the current (accurate) workflow.
 
+## 2026-07-16 - Backup/restore contract overhaul (IPTV-loss root cause + reversal)
+
+Owner decision 2026-07-16, landing in code the same day. Root cause of the
+"restore lost my IPTV" failure class was FOUR compounding designs, not one bug:
+
+1. A DESIGNED IPTV exclusion in the backup: the 2026.07.08.5 "zero IPTV" policy
+   silently dropped `addon_data/pvr.iptvsimple` from every backup, so no backup
+   ever contained the IPTV config a restore was expected to bring back.
+2. The NSUserDefaults ratchet on tvOS: keys only ever accumulated (including the
+   vector-everything era's over-broad keys); nothing ever cleared them.
+3. A POSIX-only wipe: One-Tap / Fresh Start removed disk files but left every
+   NSUserDefaults key, so stale keys shadowed the restored files at boot.
+4. Silent-failure reporting: restore said "Complete" regardless of what actually
+   extracted or applied.
+
+The owner REVERSED the IPTV exclusion and set a new contract (all items landing
+2026-07-16):
+
+- Full = full: a backup captures EVERYTHING on both OSes, including
+  `addon_data/pvr.iptvsimple`. Only exclusions: EZM's own `settings.xml` (the
+  Dropbox token) and `special://home/temp` at the ROOT only.
+- tvOS backups capture BOTH layers (POSIX walk + NSUserDefaults plist capture,
+  IPTV included); a tvOS capture failure FAILS the backup loudly.
+- Every backup embeds `backup_manifest.json`
+  (`{"created","source_os","entries","failed":[...]}`); restore verifies the
+  extract against it and reports extracted/skipped/failed truthfully; a partial
+  restore is reported as PARTIAL, never "Complete".
+- Restore sweeps the target's `instance-settings-*.xml` so pvr.iptvsimple state
+  exactly equals the archive (the duplicate-instance brick guard); still ZERO
+  add-on enable/disable automation.
+- Wipe on tvOS clears BOTH layers (POSIX + NSUserDefaults keys), exclusions
+  respected.
+- `nsud.purge_stale_keys`: a one-shot service migration plus a manual menu
+  action that clears the vector-everything-era stale keys; any key-only file is
+  materialized to disk FIRST (the purge never destroys the only copy).
+- `tools/verify_device.py` gains restore_contract checks (IPTV inventory,
+  profile fingerprint, duplicate-listing, shadow probe) and a `--diff` mode.
+
+STATUS: contract decided and implementation landing 2026-07-16; **hardware
+verification on real devices (tvOS + Android) is PENDING and owner-gated -
+REQUIRED before any release.** Where anything below this entry conflicts with
+the contract above, it describes the OLD behavior.
+
 ## TL;DR
 
 EZ Maintenance++ (`script.ezmaintenanceplusplus`) is the all-in-one "Swiss Army

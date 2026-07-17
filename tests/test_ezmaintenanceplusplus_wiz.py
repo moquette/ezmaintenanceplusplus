@@ -1063,10 +1063,65 @@ def test_createzip_prunes_home_root(wiz, tmp_path):
     assert "guisettings.xml" in names2
 
 
+def test_createzip_never_embeds_ezm_own_settings(wiz, tmp_path):
+    """The backup must NEVER carry EZM's own settings.xml (Dropbox token + the
+    source box's paths). Regression for the secret leak backup_lint caught on a
+    real Fire TV 2026-07-16: the exclusion existed only on the tvOS NSUD path, not
+    on the POSIX walk. Covers both a full and a userdata-mode backup, and a
+    per-profile copy."""
+    import contextlib
+    import unittest.mock as mock
+    import zipfile as _zip
+
+    home = tmp_path / "home"
+    ez = home / "userdata" / "addon_data" / "script.ezmaintenanceplusplus"
+    ez.mkdir(parents=True)
+    (ez / "settings.xml").write_text("<settings><token/></settings>")
+    (ez / "data.json").write_text("{}")  # non-secret sibling: MUST be captured
+    prof = (
+        home
+        / "userdata"
+        / "profiles"
+        / "kid"
+        / "addon_data"
+        / "script.ezmaintenanceplusplus"
+    )
+    prof.mkdir(parents=True)
+    (prof / "settings.xml").write_text("<settings><token/></settings>")
+    (home / "userdata" / "guisettings.xml").write_text("<s/>")
+
+    class _P:
+        def cancelled(self):
+            return False
+
+        def items(self, *a, **k):
+            pass
+
+    @contextlib.contextmanager
+    def _prog(*a, **k):
+        yield _P()
+
+    with mock.patch.object(wiz.ui, "Progress", _prog):
+        full = tmp_path / "full.zip"
+        wiz.CreateZip(str(home), str(full), "h", "m", ["temp"], [".log"])
+        names = set(_zip.ZipFile(full).namelist())
+
+    secret_tail = "addon_data/script.ezmaintenanceplusplus/settings.xml"
+    assert not any(n.endswith(secret_tail) for n in names), (
+        "EZM's own settings.xml (top-level OR per-profile) must never be backed up"
+    )
+    # the non-secret sibling and other userdata are still captured
+    assert any(n.endswith("script.ezmaintenanceplusplus/data.json") for n in names)
+    assert any(n.endswith("userdata/guisettings.xml") for n in names)
+
+
 def test_sweep_and_iptv_removed_from_wiz(wiz):
-    """SAFETY BY CONSTRUCTION: the boot-time home-root delete sweep and the entire IPTV
-    subsystem are gone from wiz. Nothing here deletes files at boot, and a restore never
-    touches, enables, disables, or stages the IPTV client."""
+    """SAFETY BY CONSTRUCTION: the boot-time home-root delete sweep and all IPTV
+    enable/disable/stage automation are gone from wiz. Nothing here deletes files at
+    boot, and a restore never toggles the IPTV client (or any add-on). The ONLY
+    IPTV-adjacent behavior left is the restore-side duplicate-instance sweep
+    (_sweep_iptv_instances), which removes stale instance-settings-*.xml so the
+    restored state equals the archive - covered by its own tests below."""
     # The sweep function no longer exists as an attribute (nothing can call it).
     assert not hasattr(wiz, "sweep_home_root_pollution")
     assert not hasattr(wiz, "_USERDATA_STRAY_NAMES")
@@ -1129,3 +1184,626 @@ def test_post_restore_step_numbers_match_the_order_they_run_in():
 
     assert '"Finish setup (1 of 2): Device name"' in src
     assert '"Finish setup (2 of 2): Video quality"' in src
+
+
+# --------------------------------------------------------------------------- #
+# Honest backup: per-file failure accounting (A), manifest (C), root-only temp
+# exclusion (D), and the loud tvOS capture contract (B).
+# --------------------------------------------------------------------------- #
+class _NoopProgress:
+    def cancelled(self):
+        return False
+
+    def items(self, *a, **k):
+        pass
+
+
+def _run_create_zip(wiz, src, dst, exclude_dirs=("temp",), prune=False):
+    """Drive the REAL CreateZip with ui.Progress mocked out (no dialog)."""
+    import contextlib
+    import unittest.mock as mock
+
+    @contextlib.contextmanager
+    def _prog(*a, **k):
+        yield _NoopProgress()
+
+    with mock.patch.object(wiz.ui, "Progress", _prog):
+        return wiz.CreateZip(
+            str(src),
+            str(dst),
+            "h",
+            "m",
+            list(exclude_dirs),
+            [".log"],
+            prune_home_root=prune,
+        )
+
+
+def _load_nsub():
+    return importlib.import_module("resources.lib.modules.nsub")
+
+
+def _home_with(tmp_path, files, name="srchome"):
+    """A home tree with the given (relpath, body) files; returns its Path."""
+    home = tmp_path / name
+    for rel, body in files:
+        p = home / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(body)
+    return home
+
+
+def test_createzip_per_file_failure_keeps_rest_of_directory(wiz, tmp_path):
+    """(A) One unreadable file is COUNTED and NAMED; it never silently drops the
+    rest of its directory (the old per-directory except swallowed every file after
+    the first failure)."""
+    import os as _os
+    import zipfile as _zip
+
+    if _os.geteuid() == 0:
+        pytest.skip("running as root: chmod 000 cannot make a file unreadable")
+    home = _home_with(
+        tmp_path,
+        [
+            ("userdata/a.xml", "<a/>"),
+            ("userdata/b.xml", "<b/>"),
+            ("userdata/c.xml", "<c/>"),
+        ],
+    )
+    (home / "userdata" / "b.xml").chmod(0)
+    out = tmp_path / "out.zip"
+    try:
+        result = _run_create_zip(wiz, home, out)
+    finally:
+        (home / "userdata" / "b.xml").chmod(0o644)
+
+    names = set(_zip.ZipFile(out).namelist())
+    assert "userdata/a.xml" in names and "userdata/c.xml" in names, (
+        "the files AFTER the unreadable one must still be captured"
+    )
+    assert "userdata/b.xml" not in names
+    assert result.canceled is False
+    assert result.failed == ["userdata/b.xml"], "the failure must be named"
+
+
+def test_createzip_manifest_records_failures(wiz, tmp_path):
+    """(C) The embedded manifest carries created/source_os/entries/failed, with
+    failed naming exactly what the backup could not capture."""
+    import json as _json
+    import os as _os
+    import zipfile as _zip
+
+    if _os.geteuid() == 0:
+        pytest.skip("running as root: chmod 000 cannot make a file unreadable")
+    home = _home_with(
+        tmp_path, [("userdata/good.xml", "<g/>"), ("userdata/bad.xml", "<b/>")]
+    )
+    (home / "userdata" / "bad.xml").chmod(0)
+    out = tmp_path / "out.zip"
+    try:
+        result = _run_create_zip(wiz, home, out)
+    finally:
+        (home / "userdata" / "bad.xml").chmod(0o644)
+
+    with _zip.ZipFile(out) as z:
+        names = z.namelist()
+        assert wiz.MANIFEST_NAME in names
+        manifest = _json.loads(z.read(wiz.MANIFEST_NAME).decode("utf-8"))
+    assert manifest["source_os"] == "other"
+    assert manifest["failed"] == ["userdata/bad.xml"]
+    assert manifest["entries"] == len([n for n in names if n != wiz.MANIFEST_NAME])
+    assert manifest["created"], "an ISO created stamp must be present"
+    assert result.failed == ["userdata/bad.xml"]
+
+
+def test_createzip_manifest_clean_backup(wiz, tmp_path):
+    """(C) A clean backup's manifest has an accurate entry count and no failures."""
+    import json as _json
+    import zipfile as _zip
+
+    home = _home_with(
+        tmp_path, [("userdata/a.xml", "<a/>"), ("addons/x/addon.xml", "<x/>")]
+    )
+    out = tmp_path / "out.zip"
+    result = _run_create_zip(wiz, home, out)
+
+    with _zip.ZipFile(out) as z:
+        names = z.namelist()
+        manifest = _json.loads(z.read(wiz.MANIFEST_NAME).decode("utf-8"))
+    assert manifest["failed"] == []
+    assert manifest["entries"] == 2
+    assert len([n for n in names if n != wiz.MANIFEST_NAME]) == 2
+    assert result.failed == [] and result.entries == 2
+
+
+def test_createzip_prunes_temp_only_at_walk_root(wiz, tmp_path):
+    """(D) exclude_dirs=["temp"] means special://home/temp - the WALK ROOT only. A
+    nested dir that merely happens to be named temp is real content."""
+    import zipfile as _zip
+
+    home = _home_with(
+        tmp_path,
+        [
+            ("temp/junk.txt", "x"),
+            ("userdata/addon_data/plugin.x/temp/keep.txt", "y"),
+        ],
+    )
+    out = tmp_path / "out.zip"
+    _run_create_zip(wiz, home, out)
+
+    names = set(_zip.ZipFile(out).namelist())
+    assert "userdata/addon_data/plugin.x/temp/keep.txt" in names, (
+        "a NESTED temp dir must be captured"
+    )
+    assert not any(n.startswith("temp/") for n in names), (
+        "the root temp dir must be excluded"
+    )
+
+
+def test_createzip_tvos_capture_exception_fails_backup(wiz, monkeypatch, tmp_path):
+    """(B) On tvOS a raising NSUserDefaults capture FAILS the backup loudly
+    (BackupCaptureError) and removes the partial zip."""
+    nsub = _load_nsub()
+    monkeypatch.setattr(wiz, "_source_os", lambda: "tvos")
+
+    def boom(*a, **k):
+        raise RuntimeError("plist unreadable")
+
+    monkeypatch.setattr(nsub, "capture_nsud_userdata", boom)
+    home = _home_with(tmp_path, [("userdata/a.xml", "<a/>")])
+    out = tmp_path / "out.zip"
+    with pytest.raises(wiz.BackupCaptureError):
+        _run_create_zip(wiz, home, out)
+    assert not out.exists(), "the partial zip must be removed on a failed capture"
+
+
+def test_createzip_tvos_capture_failed_entries_fail_backup(wiz, monkeypatch, tmp_path):
+    """(B) On tvOS a capture reporting failed entries fails the backup - the zip
+    would be missing settings the owner cares about."""
+    nsub = _load_nsub()
+    monkeypatch.setattr(wiz, "_source_os", lambda: "tvos")
+    monkeypatch.setattr(nsub, "capture_nsud_userdata", lambda *a, **k: (3, 2, 1))
+    home = _home_with(tmp_path, [("userdata/a.xml", "<a/>")])
+    with pytest.raises(wiz.BackupCaptureError):
+        _run_create_zip(wiz, home, tmp_path / "out.zip")
+
+
+def test_createzip_tvos_missing_store_fails_backup(wiz, monkeypatch, tmp_path):
+    """(B) On tvOS the NSUserDefaults store ALWAYS exists; a capture that finds
+    nothing at all means it was never read - fail the backup."""
+    nsub = _load_nsub()
+    monkeypatch.setattr(wiz, "_source_os", lambda: "tvos")
+    monkeypatch.setattr(nsub, "capture_nsud_userdata", lambda *a, **k: (0, 0, 0))
+    home = _home_with(tmp_path, [("userdata/a.xml", "<a/>")])
+    with pytest.raises(wiz.BackupCaptureError):
+        _run_create_zip(wiz, home, tmp_path / "out.zip")
+
+
+def test_createzip_non_tvos_capture_error_is_noop(wiz, monkeypatch, tmp_path):
+    """(B) Off tvOS the capture is a true no-op: a hiccup is logged, the backup
+    completes cleanly with no failures recorded."""
+    import zipfile as _zip
+
+    nsub = _load_nsub()
+
+    def boom(*a, **k):
+        raise RuntimeError("no plist here")
+
+    monkeypatch.setattr(nsub, "capture_nsud_userdata", boom)
+    home = _home_with(tmp_path, [("userdata/a.xml", "<a/>")])
+    out = tmp_path / "out.zip"
+    result = _run_create_zip(wiz, home, out)
+    assert result.canceled is False and result.failed == []
+    names = set(_zip.ZipFile(out).namelist())
+    assert "userdata/a.xml" in names and wiz.MANIFEST_NAME in names
+
+
+def _stub_local_backup_env(wiz, monkeypatch, tmp_path, home):
+    """backup() stubs with a LOCAL download.path (no VFS ship) over a real home."""
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    monkeypatch.setattr(wiz.control, "HOME", str(home))
+    monkeypatch.setattr(
+        wiz.control,
+        "setting",
+        lambda key: str(dest) if key == "download.path" else "",
+    )
+    monkeypatch.setattr(wiz.tools, "_get_keyboard", lambda **k: "mybackup")
+    monkeypatch.setattr(wiz.ui, "confirm", lambda *a, **k: True)
+    monkeypatch.setattr(
+        wiz,
+        "xbmcaddon",
+        types.SimpleNamespace(
+            Addon=lambda: types.SimpleNamespace(getSetting=lambda k: "false")
+        ),
+    )
+    return dest
+
+
+def test_backup_tvos_capture_failure_no_success_no_rotation(wiz, monkeypatch, tmp_path):
+    """(B) backup(): a tvOS capture failure surfaces an error dialog, never claims
+    success, and never rotates the previous good backup."""
+    nsub = _load_nsub()
+    home = _home_with(tmp_path, [("userdata/a.xml", "<a/>")], name="home")
+    _stub_local_backup_env(wiz, monkeypatch, tmp_path, home)
+    monkeypatch.setattr(wiz, "_source_os", lambda: "tvos")
+
+    def boom(*a, **k):
+        raise RuntimeError("plist unreadable")
+
+    monkeypatch.setattr(nsub, "capture_nsud_userdata", boom)
+    rotations = []
+    monkeypatch.setattr(wiz, "_rotate_vfs", lambda *a, **k: rotations.append(a))
+    oks = []
+    monkeypatch.setattr(
+        wiz.dialog, "ok", lambda *a, **k: oks.append(" ".join(map(str, a)))
+    )
+
+    wiz.backup(mode="full")
+
+    assert rotations == [], "a failed backup must never rotate the previous one"
+    assert oks, "an error dialog must be shown"
+    assert "FAILED" in oks[-1]
+    assert not any("Backup complete" in m for m in oks)
+
+
+def test_backup_reports_uncaptured_files_before_claiming_success(
+    wiz, monkeypatch, tmp_path
+):
+    """(A/C) backup(): a backup with unreadable files says EXACTLY what is missing
+    in the completion dialog instead of a bare 'Backup complete'."""
+    import os as _os
+
+    if _os.geteuid() == 0:
+        pytest.skip("running as root: chmod 000 cannot make a file unreadable")
+    home = _home_with(
+        tmp_path,
+        [("userdata/good.xml", "<g/>"), ("userdata/bad.xml", "<b/>")],
+        name="home",
+    )
+    _stub_local_backup_env(wiz, monkeypatch, tmp_path, home)
+    monkeypatch.setattr(wiz, "_rotate_vfs", lambda *a, **k: None)
+    oks = []
+    monkeypatch.setattr(
+        wiz.dialog, "ok", lambda *a, **k: oks.append(" ".join(map(str, a)))
+    )
+    (home / "userdata" / "bad.xml").chmod(0)
+    try:
+        wiz.backup(mode="full")
+    finally:
+        (home / "userdata" / "bad.xml").chmod(0o644)
+
+    assert oks, "a completion dialog must be shown"
+    assert "userdata/bad.xml" in oks[-1], "the missing file must be NAMED"
+    assert "could NOT be captured" in oks[-1]
+
+
+# --------------------------------------------------------------------------- #
+# Truthful restore reporting (E) + manifest verification (F).
+# --------------------------------------------------------------------------- #
+def _record_restore_report(wiz, monkeypatch):
+    """Capture ask_restart statuses and dialog.ok messages from restore()."""
+    statuses = []
+    monkeypatch.setattr(
+        wiz.ui, "ask_restart", lambda status="", **k: statuses.append(status)
+    )
+    oks = []
+    monkeypatch.setattr(
+        wiz.dialog, "ok", lambda *a, **k: oks.append(" ".join(map(str, a)))
+    )
+    return statuses, oks
+
+
+def test_restore_reports_incomplete_when_members_fail(wiz, monkeypatch, tmp_path):
+    """(E) A member that fails to extract makes the report INCOMPLETE and NAMES the
+    member - never 'Restore Complete' computed from the pre-extract member count."""
+    home = _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks = _record_restore_report(wiz, monkeypatch)
+    # Extraction target for blocked.xml is an existing DIRECTORY -> extract fails.
+    (home / "userdata" / "blocked.xml").mkdir(parents=True)
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(src, [("guisettings.xml", "<s/>"), ("blocked.xml", "<b/>")])
+
+    wiz.restore(str(src), confirm=False)
+
+    assert statuses and statuses[0].startswith("Restore INCOMPLETE"), statuses
+    assert not any(s.startswith("Restore Complete") for s in statuses)
+    assert oks and "INCOMPLETE" in oks[-1] and "blocked.xml" in oks[-1]
+
+
+def test_restore_success_reports_true_extracted_count(wiz, monkeypatch, tmp_path):
+    """(E) A clean restore reports the count of members that actually landed."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks = _record_restore_report(wiz, monkeypatch)
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(
+        src,
+        [
+            ("guisettings.xml", "<s/>"),
+            ("sources.xml", "<s/>"),
+            ("RssFeeds.xml", "<r/>"),
+        ],
+    )
+
+    wiz.restore(str(src), confirm=False)
+
+    assert statuses and statuses[0].startswith("Restore Complete: 3 items"), statuses
+    assert oks == [], "a clean restore shows no failure dialog"
+
+
+def test_restore_manifest_mismatch_reports_partial(wiz, monkeypatch, tmp_path):
+    """(F) A manifest whose entry count does not match the archive is surfaced as a
+    problem: the report is INCOMPLETE even though every member extracted."""
+    import json as _json
+
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks = _record_restore_report(wiz, monkeypatch)
+
+    src = tmp_path / "kodi_settings_x.zip"
+    manifest = {"created": "t", "source_os": "tvos", "entries": 5, "failed": []}
+    _make_valid_zip(
+        src,
+        [
+            ("guisettings.xml", "<s/>"),
+            (wiz.MANIFEST_NAME, _json.dumps(manifest)),
+        ],
+    )
+
+    wiz.restore(str(src), confirm=False)
+
+    assert statuses and statuses[0].startswith("Restore INCOMPLETE"), statuses
+    assert oks and "manifest mismatch" in oks[-1]
+
+
+def test_restore_manifest_backup_gaps_surface(wiz, monkeypatch, tmp_path):
+    """(F) A manifest recording backup-time failures tells the user the RESTORE
+    cannot contain those items - surfaced, never silently dropped."""
+    import json as _json
+
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks = _record_restore_report(wiz, monkeypatch)
+
+    src = tmp_path / "kodi_settings_x.zip"
+    manifest = {
+        "created": "t",
+        "source_os": "tvos",
+        "entries": 1,
+        "failed": ["userdata/secret.xml"],
+    }
+    _make_valid_zip(
+        src,
+        [
+            ("guisettings.xml", "<s/>"),
+            (wiz.MANIFEST_NAME, _json.dumps(manifest)),
+        ],
+    )
+
+    wiz.restore(str(src), confirm=False)
+
+    assert statuses and statuses[0].startswith("Restore INCOMPLETE"), statuses
+    assert oks and "userdata/secret.xml" in oks[-1]
+
+
+def test_restore_matching_manifest_reports_complete_and_skips_manifest(
+    wiz, monkeypatch, tmp_path
+):
+    """(F) A consistent manifest verifies cleanly; the manifest member itself is
+    metadata and is never extracted to disk. Archives WITHOUT a manifest are
+    tolerated (covered by the other restore tests)."""
+    import json as _json
+
+    home = _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, _oks = _record_restore_report(wiz, monkeypatch)
+
+    src = tmp_path / "kodi_settings_x.zip"
+    manifest = {"created": "t", "source_os": "other", "entries": 2, "failed": []}
+    _make_valid_zip(
+        src,
+        [
+            ("guisettings.xml", "<s/>"),
+            ("sources.xml", "<s/>"),
+            (wiz.MANIFEST_NAME, _json.dumps(manifest)),
+        ],
+    )
+
+    wiz.restore(str(src), confirm=False)
+
+    assert statuses and statuses[0].startswith("Restore Complete: 2 items"), statuses
+    assert not (home / "userdata" / wiz.MANIFEST_NAME).exists()
+    assert not (home / wiz.MANIFEST_NAME).exists()
+
+
+def test_restore_complete_despite_stale_key_purge_failures(wiz, monkeypatch, tmp_path):
+    """A stale-key purge that cannot clear PRE-EXISTING vector-everything-era keys
+    (undecodable, or a tvOS async-flush confirm miss) must NOT downgrade the
+    restore to INCOMPLETE - the purge is hygiene of old cruft this restore did not
+    create. Regression for the false 'Restore INCOMPLETE' seen on atv2 2026-07-16,
+    where extract/sweep/rewrite were all 0-failed but the purge reported failures."""
+    from resources.lib.modules import nsud
+
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks = _record_restore_report(wiz, monkeypatch)
+    # The purge reports 3 UNRESOLVED pre-existing keys; the rewrite is clean.
+    monkeypatch.setattr(nsud, "purge_stale_keys", lambda root, log=None: (0, 5, 2, 3))
+    monkeypatch.setattr(
+        nsud, "rewrite_userdata_xml", lambda root, log=None: (0, 0, 0, 0)
+    )
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(src, [("guisettings.xml", "<s/>"), ("sources.xml", "<s/>")])
+
+    wiz.restore(str(src), confirm=False)
+
+    assert statuses and statuses[0].startswith("Restore Complete"), statuses
+    assert not any(s.startswith("Restore INCOMPLETE") for s in statuses)
+    assert oks == []  # no INCOMPLETE dialog
+
+
+def test_backup_restore_roundtrip_reports_complete(wiz, monkeypatch, tmp_path):
+    """End-to-end: a real CreateZip backup (manifest included) restores with a
+    clean manifest verification and a truthful Complete report."""
+    srchome = _home_with(
+        tmp_path,
+        [("userdata/guisettings.xml", "<s/>"), ("addons/plugin.x/addon.xml", "<a/>")],
+    )
+    out = tmp_path / "kodi_backup_202607161200.zip"
+    _run_create_zip(wiz, srchome, out, prune=True)
+
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks = _record_restore_report(wiz, monkeypatch)
+
+    wiz.restore(str(out), confirm=False)
+
+    assert statuses and statuses[0].startswith("Restore Complete: 2 items"), statuses
+    assert oks == []
+
+
+# --------------------------------------------------------------------------- #
+# Restore-side IPTV duplicate-instance sweep (G).
+# --------------------------------------------------------------------------- #
+def test_iptv_profile_prefixes(wiz):
+    """The sweep scope comes from the ARCHIVE: top-level and/or per-profile, and
+    only when pvr.iptvsimple addon_data is actually present."""
+    assert wiz._iptv_profile_prefixes(
+        ["userdata/addon_data/pvr.iptvsimple/instance-settings-1.xml"], "home"
+    ) == {""}
+    assert wiz._iptv_profile_prefixes(
+        [
+            "userdata/addon_data/pvr.iptvsimple/instance-settings-1.xml",
+            "userdata/profiles/Kids/addon_data/pvr.iptvsimple/instance-settings-2.xml",
+        ],
+        "home",
+    ) == {"", "profiles/Kids/"}
+    assert wiz._iptv_profile_prefixes(
+        ["addon_data/pvr.iptvsimple/customTVGroups.xml"], "userdata"
+    ) == {""}
+    # home anchor: a bare addon_data/ member is stray pollution, not userdata content
+    assert (
+        wiz._iptv_profile_prefixes(
+            ["addon_data/pvr.iptvsimple/instance-settings-1.xml"], "home"
+        )
+        == set()
+    )
+    assert wiz._iptv_profile_prefixes(["userdata/guisettings.xml"], "home") == set()
+
+
+def test_restore_sweeps_stale_iptv_instances(wiz, monkeypatch, tmp_path):
+    """(G) When the archive carries pvr.iptvsimple config, the TARGET's existing
+    instance-settings-*.xml are removed first, so instance numbering can never
+    accumulate (the 2026-07-08 duplicate-instance brick). settings.xml and the
+    archive's own instance files land normally."""
+    home = _prep_restore(wiz, monkeypatch, tmp_path)
+    iptv = home / "userdata" / "addon_data" / "pvr.iptvsimple"
+    iptv.mkdir(parents=True)
+    (iptv / "instance-settings-1.xml").write_text("<old/>")
+    (iptv / "instance-settings-7.xml").write_text("<stale/>")
+    (iptv / "settings.xml").write_text("<keep/>")
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(
+        src,
+        [
+            ("addon_data/pvr.iptvsimple/instance-settings-1.xml", "<new/>"),
+            ("guisettings.xml", "<s/>"),
+        ],
+    )
+
+    wiz.restore(str(src), confirm=False)
+
+    assert not (iptv / "instance-settings-7.xml").exists(), (
+        "a stale instance NOT in the archive must be swept"
+    )
+    assert (iptv / "instance-settings-1.xml").read_text() == "<new/>"
+    assert (iptv / "settings.xml").read_text() == "<keep/>", (
+        "the sweep only touches instance-settings-*.xml"
+    )
+
+
+def test_restore_without_iptv_leaves_target_instances_alone(wiz, monkeypatch, tmp_path):
+    """(G) No pvr.iptvsimple entries in the archive -> no sweep: the target's IPTV
+    config is not EZM's to touch."""
+    home = _prep_restore(wiz, monkeypatch, tmp_path)
+    iptv = home / "userdata" / "addon_data" / "pvr.iptvsimple"
+    iptv.mkdir(parents=True)
+    (iptv / "instance-settings-7.xml").write_text("<keep/>")
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(src, [("guisettings.xml", "<s/>")])
+
+    wiz.restore(str(src), confirm=False)
+
+    assert (iptv / "instance-settings-7.xml").read_text() == "<keep/>"
+
+
+def test_restore_sweep_scopes_per_profile_to_archive(wiz, monkeypatch, tmp_path):
+    """(G) Per-profile sweep only for profiles the archive carries; a top-level
+    instance file survives when the archive has no top-level IPTV entries."""
+    home = _prep_restore(wiz, monkeypatch, tmp_path)
+    top = home / "userdata" / "addon_data" / "pvr.iptvsimple"
+    top.mkdir(parents=True)
+    (top / "instance-settings-8.xml").write_text("<top/>")
+    kids = home / "userdata" / "profiles" / "Kids" / "addon_data" / "pvr.iptvsimple"
+    kids.mkdir(parents=True)
+    (kids / "instance-settings-9.xml").write_text("<stale/>")
+
+    src = tmp_path / "kodi_backup_x.zip"
+    _make_valid_zip(
+        src,
+        [
+            (
+                "userdata/profiles/Kids/addon_data/pvr.iptvsimple/"
+                "instance-settings-1.xml",
+                "<k/>",
+            ),
+            ("addons/plugin.x/addon.xml", "<a/>"),
+        ],
+    )
+
+    wiz.restore(str(src), confirm=False)
+
+    assert not (kids / "instance-settings-9.xml").exists(), (
+        "the archive's profile must be swept"
+    )
+    assert (kids / "instance-settings-1.xml").read_text() == "<k/>"
+    assert (top / "instance-settings-8.xml").read_text() == "<top/>", (
+        "a profile the archive does NOT carry is left alone"
+    )
+
+
+def test_restore_sweep_drops_nsud_key_without_posix_file(wiz, monkeypatch, tmp_path):
+    """(G, tvOS) An instance-settings key that exists ONLY in NSUserDefaults (no
+    disk file) is still swept: the key is dropped via the special:// path (the
+    sanctioned two-layer delete). Non-IPTV keys are never touched."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    # The sweep machinery lives in nsud (wiz delegates); patch ITS plist reader.
+    from resources.lib.modules import nsud
+
+    store = {
+        "/userdata/addon_data/pvr.iptvsimple/instance-settings-3.xml": b"x",
+        "/userdata/guisettings.xml": b"g",
+    }
+    monkeypatch.setattr(nsud, "_find_nsud_plist", lambda: ("plist", store))
+    monkeypatch.setattr(nsud, "_load_plist", lambda _p: {})  # post-delete re-read: gone
+    deleted = []
+    monkeypatch.setattr(nsud.xbmcvfs, "delete", lambda p: deleted.append(p))
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(
+        src,
+        [
+            ("addon_data/pvr.iptvsimple/instance-settings-1.xml", "<new/>"),
+            ("guisettings.xml", "<s/>"),
+        ],
+    )
+
+    wiz.restore(str(src), confirm=False)
+
+    assert (
+        "special://home/userdata/addon_data/pvr.iptvsimple/instance-settings-3.xml"
+        in deleted
+    ), "the key-only stale instance must be dropped"
+    assert not any("guisettings" in d for d in deleted), (
+        "the sweep must never delete non-IPTV userdata"
+    )

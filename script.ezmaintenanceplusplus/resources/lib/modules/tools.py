@@ -256,6 +256,54 @@ def clear_buffer_prompt_marker():
         pass
 
 
+# --------------------------------------------------------------------------- #
+# PVR pause crash-recovery marker. A restore that carries IPTV briefly DISABLES
+# pvr.iptvsimple for the extract window (so its teardown flush cannot overwrite
+# the restored instance settings) and re-enables it afterward. If the restore is
+# interrupted between the two (a crash mid-extract, a power loss - PROVEN on a
+# real Fire TV 2026-07-16, where a heavy merge-restore killed Kodi after the
+# pause), the client would be left DISABLED forever. This marker records the
+# outstanding pause; the boot service re-enables the client and clears it, so the
+# pause can never strand the IPTV client past the next launch.
+# --------------------------------------------------------------------------- #
+PVR_PAUSE_MARKER = translatePath(
+    "special://home/userdata/addon_data/script.ezmaintenanceplusplus/.ezm_pvr_paused"
+)
+
+
+def mark_pvr_paused():
+    """Record that a restore disabled the IPTV client and owes a re-enable.
+    Best-effort; never raises."""
+    try:
+        d = os.path.dirname(PVR_PAUSE_MARKER)
+        if not os.path.isdir(d):
+            os.makedirs(d)
+        with open(PVR_PAUSE_MARKER, "w") as f:
+            f.write("1")
+        return True
+    except Exception:
+        return False
+
+
+def pvr_pause_pending():
+    """True iff a restore disabled the IPTV client and has not re-enabled it.
+    Never raises."""
+    try:
+        return os.path.exists(PVR_PAUSE_MARKER)
+    except Exception:
+        return False
+
+
+def clear_pvr_pause_marker():
+    """Clear the outstanding-pause marker once the client is confirmed enabled.
+    Never raises."""
+    try:
+        if os.path.exists(PVR_PAUSE_MARKER):
+            os.remove(PVR_PAUSE_MARKER)
+    except Exception:
+        pass
+
+
 def arm_first_run_tuneup():
     """On the add-on's FIRST-EVER run, arm the same tune-up the restore path uses (name
     the device, size the buffer), so a brand-new box gets the offer too. Exactly-once

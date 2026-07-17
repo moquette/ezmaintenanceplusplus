@@ -339,8 +339,18 @@ def _wipe_excludes():
 def _wipe(home, excludes, keep_files=None, progress=None):
     """Remove everything under `home` except any entry named in `excludes` (matched at any
     depth - protects addons/<this add-on> and temp/) and any absolute path in `keep_files`
-    (e.g. Kodi's add-on state DB, so the surviving add-on stays ENABLED). Returns files
-    removed.
+    (e.g. Kodi's add-on state DB, so the surviving add-on stays ENABLED).
+
+    TWO-LAYER CONTRACT: the POSIX pass above is followed by _wipe_nsud_keys, which on
+    tvOS (and ONLY tvOS - hard-gated by _is_tvos) also drops the NSUserDefaults key of
+    every non-excluded userdata path. On Apple TV Kodi vectors userdata *.xml into
+    NSUserDefaults and reads the KEY FIRST - a key SHADOWS the disk file and Kodi never
+    copies a key back to disk (kodi-storage-map SKILL, TVOSFile.cpp:113-122) - so a
+    POSIX-only wipe leaves every key alive to shadow whatever the subsequent restore
+    writes. On Fire TV / Android / desktop the key pass is a strict no-op.
+
+    Returns (files_removed, keys_removed, failed): failed counts BOTH file removals that
+    raised AND NSUserDefaults keys that survived the key pass; the breakdown is logged.
 
     `progress(removed, total)` is called (throttled, every 100 files) so a long wipe shows
     a moving bar instead of a dead screen. It is passed COUNTS ONLY - never a per-file name:
@@ -363,6 +373,7 @@ def _wipe(home, excludes, keep_files=None, progress=None):
 
     _UPDATE_EVERY = 100
     removed = 0
+    file_failures = 0
     for root, dirs, files in os.walk(home, topdown=True):
         dirs[:] = [d for d in dirs if d not in excludes]
         for fname in files:
@@ -373,7 +384,7 @@ def _wipe(home, excludes, keep_files=None, progress=None):
                 os.remove(path)
                 removed += 1
             except Exception:
-                pass
+                file_failures += 1
             if progress is not None and removed % _UPDATE_EVERY == 0:
                 try:
                     progress(removed, total)
@@ -392,7 +403,138 @@ def _wipe(home, excludes, keep_files=None, progress=None):
                 os.rmdir(os.path.join(root, dname))  # only removes if now empty
             except Exception:
                 pass
-    return removed
+
+    # Layer 2 (tvOS only, hard-gated inside): drop the NSUserDefaults keys, else every
+    # vectored userdata *.xml survives the "clean clone" and shadows the restore.
+    keys_removed, keys_failed = _wipe_nsud_keys(home, excludes, keep_files)
+
+    _log(
+        "wipe: %d files removed (%d file failures), %d NSUserDefaults keys removed "
+        "(%d keys survived)" % (removed, file_failures, keys_removed, keys_failed)
+    )
+    return (removed, keys_removed, file_failures + keys_failed)
+
+
+def _is_tvos():
+    """True ONLY on Apple TV (tvOS). Same hard safety gate as nsud._is_tvos: the key layer
+    only exists on tvOS, and on every other platform special://home/userdata IS the plain
+    POSIX tree, so the key pass must never run there. Detected via Kodi's own platform
+    condition; defaults to False (the safe answer) on any error, so the NSUserDefaults
+    layer is only ever touched when tvOS is positively confirmed."""
+    try:
+        import xbmc
+
+        return bool(xbmc.getCondVisibility("System.Platform.TVOS"))
+    except Exception:
+        return False
+
+
+# The key naming Kodi uses for vectored userdata files (nsub._USERDATA_PREFIX): a file at
+# special://home/userdata/<rel> is stored under the NSUserDefaults key "/userdata/<rel>".
+_NSUD_USERDATA_PREFIX = "/userdata/"
+
+
+def _nsud_plist_store():
+    """The loaded NSUserDefaults store (a dict of key -> value), read straight off Kodi's
+    on-disk plist via nsub._find_nsud_plist - the mechanism this codebase already proved
+    for the backup capture. Reading the plist DIRECTLY is the only reliable enumeration:
+    keys are invisible to os.walk/listdir, and xbmcvfs reads of another writer's keys
+    silently return empty (see nsub's module docstring). Returns None where no such store
+    exists (every non-tvOS platform) or on any error."""
+    try:
+        from resources.lib.modules import nsub
+
+        _path, store = nsub._find_nsud_plist()
+        return store or None
+    except Exception:
+        return None
+
+
+def _nsud_userdata_rels():
+    """Every userdata-relative path (forward-slash) currently held as an NSUserDefaults
+    key. [] when there is no store (Fire TV / desktop) or on any error."""
+    store = _nsud_plist_store()
+    if not store:
+        return []
+    rels = []
+    for key in store:
+        if not (isinstance(key, str) and key.startswith(_NSUD_USERDATA_PREFIX)):
+            continue  # e.g. the 'UserdataMigrated' bookkeeping key
+        rel = key[len(_NSUD_USERDATA_PREFIX) :].replace("\\", "/").lstrip("/")
+        if rel:
+            rels.append(rel)
+    return rels
+
+
+def _key_excluded(rel, excludes, keep_files, home):
+    """Mirror of the POSIX walk's exclusion rule, for a userdata-relative key path: the
+    walk prunes any DIRECTORY named in `excludes` at any depth, so a key is excluded when
+    ANY of its path components matches (this covers this add-on's own addon_data/<id>/,
+    the requests deps, temp, backupdir). A key whose on-disk twin is a `keep_files` path
+    (Addons*.db) is also excluded - belt and braces only, since non-xml is never vectored
+    into NSUserDefaults."""
+    import os
+
+    parts = [p for p in rel.split("/") if p]
+    if any(p in excludes for p in parts):
+        return True
+    if keep_files:
+        twin = os.path.normpath(os.path.join(home, "userdata", *parts))
+        if twin in keep_files:
+            return True
+    return False
+
+
+def _wipe_nsud_keys(home, excludes, keep_files=None):
+    """tvOS ONLY (a strict, hard-gated no-op everywhere else): drop the NSUserDefaults key
+    of every non-excluded userdata path, so the wipe clears BOTH layers.
+
+    WHY: on tvOS a key SHADOWS the disk file (Kodi reads the key first and never copies a
+    key back to disk), and after nsud's confirmed-vector-then-drop-POSIX flow many userdata
+    files exist ONLY as keys - so they never even appear to the POSIX walk above. Skipping
+    this pass leaves the whole old configuration alive to shadow the restored files.
+
+    MECHANISM: keys are enumerated straight from Kodi's NSUserDefaults plist
+    (nsub._find_nsud_plist, the codebase's proven tvOS access). Each key is dropped with
+    xbmcvfs.delete() on its special:// path: on tvOS that call is dispatched to
+    CTVOSFile::Delete, which drops EXACTLY the NSUserDefaults key and never touches the
+    POSIX file (TVOSFile.cpp:101-111; the POSIX branch is unreachable for vectored paths).
+    That is the same engine behavior that made a POSIX-only wipe incomplete - here it is
+    used deliberately as the key-layer eraser, paired with the os.remove pass above for
+    the file layer. Its boolean return is TRUE whether or not a key existed
+    (TVOSNSUserDefaults.mm:188-202), so it is NEVER trusted: success is verified by
+    re-reading the plist (CTVOSFile::Delete synchronizes the store to disk before
+    returning) and every surviving key is counted as a failure and logged by name.
+
+    Returns (keys_removed, keys_failed)."""
+    if not _is_tvos():
+        return (0, 0)
+    keep_files = keep_files or set()
+
+    def _targets():
+        return [
+            rel
+            for rel in _nsud_userdata_rels()
+            if not _key_excluded(rel, excludes, keep_files, home)
+        ]
+
+    before = _targets()
+    if not before:
+        return (0, 0)
+    for rel in before:
+        try:
+            # Drops ONLY the key on tvOS (see MECHANISM above); return value untrustworthy.
+            xbmcvfs.delete("special://home/userdata/" + rel)
+        except Exception:
+            pass  # counted below by the survivor re-read
+    survivors = set(_targets())
+    removed = sum(1 for rel in before if rel not in survivors)
+    for rel in sorted(survivors):
+        _log(
+            "wipe: NSUserDefaults key SURVIVED the wipe and will shadow a restore: %s"
+            % rel
+        )
+    return (removed, len(survivors))
 
 
 def keep_addon_db():
@@ -496,7 +638,20 @@ def apply(slot):
     hint = {"full": "home", "userdata": "userdata"}.get(
         pin.get("type") or infer_type(pin.get("src") or "")
     )
-    _wipe(xbmcvfs.translatePath("special://home/"), _wipe_excludes())
+    _files, _keys, _wipe_failed = _wipe(
+        xbmcvfs.translatePath("special://home/"), _wipe_excludes()
+    )
+    # The wipe's failure count is surfaced, never discarded: leftover files - and on
+    # tvOS leftover NSUserDefaults keys - shadow the restore (they made the old bug
+    # look "intermittent"). The wiped box still MUST be restored (aborting here would
+    # strand it), so the restore proceeds, but the owner is told before it starts.
+    if _wipe_failed:
+        xbmcgui.Dialog().ok(
+            "One-Tap Restore",
+            "Warning: the wipe could not remove %d item(s); leftovers may shadow "
+            "the restored settings (see the log). The restore will proceed."
+            % _wipe_failed,
+        )
     try:
         wiz.restore(local, confirm=False, post_wipe=True, anchor_hint=hint)
     finally:

@@ -1,0 +1,148 @@
+{
+  "devices": {
+    "android": {
+      "addon_version_on_box": "2026.07.16.0",
+      "class": "android",
+      "clean_single_layer": true,
+      "friendly_name": "bedroom",
+      "host": "192.168.7.84",
+      "kodi_build": "21.3 (21.3.0) Git:20251031-a3a448d26b",
+      "restore_contract": {
+        "duplicate_listing": {
+          "clean": true,
+          "duplicates": {
+            "special://profile/addon_data/": [],
+            "special://profile/addon_data/pvr.iptvsimple/": [],
+            "special://profile/addon_data/script.skinshortcuts/": []
+          }
+        },
+        "iptv_config": {
+          "directory": "special://profile/addon_data/pvr.iptvsimple/",
+          "empty": false,
+          "entries": 5,
+          "instance_settings": [
+            {
+              "name": "instance-settings-1.xml",
+              "size": 1137
+            },
+            {
+              "name": "instance-settings-2.xml",
+              "size": 1148
+            }
+          ]
+        },
+        "profile_inventory": {
+          "addon_data_count": 11,
+          "addon_data_entries": [
+            "peripheral.joystick",
+            "plugin.video.pov",
+            "plugin.video.sporthdme",
+            "plugin.video.the-loop",
+            "pvr.iptvsimple",
+            "script.ezmaintenanceplusplus",
+            "script.module.resolveurl",
+            "script.skinshortcuts",
+            "skin.estuary",
+            "skin.estuary7",
+            "weather.multi"
+          ],
+          "profile_root": "unreachable over JSON-RPC (Kodi refuses to list it)"
+        },
+        "shadow_probe": {
+          "note": "profile-root files (guisettings.xml) are not remotely probeable",
+          "probed": [
+            {
+              "details_size": 1148,
+              "file": "special://profile/addon_data/pvr.iptvsimple/instance-settings-2.xml",
+              "listed_size": 1148,
+              "size_zero_but_exists": false
+            },
+            {
+              "details_size": 1137,
+              "file": "special://profile/addon_data/pvr.iptvsimple/instance-settings-1.xml",
+              "listed_size": 1137,
+              "size_zero_but_exists": false
+            }
+          ],
+          "size_zero_but_exists": false
+        }
+      },
+      "skinshortcuts_duplicates": [],
+      "skinshortcuts_vfs_entries": 26
+    },
+    "tvos": {
+      "addon_version_on_box": "2026.07.16.0",
+      "class": "tvos",
+      "clean_single_layer": true,
+      "friendly_name": "atv2",
+      "host": "192.168.7.183",
+      "kodi_build": "21.3 (21.3.0) Git:20251031-a3a448d26b",
+      "restore_contract": {
+        "duplicate_listing": {
+          "clean": true,
+          "duplicates": {
+            "special://profile/addon_data/": [],
+            "special://profile/addon_data/pvr.iptvsimple/": [],
+            "special://profile/addon_data/script.skinshortcuts/": []
+          }
+        },
+        "iptv_config": {
+          "directory": "special://profile/addon_data/pvr.iptvsimple/",
+          "empty": false,
+          "entries": 5,
+          "instance_settings": [
+            {
+              "name": "instance-settings-1.xml",
+              "size": 1137
+            },
+            {
+              "name": "instance-settings-2.xml",
+              "size": 1148
+            }
+          ]
+        },
+        "profile_inventory": {
+          "addon_data_count": 13,
+          "addon_data_entries": [
+            "peripheral.joystick",
+            "plugin.video.pov",
+            "plugin.video.sporthdme",
+            "plugin.video.the-loop",
+            "pvr.iptvsimple",
+            "script.ezmaintenanceplusplus",
+            "script.module.pvr.artwork",
+            "script.module.resolveurl",
+            "script.skinshortcuts",
+            "skin.estuary",
+            "skin.estuary.modv2",
+            "skin.estuary7",
+            "weather.multi"
+          ],
+          "profile_root": "unreachable over JSON-RPC (Kodi refuses to list it)"
+        },
+        "shadow_probe": {
+          "note": "profile-root files (guisettings.xml) are not remotely probeable",
+          "probed": [
+            {
+              "details_size": 1148,
+              "file": "special://profile/addon_data/pvr.iptvsimple/instance-settings-2.xml",
+              "listed_size": 1148,
+              "size_zero_but_exists": false
+            },
+            {
+              "details_size": 1137,
+              "file": "special://profile/addon_data/pvr.iptvsimple/instance-settings-1.xml",
+              "listed_size": 1137,
+              "size_zero_but_exists": false
+            }
+          ],
+          "size_zero_but_exists": false
+        }
+      },
+      "skinshortcuts_duplicates": [],
+      "skinshortcuts_vfs_entries": 27
+    }
+  },
+  "storage_fingerprint": "67ad923fc6b830906f239abafe3227a4f6876b3d05f9cb8782dbc1a43fa5f23f",
+  "version": "2026.07.16.0"
+}

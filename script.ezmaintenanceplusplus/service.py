@@ -1,6 +1,7 @@
 import xbmc
 import xbmcaddon
 import xbmcgui
+import json
 import os
 import xbmcvfs
 import time
@@ -181,6 +182,177 @@ def _maybe_prompt_after_restore(monitor):
         pass
 
 
+# --------------------------------------------------------------------------- #
+# One-shot stale NSUserDefaults key migration (tvOS only).
+#
+# The 2026.07.08.2 - 2026.07.13.x releases vectored EVERY restored userdata xml
+# into NSUserDefaults ("vector everything"). Boxes that ran them still hold keys
+# for files current nsud policy deliberately leaves as plain POSIX (an add-on's
+# private data), and on tvOS a key SHADOWS the disk file (CTVOSFile::Exists
+# checks the key FIRST), so a freshly written or restored file can be silently
+# invisible to Kodi forever. nsud.purge_stale_keys() materializes key-only files
+# back to disk before purging the out-of-scope keys.
+#
+# The run-once marker is a FILE in this add-on's own addon_data (the same
+# pattern as tools.BUFFER_PROMPT_MARKER, and for the same reason: a restore's
+# extracted settings.xml plus Kodi's in-memory-settings clobber make setSetting
+# unreliable for boot-time state). It holds the add-on version the purge last
+# ran for, so each upgrade gets exactly one purge and a normal boot is a single
+# os-stat no-op.
+# --------------------------------------------------------------------------- #
+STALE_KEY_PURGE_MARKER = translatePath(
+    "special://home/userdata/addon_data/" + AddonID + "/.ezm_stale_key_purge"
+)
+
+
+def _read_stale_purge_marker():
+    """Version string the purge last completed for, '' if never. Never raises."""
+    try:
+        with open(STALE_KEY_PURGE_MARKER, "r") as f:
+            return f.read().strip()
+    except Exception:
+        return ""
+
+
+def _write_stale_purge_marker(version):
+    """Record the version the purge ran for. Best-effort; never raises."""
+    try:
+        d = os.path.dirname(STALE_KEY_PURGE_MARKER)
+        if not os.path.isdir(d):
+            os.makedirs(d)
+        with open(STALE_KEY_PURGE_MARKER, "w") as f:
+            f.write(version)
+        return True
+    except Exception:
+        return False
+
+
+def _maybe_purge_stale_nsud_keys():
+    """Run nsud.purge_stale_keys(control.USERDATA) at most once per add-on version,
+    and only on Apple TV (tvOS) - the only platform where NSUserDefaults exists.
+
+    Fully guarded: any failure logs LOUDLY (LOGERROR) and returns; the boot
+    service must never be crashed or blocked by this migration. On failure the
+    marker is NOT written, so the next boot retries. If nsud predates
+    purge_stale_keys (hasattr guard) this is a clean no-op that also leaves the
+    marker unset, so the purge still happens once the capable nsud ships."""
+    try:
+        try:
+            is_tvos = bool(xbmc.getCondVisibility("System.Platform.TVOS"))
+        except Exception:
+            is_tvos = False
+        if not is_tvos:
+            return
+        try:
+            version = xbmcaddon.Addon().getAddonInfo("version") or ""
+        except Exception:
+            version = ""
+        if not version:
+            # Without a version we cannot keep the once-per-version promise;
+            # skip rather than risk running on every boot.
+            return
+        if _read_stale_purge_marker() == version:
+            return
+        from resources.lib.modules import control, nsud
+
+        if not hasattr(nsud, "purge_stale_keys"):
+            return  # older nsud: nothing to run; marker stays unset on purpose
+        materialized, purged, kept, failed = nsud.purge_stale_keys(control.USERDATA)
+        xbmc.log(
+            "ezmaintenanceplus: stale NSUserDefaults key purge (v%s): "
+            "%d materialized, %d purged, %d kept, %d failed"
+            % (version, materialized, purged, kept, failed),
+            level=loglevel,
+        )
+        # The marker is written ONLY on a proven-complete run. purge_stale_keys
+        # never raises by design, so its failure modes are failed>0 (keys still
+        # shadowing) and an all-zeros no-op (plist transiently unreadable at boot).
+        # Burning the run-once marker on either would silently strand exactly the
+        # boxes this migration exists for - so both retry next boot instead.
+        if failed:
+            xbmc.log(
+                "ezmaintenanceplus: stale key purge left %d key(s) unresolved; "
+                "marker not set, will retry next boot" % failed,
+                level=xbmc.LOGWARNING,
+            )
+            return
+        if not (materialized or purged or kept):
+            xbmc.log(
+                "ezmaintenanceplus: stale key purge saw an empty/unreadable store; "
+                "marker not set, will retry next boot",
+                level=xbmc.LOGWARNING,
+            )
+            return
+        if not _write_stale_purge_marker(version):
+            xbmc.log(
+                "ezmaintenanceplus: stale key purge ran but its run-once marker "
+                "could not be written; the purge may repeat next boot",
+                level=xbmc.LOGWARNING,
+            )
+    except Exception as e:
+        try:
+            xbmc.log(
+                "ezmaintenanceplus: stale NSUserDefaults key purge FAILED "
+                "%s: %s (marker not set; will retry next boot)" % (type(e).__name__, e),
+                level=xbmc.LOGERROR,
+            )
+        except Exception:
+            pass
+
+
+def _maybe_resume_paused_pvr():
+    """If a restore's IPTV pause was left outstanding (interrupted before re-enable),
+    re-enable pvr.iptvsimple and clear the marker. Fully guarded; never blocks boot.
+    Only re-enables when the marker is present, so it never fights a user who
+    deliberately disabled the client."""
+    try:
+        from resources.lib.modules import tools
+
+        if not tools.pvr_pause_pending():
+            return
+        res = _jsonrpc_service(
+            "Addons.SetAddonEnabled",
+            {"addonid": "pvr.iptvsimple", "enabled": True},
+        )
+        if res == "OK":
+            tools.clear_pvr_pause_marker()
+            xbmc.log(
+                "ezmaintenanceplus: re-enabled pvr.iptvsimple after an interrupted "
+                "restore (crash-recovery); marker cleared",
+                level=loglevel,
+            )
+        else:
+            xbmc.log(
+                "ezmaintenanceplus: could not re-enable pvr.iptvsimple on boot "
+                "(will retry next boot)",
+                level=xbmc.LOGWARNING,
+            )
+    except Exception as e:
+        try:
+            xbmc.log(
+                "ezmaintenanceplus: PVR pause recovery failed %s: %s"
+                % (type(e).__name__, e),
+                level=xbmc.LOGWARNING,
+            )
+        except Exception:
+            pass
+
+
+def _jsonrpc_service(method, params):
+    """One JSON-RPC call from the boot service; parsed 'result' or None."""
+    try:
+        resp = json.loads(
+            xbmc.executeJSONRPC(
+                json.dumps(
+                    {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+                )
+            )
+        )
+        return resp.get("result")
+    except Exception:
+        return None
+
+
 if __name__ == "__main__":
     monitor = Monitor()
 
@@ -192,6 +364,15 @@ if __name__ == "__main__":
     # tune-up prompt below (rename device / video cache buffer), armed by a restore or by
     # the add-on's first-ever run.
 
+    # Stale-key migration FIRST, so files a "vector everything" era left shadowed
+    # in NSUserDefaults are visible on disk before anything below reads them.
+    _maybe_purge_stale_nsud_keys()
+    # PVR pause crash-recovery: if a restore disabled pvr.iptvsimple for its extract
+    # window and was interrupted before re-enabling it (PROVEN possible on a real
+    # Fire TV 2026-07-16, where a heavy restore killed Kodi mid-extract), the marker
+    # is still set - re-enable the client and clear it so a restore can never strand
+    # IPTV disabled past the next launch.
+    _maybe_resume_paused_pvr()
     _maybe_arm_first_run()
     _maybe_prompt_after_restore(monitor)
 

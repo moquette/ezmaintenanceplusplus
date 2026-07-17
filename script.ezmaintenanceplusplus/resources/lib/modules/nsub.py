@@ -2,15 +2,17 @@
 NSUserDefaults (invisible to a POSIX walk).
 
 Why this exists (the mirror image of nsud.py's restore bug):
-On Apple TV (tvOS) Kodi stores userdata *.xml in the app's NSUserDefaults (gzip-compressed)
-and rewrites the on-disk files from that mirror on launch, so files like guisettings.xml,
-profiles.xml, RssFeeds.xml, peripheral_data/* and many addon_data/<id>/settings.xml are NOT
-on disk at all. EZM's backup (CreateZip) enumerates with `os.walk` and reads with plain
-`zipfile` (POSIX), so it SILENTLY OMITS every NSUserDefaults-only file - the backup zip is
-missing exactly the settings the owner cares about (weather, skin, region, remote/keyboard,
-RSS). The one thing this capture deliberately DOES NOT embed is the pvr.iptvsimple addon_data
-subtree (see _IPTV_SUBTREE below): EZ Maintenance++ has zero IPTV behavior. Proven on hardware: a tvOS backup
-zip has no userdata/guisettings.xml; a Fire TV zip does. Without this, even a perfect
+On Apple TV (tvOS) Kodi stores userdata *.xml in the app's NSUserDefaults (gzip-compressed).
+A key SHADOWS the on-disk file - Kodi reads the key first and NEVER copies a key back to
+disk - so files like guisettings.xml, profiles.xml, RssFeeds.xml, peripheral_data/* and many
+addon_data/<id>/settings.xml are NOT on disk at all. EZM's backup (CreateZip) enumerates
+with `os.walk` and reads with plain `zipfile` (POSIX), so it SILENTLY OMITS every
+NSUserDefaults-only file - the backup zip is missing exactly the settings the owner cares
+about (weather, skin, region, remote/keyboard, RSS, IPTV). A full backup captures
+EVERYTHING, including the addon_data/pvr.iptvsimple subtree (owner decision 2026-07-16,
+reversing the 2026.07.08.5 backup-side IPTV exclusion); the restore-side instance-settings
+sweep in wiz.py is what guarantees no duplicate IPTV instances. Proven on hardware: a tvOS
+backup zip has no userdata/guisettings.xml; a Fire TV zip does. Without this, even a perfect
 restore-side fix (nsud.py) cannot restore settings the backup never captured.
 
 How it captures them - read Kodi's NSUserDefaults plist DIRECTLY, not through xbmcvfs.
@@ -50,20 +52,13 @@ ADDON_ID = "script.ezmaintenanceplusplus"
 # (a secret). Matched by SUFFIX so a per-profile copy is excluded too.
 _SECRET_TAIL = "addon_data/%s/settings.xml" % ADDON_ID
 
-# DELIBERATE, DOCUMENTED IPTV EXCLUSION: never capture the pvr.iptvsimple addon_data subtree
-# (its instance-settings / customTVGroups). Capturing them let a restore re-create duplicate
-# IPTV instances, and EZ Maintenance++ must have ZERO IPTV behavior. Matched anywhere in the
-# userdata-relative path so a per-profile copy (profiles/<name>/addon_data/pvr.iptvsimple/...)
-# is excluded too. This is the ONLY pvr.iptvsimple reference left in the shipped add-on.
-_IPTV_SUBTREE = "addon_data/pvr.iptvsimple/"
+# FULL BACKUP POLICY (owner decision 2026-07-16): the pvr.iptvsimple addon_data subtree IS
+# captured like any other userdata content, top-level AND per-profile. The 2026.07.08.5
+# backup-side IPTV exclusion is REVERSED - duplicate-instance safety now lives on the
+# RESTORE side (the instance-settings sweep in wiz.py), where it belongs. The only
+# exclusion left in this capture is _SECRET_TAIL above.
 
 _USERDATA_PREFIX = "/userdata/"
-
-
-def _is_iptv(rel):
-    """True iff the userdata-relative path sits inside the pvr.iptvsimple addon_data subtree
-    (top-level or per-profile). Such files are never embedded in a backup."""
-    return rel.startswith(_IPTV_SUBTREE) or ("/" + _IPTV_SUBTREE) in rel
 
 
 def _find_nsud_plist():
@@ -161,9 +156,6 @@ def capture_nsud_userdata(zip_file, source_root, already_arcs, log=None):
             if rel == _SECRET_TAIL or rel.endswith("/" + _SECRET_TAIL):
                 skipped += 1  # never embed the add-on's own settings (secret)
                 continue
-            if _is_iptv(rel):
-                skipped += 1  # never embed pvr.iptvsimple config (zero IPTV behavior)
-                continue
             arc = arc_prefix + rel
             if arc in have:
                 skipped += 1  # POSIX already captured this on-disk file
@@ -171,13 +163,21 @@ def capture_nsud_userdata(zip_file, source_root, already_arcs, log=None):
             data = _decode_value(store[key])
             if not data:
                 failed += 1  # empty / undecodable value
+                if log:
+                    # Name the key: an anonymous count leaves the owner with an
+                    # unbackupable box and no way to find the offending key.
+                    log("nsub: capture FAILED (empty/undecodable value): %s" % key)
                 continue
             try:
                 zip_file.writestr(arc, data)
                 have.add(arc)
                 added += 1
-            except Exception:
+            except Exception as e:
                 failed += 1
+                if log:
+                    log(
+                        "nsub: capture FAILED (%s writing %s)" % (type(e).__name__, arc)
+                    )
         if log:
             log(
                 "nsub: NSUserDefaults capture (plist): %d added, %d skipped, %d failed"

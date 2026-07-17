@@ -9,9 +9,11 @@ pvr.artwork), while the plist decodes them fine.
 
 These tests build a REAL binary plist (plistlib) with gzip-compressed values in a temp
 sandbox laid out like tvOS (`.../Library/Caches/Kodi` for special://home, `.../Library/
-Preferences/<bundle>.plist` for the store), so the real module runs end to end. The two
+Preferences/<bundle>.plist` for the store), so the real module runs end to end. The three
 invariants under test: ADDITIVE + IDEMPOTENT (never re-add / never dup a POSIX-captured
-file), and the SECRET (dropbox_refresh_token) is never embedded, incl. per-profile copies.
+file), the SECRET (dropbox_refresh_token) is never embedded, incl. per-profile copies, and
+FULL BACKUP: the pvr.iptvsimple subtree IS captured (owner decision 2026-07-16, reversing
+the 2026.07.08.5 exclusion; restore-side sweep in wiz.py handles duplicate instances).
 """
 
 from __future__ import annotations
@@ -215,16 +217,50 @@ def test_secret_excluded_in_userdata_mode_too(sandbox):
 
 
 # --------------------------------------------------------------------------- #
-# ZERO IPTV behavior: the pvr.iptvsimple addon_data subtree is NEVER captured (top-level AND
-# per-profile). Capturing it let a restore re-create duplicate IPTV instances - now it can't.
+# FULL BACKUP includes IPTV: the pvr.iptvsimple addon_data subtree IS captured (top-level
+# AND per-profile). Owner decision 2026-07-16 reversed the 2026.07.08.5 backup-side
+# exclusion; duplicate-instance safety is the restore-side sweep in wiz.py, not a backup gap.
 # --------------------------------------------------------------------------- #
-def test_never_captures_pvr_iptvsimple_subtree(sandbox):
+def test_captures_pvr_iptvsimple_subtree(sandbox):
+    inst = b'<settings version="2"><setting id="m3u">x</setting></settings>'
+    _write_plist(
+        sandbox,
+        {
+            "addon_data/pvr.iptvsimple/instance-settings-1.xml": inst,
+            "addon_data/pvr.iptvsimple/customTVGroups-Foo.xml": b"<groups/>",
+            "profiles/Kids/addon_data/pvr.iptvsimple/instance-settings-1.xml": b"<kids/>",
+            "guisettings.xml": b"<ok/>",
+        },
+    )
+    zf = _zip(sandbox)
+    added, _skipped, _failed = sandbox.mod.capture_nsud_userdata(
+        zf, str(sandbox.home), already_arcs=set()
+    )
+    zf.close()
+
+    assert added == 4
+    names = _names(sandbox)
+    assert "userdata/addon_data/pvr.iptvsimple/instance-settings-1.xml" in names
+    assert "userdata/addon_data/pvr.iptvsimple/customTVGroups-Foo.xml" in names
+    assert (
+        "userdata/profiles/Kids/addon_data/pvr.iptvsimple/instance-settings-1.xml"
+        in names
+    )
+    assert "userdata/guisettings.xml" in names
+    assert (
+        _read(sandbox, "userdata/addon_data/pvr.iptvsimple/instance-settings-1.xml")
+        == inst
+    )
+
+
+def test_captures_iptv_but_still_excludes_secret(sandbox):
+    # Full backup includes IPTV while the add-on's own settings.xml (Dropbox token)
+    # stays out - the ONLY exclusion left in this capture.
     _write_plist(
         sandbox,
         {
             "addon_data/pvr.iptvsimple/instance-settings-1.xml": b"<s/>",
-            "addon_data/pvr.iptvsimple/customTVGroups-Foo.xml": b"<s/>",
-            "profiles/Kids/addon_data/pvr.iptvsimple/instance-settings-1.xml": b"<s/>",
+            "addon_data/script.ezmaintenanceplusplus/settings.xml": b'<setting id="dropbox_refresh_token">SECRET</setting>',
             "guisettings.xml": b"<ok/>",
         },
     )
@@ -233,10 +269,25 @@ def test_never_captures_pvr_iptvsimple_subtree(sandbox):
     zf.close()
 
     names = _names(sandbox)
-    assert not any("pvr.iptvsimple" in n for n in names), (
-        "the IPTV client config must never enter a backup"
+    assert "userdata/addon_data/pvr.iptvsimple/instance-settings-1.xml" in names
+    assert not any("script.ezmaintenanceplusplus" in n for n in names)
+    for n in names:
+        assert b"SECRET" not in _read(sandbox, n)
+
+
+def test_captures_iptv_in_userdata_mode(sandbox):
+    # userdata-only backup: same inclusion, arcnames without the 'userdata/' prefix.
+    _write_plist(
+        sandbox,
+        {"addon_data/pvr.iptvsimple/instance-settings-1.xml": b"<s/>"},
     )
-    assert "userdata/guisettings.xml" in names  # the rest still captured
+    zf = _zip(sandbox)
+    added, _s, _f = sandbox.mod.capture_nsud_userdata(
+        zf, str(sandbox.home / "userdata"), already_arcs=set()
+    )
+    zf.close()
+    assert added == 1
+    assert "addon_data/pvr.iptvsimple/instance-settings-1.xml" in _names(sandbox)
 
 
 # --------------------------------------------------------------------------- #
@@ -331,9 +382,19 @@ def test_non_home_root_is_noop(sandbox):
 # and only when not canceled.
 # --------------------------------------------------------------------------- #
 def test_createzip_calls_nsub_after_walk_before_close():
+    # The capture now goes through CreateZip's _capture_nsud helper (which calls
+    # nsub.capture_nsud_userdata and raises BackupCaptureError on a tvOS failure);
+    # the wiring contract is unchanged: after the POSIX walk, guarded on
+    # not-canceled, with the manifest written before the zip is closed.
     wiz_src = (ADDON_MODULES / "wiz.py").read_text(encoding="utf-8")
     i_walk = wiz_src.index("written_arcs.add(arc)")
-    i_guard = wiz_src.index("if not canceled:")
-    i_capture = wiz_src.index("nsub.capture_nsud_userdata(")
+    i_capture = wiz_src.index("cap_added, cap_failed = _capture_nsud(")
+    i_manifest = wiz_src.index("_write_manifest(zip_file, entries_total, failed)")
     i_close = wiz_src.index("zip_file.close()")
-    assert i_walk < i_guard < i_capture < i_close
+    assert i_walk < i_capture < i_manifest < i_close
+    # The capture is guarded on not-canceled: the guard sits between walk and capture.
+    guard = wiz_src.rindex("if not canceled:", i_walk, i_capture)
+    assert i_walk < guard < i_capture
+    # And the helper really does call nsub's capture.
+    helper = wiz_src.index("def _capture_nsud(")
+    assert wiz_src.index("nsub.capture_nsud_userdata(", helper) > helper

@@ -58,3 +58,24 @@ v2022.12.28.0
    "Restart now?", but Kodi cannot self-restart on tvOS (Quit only closes).
    Fixes the wording for the new channel-clear restart offer and for every
    restore / Fresh Start prompt on Apple TV.
+
+2026.07.16.0
+ - Full backup now truly means full. The 2026.07.08.5 pvr.iptvsimple exclusion
+   is reversed: IPTV settings (instance-settings, settings.xml, custom groups)
+   are captured on BOTH Apple TV (from NSUserDefaults) and Fire TV, and a
+   restore brings them back exactly as backed up. Stray instance files the
+   archive does not carry are swept AFTER the extract (a canceled restore can
+   never cost the box the config it already had), with every removal verified.
+ - Restores briefly pause the IPTV client for the extract window and always
+   re-enable it, so the live client can no longer overwrite the restored IPTV
+   settings at shutdown.
+ - Every backup embeds backup_manifest.json (what it holds, what it could not
+   capture); restore verifies the archive against it. All backup / restore /
+   wipe / Fresh Start reporting is now honest: partial results are reported as
+   INCOMPLETE with the exact items, never "Complete", and an incomplete backup
+   never rotates out the last good one.
+ - Wipes on Apple TV clear BOTH storage layers (files and NSUserDefaults keys,
+   verified against the store), and a one-time service migration purges stale
+   hidden settings copies left by 2026.07.08.x-2026.07.13.x, materializing any
+   key-only file to disk first so nothing is ever lost.
+ - New Tools menu: "Purge stale tvOS keys" and "Verify backup archive".

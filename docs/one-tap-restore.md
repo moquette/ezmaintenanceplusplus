@@ -33,7 +33,8 @@ you can always fall back to. Private by construction (no public capability URLs)
   download), never a public link.
 - Route the actual restore through the **proven `wiz.restore()` path**, so every tvOS
   fix comes for free: `temp/` skip, settings re-apply (`_kodisettings`), `UpdateLocalAddons`,
-  verify-before-extract, honest extract reporting, clean `Quit`.
+  verify-before-extract, manifest-verified truthful reporting (see the 2026-07-16
+  contract update below), clean `Quit`.
 
 ## Safety
 
@@ -103,3 +104,35 @@ Full-vs-userdata partial restore; pin-as-you-go right after a backup; a browsabl
 listing (with native context menus) instead of the select-dialog menu; an optional "keep the
 Tony.7.Bones repo" mode for Fresh Start; and validating the preserve-`Addons*.db` trick across
 more Kodi builds.
+
+## Contract update (2026-07-16): full-fidelity backup/restore
+
+Owner decision 2026-07-16, after the IPTV-loss investigation found that a "full" backup
+was not full (a designed pvr.iptvsimple exclusion), the tvOS wipe was POSIX-only (stale
+NSUserDefaults keys survived and shadowed the restored files at boot), and restore
+reported "Complete" over silent partial failures. The apply flow One-Tap routes through
+(`wiz.restore()`) changes as follows (implementation landing 2026-07-16; hardware
+verification on real devices is still PENDING and owner-gated):
+
+- **Full means full.** The backup captures everything on both OSes, INCLUDING
+  `addon_data/pvr.iptvsimple` (the 2026.07.08.5 "zero IPTV" exclusion is reversed).
+  Only exclusions: this add-on's own `settings.xml` (the Dropbox token) and
+  `special://home/temp` at the root only.
+- **Two-layer tvOS capture.** A tvOS backup reads BOTH layers: the POSIX walk plus the
+  NSUserDefaults plist capture (now including IPTV). A tvOS capture failure FAILS the
+  backup loudly instead of silently omitting files.
+- **Manifest-verified restore.** Every backup embeds `backup_manifest.json`
+  (`{"created","source_os","entries","failed":[...]}`); restore verifies the extract
+  against it and reports extracted/skipped/failed truthfully. A partial restore is
+  reported as PARTIAL, never "Complete".
+- **Two-layer wipe.** The hardened wipe (One-Tap's clean wipe AND Fresh Start) clears
+  BOTH tvOS layers - the POSIX tree and the NSUserDefaults keys - with the same
+  exclusions, so a stale key can never shadow a restored file.
+- **Instance-settings sweep.** Restore sweeps the target's `instance-settings-*.xml`
+  so pvr.iptvsimple state exactly equals the archive (the duplicate-instance brick
+  guard). Still ZERO add-on enable/disable automation - restore never toggles any
+  add-on.
+
+The safety invariant is unchanged: never wipe until the snapshot is fetched and
+confirmed a valid zip. What changed is what "restored" means (everything, verified,
+reported truthfully) and what "wiped" means on tvOS (both layers, not just disk).

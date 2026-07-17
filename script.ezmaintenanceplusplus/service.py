@@ -182,6 +182,63 @@ def _maybe_prompt_after_restore(monitor):
         pass
 
 
+def _maybe_restore_check(monitor):
+    """On the FIRST boot after a restore, re-verify the restored state now that it is
+    actually LIVE (restorecheck's two-layer probes). SILENT on a clean pass - the box
+    simply working is the message; the verdict goes to the log. Only a real finding
+    speaks, with the locked needs-attention line. The marker is cleared either way so
+    the check runs exactly once. Fully guarded: nothing here may block or crash the
+    boot service; a normal boot (no marker) is a single os-stat no-op."""
+    try:
+        from resources.lib.modules import tools
+    except Exception:
+        return
+    try:
+        if not tools.restore_check_pending():
+            return
+    except Exception:
+        return
+    # Wait for the GUI OUTSIDE the try/finally: an aborted or interrupted boot must
+    # NOT consume the one-shot marker (the check never ran, so it is still owed).
+    if not _wait_kodi_ready(monitor):
+        return
+    try:
+        from resources.lib.modules import restorecheck
+
+        attention = []
+        try:
+            attention.extend(
+                "%d duplicate two-layer listing(s): %s" % (len(d), ", ".join(d[:5]))
+                for d in [restorecheck.duplicate_listing_hits()]
+                if d
+            )
+        except Exception:
+            pass
+        if attention:
+            for line in attention:
+                xbmc.log(
+                    "%s : boot restore-check ATTENTION: %s" % (AddonID, line),
+                    level=xbmc.LOGWARNING,
+                )
+            xbmcgui.Dialog().notification(
+                "EZ Maintenance++",
+                "Something from the restore needs attention - open EZ Maintenance++.",
+                time=8000,
+            )
+        else:
+            xbmc.log(
+                "%s : boot restore-check: restored state verified clean" % AddonID,
+                level=xbmc.LOGINFO,
+            )
+    except Exception:
+        pass
+    finally:
+        try:
+            tools.clear_restore_check_marker()
+        except Exception:
+            pass
+
+
 # --------------------------------------------------------------------------- #
 # One-shot stale NSUserDefaults key migration (tvOS only).
 #
@@ -375,6 +432,7 @@ if __name__ == "__main__":
     _maybe_resume_paused_pvr()
     _maybe_arm_first_run()
     _maybe_prompt_after_restore(monitor)
+    _maybe_restore_check(monitor)
 
     if _wait_kodi_ready(monitor):
         try:

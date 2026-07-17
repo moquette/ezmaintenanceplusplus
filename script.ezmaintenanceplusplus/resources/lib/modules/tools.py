@@ -257,6 +257,49 @@ def clear_buffer_prompt_marker():
 
 
 # --------------------------------------------------------------------------- #
+# Restore self-check marker (2026-07-17): a restore arms this so the boot
+# service re-verifies the restored state on the next start - final certainty
+# lives AFTER the restart, where the restored settings are actually live.
+# SILENT on a clean pass (the box simply working is the message, log only);
+# only a real finding speaks. Same location rules as the buffer marker: this
+# add-on's own addon_data, which the wipe preserves and the extract precedes.
+# --------------------------------------------------------------------------- #
+RESTORE_CHECK_MARKER = translatePath(
+    "special://home/userdata/addon_data/script.ezmaintenanceplusplus/.ezm_restore_check"
+)
+
+
+def mark_restore_check_pending():
+    """Arm the post-restart restore self-check. Best-effort; never raises."""
+    try:
+        d = os.path.dirname(RESTORE_CHECK_MARKER)
+        if not os.path.isdir(d):
+            os.makedirs(d)
+        with open(RESTORE_CHECK_MARKER, "w") as f:
+            f.write("1")
+        return True
+    except Exception:
+        return False
+
+
+def restore_check_pending():
+    """True iff a restore asked for a post-restart self-check. Never raises."""
+    try:
+        return os.path.exists(RESTORE_CHECK_MARKER)
+    except Exception:
+        return False
+
+
+def clear_restore_check_marker():
+    """Remove the marker so the check runs exactly once. Never raises."""
+    try:
+        if os.path.exists(RESTORE_CHECK_MARKER):
+            os.remove(RESTORE_CHECK_MARKER)
+    except Exception:
+        pass
+
+
+# --------------------------------------------------------------------------- #
 # PVR pause crash-recovery marker. A restore that carries IPTV briefly DISABLES
 # pvr.iptvsimple for the extract window (so its teardown flush cannot overwrite
 # the restored instance settings) and re-enables it afterward. If the restore is

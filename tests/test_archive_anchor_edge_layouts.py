@@ -296,8 +296,10 @@ def _skips_surfaced(rep, minimum):
     user-facing report that names the skip (skipped/unmapped/not restored/
     partial) rather than claiming a clean Complete."""
     count = _result_skip_count(rep.result)
-    if count is not None and count >= minimum:
-        return True
+    if count is not None:
+        # A structured result is authoritative: trust its count both ways
+        # (text-scanning its repr would trip on the KEY NAMES, e.g. 'skipped': 0).
+        return count >= minimum
     text = _report_text(rep)
     return any(
         marker in text

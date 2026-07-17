@@ -349,8 +349,11 @@ def _wipe(home, excludes, keep_files=None, progress=None):
     POSIX-only wipe leaves every key alive to shadow whatever the subsequent restore
     writes. On Fire TV / Android / desktop the key pass is a strict no-op.
 
-    Returns (files_removed, keys_removed, failed): failed counts BOTH file removals that
-    raised AND NSUserDefaults keys that survived the key pass; the breakdown is logged.
+    Returns (files_removed, keys_removed, failed, leftovers): failed counts BOTH file
+    removals that raised AND NSUserDefaults keys that survived the key pass; the
+    breakdown is logged. `leftovers` names every failure as ("file"|"key", home-relative
+    forward-slash path) so the post-restore verification (restorecheck.py) can TRIAGE
+    them against the archive instead of surfacing a raw count as a fear.
 
     `progress(removed, total)` is called (throttled, every 100 files) so a long wipe shows
     a moving bar instead of a dead screen. It is passed COUNTS ONLY - never a per-file name:
@@ -373,7 +376,7 @@ def _wipe(home, excludes, keep_files=None, progress=None):
 
     _UPDATE_EVERY = 100
     removed = 0
-    file_failures = 0
+    file_leftovers = []
     for root, dirs, files in os.walk(home, topdown=True):
         dirs[:] = [d for d in dirs if d not in excludes]
         for fname in files:
@@ -384,7 +387,11 @@ def _wipe(home, excludes, keep_files=None, progress=None):
                 os.remove(path)
                 removed += 1
             except Exception:
-                file_failures += 1
+                try:
+                    rel = os.path.relpath(path, home).replace("\\", "/")
+                except ValueError:
+                    rel = path
+                file_leftovers.append(rel)
             if progress is not None and removed % _UPDATE_EVERY == 0:
                 try:
                     progress(removed, total)
@@ -406,13 +413,19 @@ def _wipe(home, excludes, keep_files=None, progress=None):
 
     # Layer 2 (tvOS only, hard-gated inside): drop the NSUserDefaults keys, else every
     # vectored userdata *.xml survives the "clean clone" and shadows the restore.
-    keys_removed, keys_failed = _wipe_nsud_keys(home, excludes, keep_files)
+    keys_removed, key_survivors = _wipe_nsud_keys(home, excludes, keep_files)
 
     _log(
         "wipe: %d files removed (%d file failures), %d NSUserDefaults keys removed "
-        "(%d keys survived)" % (removed, file_failures, keys_removed, keys_failed)
+        "(%d keys survived)"
+        % (removed, len(file_leftovers), keys_removed, len(key_survivors))
     )
-    return (removed, keys_removed, file_failures + keys_failed)
+    for rel in file_leftovers:
+        _log("wipe: file survived the wipe: %s" % rel)
+    leftovers = [("file", rel) for rel in file_leftovers] + [
+        ("key", "userdata/" + rel) for rel in key_survivors
+    ]
+    return (removed, keys_removed, len(leftovers), leftovers)
 
 
 def _is_tvos():
@@ -506,9 +519,11 @@ def _wipe_nsud_keys(home, excludes, keep_files=None):
     re-reading the plist (CTVOSFile::Delete synchronizes the store to disk before
     returning) and every surviving key is counted as a failure and logged by name.
 
-    Returns (keys_removed, keys_failed)."""
+    Returns (keys_removed, survivors): survivors is the sorted list of userdata-relative
+    keys that outlived the pass - named, so the post-restore verification can triage
+    each one against the archive instead of reporting a bare count."""
     if not _is_tvos():
-        return (0, 0)
+        return (0, [])
     keep_files = keep_files or set()
 
     def _targets():
@@ -520,7 +535,7 @@ def _wipe_nsud_keys(home, excludes, keep_files=None):
 
     before = _targets()
     if not before:
-        return (0, 0)
+        return (0, [])
     for rel in before:
         try:
             # Drops ONLY the key on tvOS (see MECHANISM above); return value untrustworthy.
@@ -534,7 +549,7 @@ def _wipe_nsud_keys(home, excludes, keep_files=None):
             "wipe: NSUserDefaults key SURVIVED the wipe and will shadow a restore: %s"
             % rel
         )
-    return (removed, len(survivors))
+    return (removed, sorted(survivors))
 
 
 def keep_addon_db():
@@ -638,22 +653,23 @@ def apply(slot):
     hint = {"full": "home", "userdata": "userdata"}.get(
         pin.get("type") or infer_type(pin.get("src") or "")
     )
-    _files, _keys, _wipe_failed = _wipe(
+    _files, _keys, _wipe_failed, _leftovers = _wipe(
         xbmcvfs.translatePath("special://home/"), _wipe_excludes()
     )
-    # The wipe's failure count is surfaced, never discarded: leftover files - and on
-    # tvOS leftover NSUserDefaults keys - shadow the restore (they made the old bug
-    # look "intermittent"). The wiped box still MUST be restored (aborting here would
-    # strand it), so the restore proceeds, but the owner is told before it starts.
-    if _wipe_failed:
-        xbmcgui.Dialog().ok(
-            "One-Tap Restore",
-            "Warning: the wipe could not remove %d item(s); leftovers may shadow "
-            "the restored settings (see the log). The restore will proceed."
-            % _wipe_failed,
-        )
+    # Wipe leftovers are never discarded - and never surfaced RAW either. The old
+    # mid-flight warning ("could not remove N items; leftovers may shadow") read as
+    # breakage even when every leftover was harmless, and its modal ate the screen at
+    # moments other prompts needed it (the 2026-07-17 atv2 skin revert). The named
+    # leftovers ride into wiz.restore, whose post-restore verification TRIAGES them
+    # against the archive and only ever reports a proven problem.
     try:
-        wiz.restore(local, confirm=False, post_wipe=True, anchor_hint=hint)
+        wiz.restore(
+            local,
+            confirm=False,
+            post_wipe=True,
+            anchor_hint=hint,
+            wipe_leftovers=_leftovers,
+        )
     finally:
         _cleanup(local)
 

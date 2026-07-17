@@ -20,6 +20,7 @@ import xbmcvfs
 import json
 import os
 import re
+import xml.etree.ElementTree as ET
 import zipfile
 from resources.lib.modules import control, maintenance, tools, ui
 from datetime import datetime
@@ -716,8 +717,130 @@ def _restore_dropbox():
             pass
 
 
-def restore(zipFile, confirm=True, post_wipe=False, wipe=False, anchor_hint=None):
+# --------------------------------------------------------------------------- #
+# The LOCKED restore vocabulary (owner-edited 2026-07-17). These four strings -
+# plus the silent boot check - are the ONLY restore messages a user ever sees.
+# Counts, paths, and phase vocabulary belong in the log. Do not reword.
+# --------------------------------------------------------------------------- #
+MSG_COMPLETE = "Restore Complete"
+MSG_PROBLEM = (
+    "Restore Problem\n"
+    "Some of your backup couldn't be restored, so this box may not work "
+    "the way it did before."
+)
+MSG_NEEDS_ATTENTION = (
+    "Restore Problem\nThis box needs attention - open EZ Maintenance++."
+)
+
+
+def _read_target_skin(guisettings_path):
+    """Read lookandfeel.skin from a guisettings.xml on disk.
+
+    Returns the stripped skin id, or None if the file is missing / unparseable / the
+    setting is absent or empty (in which case there is no skin to assert). Pure read;
+    never raises. Called on the FRESHLY EXTRACTED guisettings.xml, before apply_guisettings
+    can rewrite the file (see restore())."""
+    try:
+        root = ET.parse(guisettings_path).getroot()
+    except Exception:
+        return None
+    for node in root.iter("setting"):
+        if node.get("id") == "lookandfeel.skin":
+            return (node.text or "").strip() or None
+    return None
+
+
+def _apply_boot_skin(rlog, target):
+    """Persist the RESTORED skin so the post-restore force-quit reopens on it. No live
+    switch, no keep-skin dialog - a pure persistence write.
+
+    Why persistence, not a live switch: on the appliances (tvOS AND Fire TV) Kodi's
+    "restart" is a FORCE-QUIT (RestartApp is desktop-only; ask_restart only quits), which
+    skips Kodi's clean-shutdown settings flush - so the reopen boots whatever value is LAST
+    on disk (and on tvOS, in its NSUserDefaults key). The old mechanism live-set
+    lookandfeel.skin and tried to answer Kodi's "keep this skin?" dialog via SendClick /
+    navigation; that was flaky on the Apple TV (worked 3 of 4 hardware runs) and, when the
+    confirm missed, Kodi REVERTED and corrupted the skin to stock in memory and on disk
+    (atv2, 2026-07-17). A write that never touches the live skin can never raise that dialog.
+
+    `target` is the skin captured from the EXTRACTED guisettings.xml BEFORE apply_guisettings
+    ran: apply_guisettings' live SetSettingValue calls make Kodi save guisettings.xml,
+    stamping the current in-memory (stock) skin over the archive's value. This runs as the
+    restore's LAST userdata write (after apply_guisettings, the purge, and the tvOS
+    re-vector), so nothing re-saves over it.
+
+    Writes the value two ways so it survives every platform: (a) into guisettings.xml on disk
+    via _kodisettings.write_guisetting (the durable path on Fire TV / desktop), and (b)
+    vectored into NSUserDefaults via nsud.persist_one (the durable path on tvOS; a no-op
+    rewrite of identical bytes elsewhere). Publishes Window(10000) property "ezm_boot_skin"
+    (written:<skin> / none / failed:<Error>) for off-box inspection over JSON-RPC. Fully
+    guarded: any failure is logged and NEVER breaks the restore."""
+    prop = "none"
+    try:
+        target = (target or "").strip()
+        if not target:
+            rlog("boot-skin: no restored skin to assert; nothing to do")
+            return
+        from resources.lib.modules import _kodisettings, nsud
+
+        guisettings_path = os.path.join(control.USERDATA, "guisettings.xml")
+        # On tvOS the durability re-vector above (nsud.rewrite_userdata_xml) vectored
+        # guisettings.xml into NSUserDefaults and DROPPED the redundant POSIX copy, so
+        # there is no file left for write_guisetting to edit or for persist_one to read
+        # back. Re-materialize the FULL current content from the VFS (the NSUD key on
+        # tvOS) first - never a stub, which would wipe every OTHER setting when
+        # persist_one re-vectors the file. A no-op on every platform that kept the file.
+        if not os.path.exists(guisettings_path):
+            try:
+                f = xbmcvfs.File("special://home/userdata/guisettings.xml")
+                try:
+                    data = f.readBytes()
+                finally:
+                    f.close()
+                data = bytes(data) if data else b""
+                if data:
+                    with open(guisettings_path, "wb") as fh:
+                        fh.write(data)
+                    rlog("boot-skin: re-materialized guisettings.xml from the VFS")
+            except Exception as e:  # noqa: BLE001 - fall through; write_guisetting reports
+                rlog("boot-skin: could not re-materialize guisettings.xml (%s)" % e)
+        ok = _kodisettings.write_guisetting(
+            guisettings_path, "lookandfeel.skin", target
+        )
+        # Vector guisettings.xml into NSUserDefaults on tvOS (the durable store there); a
+        # harmless no-op rewrite of identical bytes on Fire TV / Android / desktop.
+        nsud.persist_one("guisettings.xml", log=rlog)
+        if ok:
+            prop = "written:%s" % target
+            rlog("boot-skin: persisted restored skin %s (no live switch)" % target)
+        else:
+            prop = "failed:write_guisetting"
+            rlog("boot-skin: write_guisetting could not persist %s" % target)
+    except Exception as e:
+        prop = "failed:%s" % type(e).__name__
+        rlog("boot-skin: failed (%s: %s); restore stands" % (type(e).__name__, e))
+    finally:
+        try:
+            import xbmcgui as _xg
+
+            _xg.Window(10000).setProperty("ezm_boot_skin", prop)
+        except Exception:
+            pass
+
+
+def restore(
+    zipFile,
+    confirm=True,
+    post_wipe=False,
+    wipe=False,
+    anchor_hint=None,
+    wipe_leftovers=None,
+):
     """Extract a backup zip over special://home and offer a restart.
+
+    wipe_leftovers: named ("file"|"key", home-rel) leftovers from a wipe the CALLER
+    already ran (the One-Tap path). They are triaged by the post-restore verification,
+    never surfaced raw.
 
     post_wipe=True is the One-Tap path: the box has ALREADY been wiped and the snapshot
     ALREADY fully validated by the caller before the wipe. In that mode the extract is a
@@ -745,7 +868,6 @@ def restore(zipFile, confirm=True, post_wipe=False, wipe=False, anchor_hint=None
     # staging copy now has a gauge + cancel (it used to be a silent xbmcvfs.copy).
     local = zipFile
     staged = False
-    wipe_failed_n = 0
     if "://" in zipFile:
         local = translatePath(os.path.join("special://temp", os.path.basename(zipFile)))
         try:
@@ -816,15 +938,31 @@ def restore(zipFile, confirm=True, post_wipe=False, wipe=False, anchor_hint=None
                 "Nothing was changed.",
             )
             return
+        # From here on this IS a post-wipe restore: uninterruptible, never early-returns.
+        # (The wipe itself runs inside the attempt loop below, so Try Again gets a FRESH
+        # wipe - including a fresh shot at anything the first wipe could not remove.)
+        _needs_own_wipe = True
+        post_wipe = True
+    else:
+        _needs_own_wipe = False
+
+    def _rlog(m):
+        xbmc.log("%s : %s" % (AddonTitle, m), xbmc.LOGINFO)
+
+    # Both wiped flows (One-Tap already-wiped, clean-clone about-to-wipe) share the
+    # uninterruptible contract AND the retry rule: a Try Again re-wipes fresh.
+    wiped_flow = bool(post_wipe)
+    leftovers = list(wipe_leftovers or [])
+
+    def _wipe_pass():
+        """The proven One-Tap wipe, with the same count-only progress rules as before
+        (a per-file name would re-trigger the text renderer crash). Returns the NAMED
+        leftovers for triage; never raises."""
         # Lazy import breaks the onetap<->wiz cycle: onetap imports wiz lazily (inside
-        # apply()), so importing onetap here at call time - not at module top - is the
+        # apply()), so importing onetap at call time - not at module top - is the
         # lowest-risk way to reuse its proven wipe without an import loop.
         from resources.lib.modules import onetap
 
-        # Show the SAME progress bar the extract uses so the wipe is not a dead screen for
-        # ~90s. Counts only (note is static) - a per-file name would re-trigger the text
-        # renderer crash ExtractWithProgress was fixed to avoid. Not cancelable: a cancel
-        # mid-wipe would strand a half-wiped box, so we never check p.cancelled() here.
         with ui.Progress("Wiping the device clean...", heading="Restoring") as wp:
             _wres = onetap._wipe(
                 translatePath("special://home/"),
@@ -833,18 +971,10 @@ def restore(zipFile, confirm=True, post_wipe=False, wipe=False, anchor_hint=None
                     done, total, note="Removing old files"
                 ),
             )
-        # The wipe's failure count is NEVER discarded: leftover files - and on tvOS
-        # leftover NSUserDefaults keys - shadow or pollute the restore. It lands in
-        # the final report via wipe_failed_n below.
         try:
-            wipe_failed_n = int(_wres[2])
-        except (TypeError, IndexError, ValueError):
-            wipe_failed_n = 0
-        # From here on this IS a post-wipe restore: uninterruptible, never early-returns.
-        post_wipe = True
-
-    def _rlog(m):
-        xbmc.log("%s : %s" % (AddonTitle, m), xbmc.LOGINFO)
+            return list(_wres[3])
+        except (TypeError, IndexError):
+            return []
 
     # A backup zip is either HOME-anchored (full: members under userdata/ + addons/) or
     # USERDATA-anchored (a "kodi_settings" backup: bare userdata contents, NO userdata/
@@ -863,37 +993,7 @@ def restore(zipFile, confirm=True, post_wipe=False, wipe=False, anchor_hint=None
         % (anchor, extract_root, items, "yes" if manifest is not None else "no")
     )
 
-    # Restore-scoped PVR pause. pvr.iptvsimple reads instance-settings-*.xml only at
-    # client start and FLUSHES its stale in-memory copy over them at teardown
-    # (hardware-proven: docs/playbooks/kodi-settings-clobber.md) - so extracting IPTV
-    # config under a LIVE client is undone at the next clean shutdown. When (and only
-    # when) the archive carries pvr.iptvsimple config and the client is enabled, it is
-    # disabled here and ALWAYS re-enabled after the durability rewrite (both the cancel
-    # path and the completion path re-enable; a re-enable failure is reported loudly).
-    # This is the single sanctioned exception to "restore never toggles add-ons": a
-    # bounded, restore-scoped pause - never boot-time automation, never install/stage.
-    early_problems = []
     iptv_prefixes = _iptv_profile_prefixes(_names, anchor)
-    pvr_paused = False
-    if iptv_prefixes:
-        if _pvr_enabled():
-            pvr_paused = _pvr_set_enabled(False)
-            if pvr_paused:
-                # Record the outstanding pause BEFORE the extract, so if this
-                # restore is interrupted (crash, power loss) the boot service
-                # re-enables the client instead of leaving it disabled forever.
-                try:
-                    from resources.lib.modules import tools
-
-                    tools.mark_pvr_paused()
-                except Exception:
-                    pass
-                _rlog("restore: paused %s for the IPTV restore window" % _PVR_ADDON_ID)
-            else:
-                early_problems.append(
-                    "could not pause the IPTV client; its shutdown may overwrite "
-                    "the restored IPTV settings"
-                )
 
     # Skip the temp/ self-reference, recomputed against the ACTUAL extract root. On a
     # userdata anchor relpath(home/temp, home/userdata) -> '../temp' -> stays None (a
@@ -905,11 +1005,61 @@ def restore(zipFile, confirm=True, post_wipe=False, wipe=False, anchor_hint=None
             skip_prefix = rel.replace("\\", "/").rstrip("/") + "/"
     except Exception:
         pass
+    _skip_fn = _extract_skip(anchor, skip_prefix)
 
-    # Post-wipe the extract is uninterruptible: a cancel here would strand the wiped box,
-    # so cancelable is off and we ALWAYS fall through to the restart prompt below.
-    result = ExtractResult(canceled=False, extracted=-1)
-    try:
+    def _restore_pass(pass_leftovers):
+        """One full extract -> apply -> verify pass.
+
+        Returns (hard, attention, canceled):
+          hard      - content from the backup did not land (extract failures, unmapped
+                      members, manifest gaps). The backup is not fully on the box.
+          attention - everything landed but the restored STATE may not stick or may be
+                      shadowed (sweep/rewrite/apply failures, surviving stale keys,
+                      two-layer duplicates). A fresh pass usually clears these.
+          canceled  - the user canceled a merge-path extract; nothing to report.
+        All detail goes to the LOG; the caller decides which locked message to show.
+        """
+        # Restore-scoped PVR pause. pvr.iptvsimple reads instance-settings-*.xml only at
+        # client start and FLUSHES its stale in-memory copy over them at teardown
+        # (hardware-proven: docs/playbooks/kodi-settings-clobber.md) - so extracting IPTV
+        # config under a LIVE client is undone at the next clean shutdown. When (and only
+        # when) the archive carries pvr.iptvsimple config and the client is enabled, it is
+        # disabled here and ALWAYS re-enabled after the durability rewrite (both the cancel
+        # path and the completion path re-enable; a re-enable failure is reported loudly).
+        # This is the single sanctioned exception to "restore never toggles add-ons": a
+        # bounded, restore-scoped pause - never boot-time automation, never install/stage.
+        attention = []
+        pvr_paused = False
+        if iptv_prefixes:
+            if _pvr_enabled():
+                pvr_paused = _pvr_set_enabled(False)
+                if pvr_paused:
+                    # Record the outstanding pause BEFORE the extract, so if this
+                    # restore is interrupted (crash, power loss) the boot service
+                    # re-enables the client instead of leaving it disabled forever.
+                    try:
+                        from resources.lib.modules import tools
+
+                        tools.mark_pvr_paused()
+                    except Exception:
+                        pass
+                    _rlog(
+                        "restore: paused %s for the IPTV restore window" % _PVR_ADDON_ID
+                    )
+                else:
+                    # A pause miss is a RISK ("its shutdown MAY overwrite..."), not a
+                    # realized failure. If it mattered, it shows up as a functional
+                    # problem later (the client re-enable, or a duplicate/stray
+                    # instance) - which stay attention. Alone, it is log-only, so it
+                    # cannot cry wolf on a restore that landed fine.
+                    _rlog(
+                        "restore: could not pause %s (risk-only; functional checks "
+                        "below decide)" % _PVR_ADDON_ID
+                    )
+
+        # Post-wipe the extract is uninterruptible: a cancel here would strand the wiped
+        # box, so cancelable is off and we ALWAYS fall through to the reporting below.
+        result = ExtractResult(canceled=False, extracted=-1)
         with ui.Progress("Extracting the backup...", heading="Restoring") as p:
             result = _as_extract_result(
                 ExtractWithProgress(
@@ -918,216 +1068,368 @@ def restore(zipFile, confirm=True, post_wipe=False, wipe=False, anchor_hint=None
                     p,
                     skip_prefix=skip_prefix,
                     cancelable=not post_wipe,
-                    skip_member=_extract_skip(anchor, skip_prefix),
+                    skip_member=_skip_fn,
                 )
             )
-    finally:
-        if staged:
-            try:
-                os.remove(local)
-            except OSError:
-                pass
 
-    if result.canceled and not post_wipe:
-        # The user canceled a (non-wipe) restore. The stray sweep runs only AFTER a
-        # completed extract, so the box's own IPTV config was NOT touched; the only
-        # residue is whatever members the (now-stopped) extract already overwrote.
+        if result.canceled and not post_wipe:
+            # The user canceled a (non-wipe) restore. The stray sweep runs only AFTER a
+            # completed extract, so the box's own IPTV config was NOT touched; the only
+            # residue is whatever members the (now-stopped) extract already overwrote.
+            if pvr_paused:
+                if _pvr_set_enabled(True):
+                    _clear_pvr_pause_marker()
+                else:
+                    dialog.ok(
+                        AddonTitle,
+                        "The IPTV client could not be re-enabled automatically. "
+                        "It will be re-enabled on the next restart.",
+                    )
+            dialog.ok(
+                AddonTitle,
+                "Restore Canceled. Files extracted before the cancel remain on disk; "
+                "your IPTV configuration was not swept.",
+            )
+            return ([], [], True)
+
+        # IPTV duplicate-instance STRAY sweep (AFTER the extract, deliberately): the
+        # archive's own instance files were just written by the extract; this removes only
+        # instance-settings-*.xml the archive does NOT carry (both layers on tvOS), so the
+        # restored instance set exactly equals the archive and numbering can never
+        # accumulate (the 2026-07-08 brick guard). Running it post-extract means a cancel
+        # can never destroy config the box already had. No-op without IPTV in the archive.
+        swept, sweep_failed = _sweep_iptv_instances(_names, anchor, log=_rlog)
+
+        # Capture the RESTORED skin from the freshly extracted guisettings.xml NOW, before
+        # apply_guisettings' live SetSettingValue calls make Kodi save the file and stamp
+        # the current (stock) in-memory skin over the archive's value. The captured skin is
+        # persisted as the restore's LAST userdata write (see _apply_boot_skin), so the
+        # post-restore force-quit reopens on the restored skin with no keep-skin dialog ever
+        # appearing. A missing file / absent / empty setting -> None -> nothing to assert.
+        try:
+            _boot_skin["target"] = _read_target_skin(
+                os.path.join(control.USERDATA, "guisettings.xml")
+            )
+        except Exception:
+            _boot_skin["target"] = None
+
+        # HARD failures: content from the backup that is not on the box. These are the
+        # only findings allowed to call a restore a problem to the user.
+        hard = []
+        if result.failed:
+            hard.append("%d item(s) did NOT restore" % len(result.failed))
+            for line in _failed_lines(result.failed):
+                _rlog("failed member: %s" % line)
+        # Members the anchor rules refused to map are surfaced, never silently dropped:
+        # on a HOME anchor a member outside the allowed top-level dirs is real content
+        # from a foreign/legacy layout the restore cannot place - the owner must know it
+        # did not land (dropping it silently while saying "Complete" is the old lie).
+        unmapped = [
+            n
+            for n in _names
+            if _skip_fn(n)
+            and (n or "").lstrip("/").replace("\\", "/") != MANIFEST_NAME
+            and not (
+                skip_prefix
+                and (n or "").lstrip("/").replace("\\", "/").startswith(skip_prefix)
+            )
+        ]
+        if unmapped:
+            hard.append(
+                "%d member(s) outside the recognized layout were NOT restored: %s"
+                % (len(unmapped), ", ".join(unmapped[:5]))
+            )
+        if manifest is not None:
+            hard.extend(_manifest_problems(manifest, _names))
+        if sweep_failed:
+            attention.append(
+                "%d stale IPTV instance file(s) could not be removed: %s"
+                % (len(sweep_failed), ", ".join(sweep_failed[:5]))
+            )
+
+        # Make the restore actually take effect on every platform - critically on tvOS,
+        # where Kodi mirrors guisettings.xml in NSUserDefaults and would otherwise revert
+        # a file-only restore. Mirror the official Backup add-on: re-apply settings
+        # through the JSON-RPC API and rescan add-ons. The skin is deliberately NOT
+        # live-applied here (see _apply_boot_skin below). A failure is never swallowed
+        # silently: it is logged AND weighed in the verdict.
+        applied = 0
+        try:
+            from resources.lib.modules import _kodisettings
+
+            applied = _kodisettings.apply_guisettings(
+                os.path.join(control.USERDATA, "guisettings.xml")
+            )
+        except Exception as e:
+            xbmc.log(
+                "%s : apply_guisettings failed: %s: %s"
+                % (AddonTitle, type(e).__name__, e),
+                level=xbmc.LOGERROR,
+            )
+            attention.append("settings re-apply failed (%s)" % type(e).__name__)
+        try:
+            xbmc.executebuiltin("UpdateLocalAddons")
+        except Exception as e:
+            xbmc.log(
+                "%s : UpdateLocalAddons failed: %s" % (AddonTitle, type(e).__name__),
+                level=xbmc.LOGWARNING,
+            )
+
+        # tvOS durability: the extract wrote userdata/*.xml with plain POSIX I/O, which on
+        # Apple TV BYPASSES Kodi's CTVOSFile VFS - so the restored settings never reach
+        # NSUserDefaults (tvOS's only persistent store) and are shadowed by the stale
+        # mirror at boot. Re-write each restored userdata/*.xml THROUGH xbmcvfs so tvOS
+        # vectors it into NSUserDefaults (durable on the first reopen, no clean shutdown
+        # needed). Runs AFTER apply_guisettings/UpdateLocalAddons (so nothing re-saves
+        # defaults over it). A failure is logged AND weighed, never silently swallowed.
+        try:
+            from resources.lib.modules import nsud
+
+            # Purge FIRST (before the rewrite): out-of-scope vector-everything-era keys
+            # shadow restored files and inflate the NSUserDefaults store; clearing them
+            # before vectoring the restored xml keeps the store's peak size down (the
+            # 512 KB warn / 1 MB kill budget) and cannot touch in-scope keys the rewrite
+            # is about to write. This purge is also the AUTO-FIX for wipe-leftover keys:
+            # the verification below re-reads the store and only a key that survives
+            # BOTH the wipe and this purge can ever reach the user as a problem.
+            if hasattr(nsud, "purge_stale_keys"):
+                try:
+                    pg = nsud.purge_stale_keys(control.USERDATA, log=_rlog)
+                    try:
+                        pg_failed = int(pg[3])
+                    except (TypeError, IndexError, ValueError):
+                        pg_failed = 0
+                    if pg_failed:
+                        xbmc.log(
+                            "%s : stale-key purge left %d pre-existing key(s) "
+                            "unresolved (weighed by the verification below)"
+                            % (AddonTitle, pg_failed),
+                            level=xbmc.LOGINFO,
+                        )
+                except Exception as e:
+                    # purge_stale_keys is documented never to raise; guard anyway.
+                    xbmc.log(
+                        "%s : purge_stale_keys raised %s: %s (verification decides)"
+                        % (AddonTitle, type(e).__name__, e),
+                        level=xbmc.LOGWARNING,
+                    )
+
+            rw = nsud.rewrite_userdata_xml(control.USERDATA, log=_rlog)
+            try:
+                rw_failed = int(rw[2])
+            except (TypeError, IndexError, ValueError):
+                rw_failed = 0
+            if rw_failed:
+                # A tvOS re-vector miss means a restored userdata file did not reach
+                # the NSUserDefaults layer. Whether that is HARMLESS or a SILENT LOSS
+                # depends on the path (audit Finding A/B, 2026-07-17):
+                #   WIPE path (One-Tap / "Erase first"): the wipe already cleared every
+                #     NSUD key, so no stale key can shadow the restored POSIX file - Kodi
+                #     serves the restored file. Harmless -> LOG only. (Alarming here is
+                #     what cried wolf on atv2's clean restores.)
+                #   MERGE path (add-on-top / all Dropbox restores): pre-existing keys
+                #     survive (purge keeps in-scope keys), so a re-vector miss leaves a
+                #     STALE key shadowing the restored file - Kodi serves the OLD value
+                #     forever and the user would never know. That is a real partial loss
+                #     and MUST be surfaced (the shadow probe only covers three addon_data
+                #     dirs, so it cannot catch a shadowed top-level userdata file).
+                if wiped_flow:
+                    _rlog(
+                        "tvOS re-vector missed %d file(s) on the wipe path (keys were "
+                        "cleared; restored files are served - harmless)" % rw_failed
+                    )
+                else:
+                    attention.append(
+                        "%d restored setting file(s) did not persist to tvOS storage; "
+                        "an older copy may shadow them (merge restore)" % rw_failed
+                    )
+        except Exception as e:
+            xbmc.log(
+                "%s : tvOS settings rewrite failed: %s: %s"
+                % (AddonTitle, type(e).__name__, e),
+                level=xbmc.LOGERROR,
+            )
+
+        # ALWAYS resume the paused IPTV client - the pause is restore-scoped by contract.
+        # The client starts fresh and reads the restored (and on tvOS, vectored) instance
+        # files. A re-enable failure is loud: it is logged and weighed in the verdict.
         if pvr_paused:
             if _pvr_set_enabled(True):
                 _clear_pvr_pause_marker()
+                _rlog("restore: resumed %s" % _PVR_ADDON_ID)
             else:
-                dialog.ok(
-                    AddonTitle,
-                    "The IPTV client could not be re-enabled automatically. "
-                    "It will be re-enabled on the next restart.",
+                attention.append(
+                    "the IPTV client could not be re-enabled now - it will be "
+                    "re-enabled automatically on the next restart"
                 )
-        dialog.ok(
-            AddonTitle,
-            "Restore Canceled. Files extracted before the cancel remain on disk; "
-            "your IPTV configuration was not swept.",
-        )
-        return
 
-    # IPTV duplicate-instance STRAY sweep (AFTER the extract, deliberately): the
-    # archive's own instance files were just written by the extract; this removes only
-    # instance-settings-*.xml the archive does NOT carry (both layers on tvOS), so the
-    # restored instance set exactly equals the archive and numbering can never
-    # accumulate (the 2026-07-08 brick guard). Running it post-extract means a cancel
-    # can never destroy config the box already had. No-op without IPTV in the archive.
-    swept, sweep_failed = _sweep_iptv_instances(_names, anchor, log=_rlog)
-
-    # Everything that did not go perfectly, in one honest list for the final report.
-    problems = list(early_problems)
-    if wipe_failed_n:
-        problems.append(
-            "the pre-restore wipe could not remove %d item(s); leftovers may "
-            "shadow or pollute the restored state" % wipe_failed_n
-        )
-    # Members the anchor rules refused to map are surfaced, never silently dropped:
-    # on a HOME anchor a member outside the allowed top-level dirs is real content
-    # from a foreign/legacy layout the restore cannot place - the owner must know it
-    # did not land (dropping it silently while saying "Complete" is the old lie).
-    _skip_fn = _extract_skip(anchor, skip_prefix)
-    unmapped = [
-        n
-        for n in _names
-        if _skip_fn(n)
-        and (n or "").lstrip("/").replace("\\", "/") != MANIFEST_NAME
-        and not (
-            skip_prefix
-            and (n or "").lstrip("/").replace("\\", "/").startswith(skip_prefix)
-        )
-    ]
-    if unmapped:
-        problems.append(
-            "%d member(s) outside the recognized layout were NOT restored: %s"
-            % (len(unmapped), ", ".join(unmapped[:5]))
-        )
-    if manifest is not None:
-        problems.extend(_manifest_problems(manifest, _names))
-    if sweep_failed:
-        problems.append(
-            "%d stale IPTV instance file(s) could not be removed: %s"
-            % (len(sweep_failed), ", ".join(sweep_failed[:5]))
-        )
-
-    # Make the restore actually take effect on every platform - critically on tvOS,
-    # where Kodi mirrors guisettings.xml in NSUserDefaults and would otherwise revert a
-    # file-only restore. Mirror the official Backup add-on: re-apply settings through
-    # the JSON-RPC API and rescan add-ons, then offer the (unified) restart. A failure
-    # here is never swallowed silently: it is logged AND lands in the final report.
-    applied = 0
-    try:
-        from resources.lib.modules import _kodisettings
-
-        applied = _kodisettings.apply_guisettings(
-            os.path.join(control.USERDATA, "guisettings.xml")
-        )
-    except Exception as e:
-        xbmc.log(
-            "%s : apply_guisettings failed: %s: %s" % (AddonTitle, type(e).__name__, e),
-            level=xbmc.LOGERROR,
-        )
-        problems.append("settings re-apply failed (%s)" % type(e).__name__)
-    try:
-        xbmc.executebuiltin("UpdateLocalAddons")
-    except Exception as e:
-        xbmc.log(
-            "%s : UpdateLocalAddons failed: %s" % (AddonTitle, type(e).__name__),
-            level=xbmc.LOGWARNING,
-        )
-
-    # tvOS durability: the extract wrote userdata/*.xml with plain POSIX I/O, which on Apple
-    # TV BYPASSES Kodi's CTVOSFile VFS - so the restored settings never reach NSUserDefaults
-    # (tvOS's only persistent store) and are shadowed by the stale mirror at boot. Re-write
-    # each restored userdata/*.xml THROUGH xbmcvfs so tvOS vectors it into NSUserDefaults
-    # (durable on the first reopen, no clean shutdown needed). This is a generic settings
-    # durability rewrite - it does NOT enable, disable, or stage the IPTV client. Runs AFTER
-    # apply_guisettings/UpdateLocalAddons (so nothing re-saves defaults over it) and BEFORE
-    # the restart prompt. A failure is logged AND reported, never silently swallowed.
-    try:
-        from resources.lib.modules import nsud
-
-        # Purge FIRST (before the rewrite): out-of-scope vector-everything-era keys
-        # shadow restored files and inflate the NSUserDefaults store; clearing them
-        # before vectoring the restored xml keeps the store's peak size down (the
-        # 512 KB warn / 1 MB kill budget) and cannot touch in-scope keys the rewrite
-        # is about to write. The purge is best-effort HYGIENE of PRE-EXISTING box
-        # cruft (old keys this restore did not create) - it must NOT downgrade the
-        # restore's own success verdict. A key it cannot clear (undecodable, or a
-        # confirm-read that tvOS's async preference flush has not yet reflected) is
-        # LOGGED, never added to `problems`; the restore's success is decided by the
-        # extract/sweep/rewrite counts, which are the files THIS restore handled.
-        if hasattr(nsud, "purge_stale_keys"):
+        # The verification stage: prove the restored state before anyone reports it.
+        # Triage of the wipe leftovers + the two-layer probes (restorecheck.py). Only
+        # proven-dangerous findings survive into `attention`.
+        with ui.Progress("Verifying backup...", heading="Restoring"):
             try:
-                pg = nsud.purge_stale_keys(control.USERDATA, log=_rlog)
-                try:
-                    pg_failed = int(pg[3])
-                except (TypeError, IndexError, ValueError):
-                    pg_failed = 0
-                if pg_failed:
-                    xbmc.log(
-                        "%s : stale-key purge left %d pre-existing key(s) unresolved "
-                        "(logged, does not affect this restore)"
-                        % (AddonTitle, pg_failed),
-                        level=xbmc.LOGINFO,
-                    )
-            except Exception as e:
-                # purge_stale_keys is documented never to raise; guard anyway, and
-                # still do NOT fail the restore over a hygiene step.
-                xbmc.log(
-                    "%s : purge_stale_keys raised %s: %s (ignored; restore stands)"
-                    % (AddonTitle, type(e).__name__, e),
-                    level=xbmc.LOGWARNING,
+                from resources.lib.modules import restorecheck
+
+                ver_attention, _detail = restorecheck.verify_restored_state(
+                    pass_leftovers, _names, anchor
                 )
+            except Exception as e:
+                # verify_restored_state is documented never to raise; guard the IMPORT
+                # too so a broken deploy missing the module cannot strand a wiped box
+                # before the restart prompt (the uninterruptible invariant).
+                _rlog(
+                    "verification unavailable (%s: %s); reporting on extract/sweep only"
+                    % (type(e).__name__, e)
+                )
+                ver_attention = []
+        attention.extend(ver_attention)
 
-        rw = nsud.rewrite_userdata_xml(control.USERDATA, log=_rlog)
-        try:
-            rw_failed = int(rw[2])
-        except (TypeError, IndexError, ValueError):
-            rw_failed = 0
-        if rw_failed:
-            problems.append("tvOS settings rewrite failed for %d file(s)" % rw_failed)
-    except Exception as e:
-        xbmc.log(
-            "%s : tvOS settings rewrite failed: %s: %s"
-            % (AddonTitle, type(e).__name__, e),
-            level=xbmc.LOGERROR,
+        extracted_n = result.extracted if result.extracted >= 0 else items
+        total_n = result.total if result.total else items
+        _rlog(
+            "restore pass: %d/%d extracted, %d settings applied, %d swept, "
+            "hard=%r attention=%r"
+            % (extracted_n, total_n, applied, swept, hard, attention)
         )
-        problems.append("tvOS settings rewrite failed (%s)" % type(e).__name__)
+        _stats.clear()
+        _stats.update(
+            extracted=extracted_n,
+            total=total_n,
+            failed=len(result.failed or []),
+            unmapped=len(unmapped),
+            skipped=len(unmapped),
+            applied=applied,
+        )
+        return (hard, attention, False)
 
-    # ALWAYS resume the paused IPTV client - the pause is restore-scoped by contract.
-    # The client starts fresh and reads the restored (and on tvOS, vectored) instance
-    # files. A re-enable failure is loud: it lands in the report AND its own dialog.
-    if pvr_paused:
-        if _pvr_set_enabled(True):
-            _clear_pvr_pause_marker()
-            _rlog("restore: resumed %s" % _PVR_ADDON_ID)
-        else:
-            problems.append(
-                "the IPTV client could not be re-enabled now - it will be re-enabled "
-                "automatically on the next restart"
+    # The structured, machine-facing summary of the LAST pass: the honest record
+    # for callers and tests (the UI speaks only the locked vocabulary; this dict
+    # carries the counts the dialogs deliberately do not).
+    _stats = {}
+
+    # The RESTORED skin captured from the extracted guisettings.xml, BEFORE
+    # apply_guisettings can rewrite the file (populated inside _restore_pass; persisted
+    # by _apply_boot_skin as the last userdata write). None -> no skin to assert.
+    _boot_skin = {}
+
+    # ---- attempt loop: at most 2 passes. A hard failure asks the user (Try Again);
+    # attention-only failures are auto-fixed with a silent fresh pass ("when this
+    # occurs, we should just fix it" - owner, 2026-07-17). ----
+    def _guard(fn, what):
+        # A raise from a wipe/extract pass (e.g. a ui.Progress construction or a lazy
+        # import) must still drive a WIPED box to the restart prompt - a wiped box may
+        # never be stranded with no way forward (audit Finding D). Re-raises after so
+        # the error is not swallowed silently.
+        try:
+            return fn()
+        except Exception as e:
+            _rlog("restore: %s raised %s" % (what, e))
+            if wiped_flow:
+                try:
+                    ui.ask_restart("")
+                except Exception:
+                    pass
+            raise
+
+    if _needs_own_wipe:
+        leftovers = _guard(_wipe_pass, "wipe")
+    hard, attention, canceled = _guard(lambda: _restore_pass(leftovers), "restore pass")
+    # A pass that did not cancel actually laid a full restore on the box (extract +
+    # apply + rewrite). Track it: a later canceled retry must not throw away the fact
+    # that an earlier pass already restored the box (Finding 4).
+    completed_once = not canceled
+    declined_retry = False
+    if not canceled and (hard or attention):
+        do_retry = True
+        if hard:
+            do_retry = dialog.yesno(
+                AddonTitle, MSG_PROBLEM, yeslabel="Try Again", nolabel="Close"
             )
+            declined_retry = not do_retry
+        else:
+            _rlog("auto-fix: re-running the restore to clear a fixable state")
+        if do_retry:
+            if wiped_flow:
+                leftovers = _guard(_wipe_pass, "wipe")
+            else:
+                leftovers = []
+            hard, attention, canceled = _guard(
+                lambda: _restore_pass(leftovers), "restore pass"
+            )
+            completed_once = completed_once or not canceled
+
+    if staged:
+        try:
+            os.remove(local)
+        except OSError:
+            pass
+
+    # Publish the verdict as a Home window property so it is READABLE over JSON-RPC
+    # for diagnostics (this box's webserver /vfs endpoint refuses the log, so a
+    # window property is the only reliable off-box visibility into what the restore
+    # decided). Best-effort; never affects the restore.
+    try:
+        import xbmcgui as _xg
+
+        verdict = "hard" if hard else ("attention" if attention else "complete")
+        _xg.Window(10000).setProperty("ezm_restore_verdict", verdict)
+        _xg.Window(10000).setProperty(
+            "ezm_restore_findings", " || ".join((hard or []) + (attention or []))[:900]
+        )
+    except Exception:
+        pass
+
+    if canceled and not completed_once:
+        # A genuine abort with nothing restored: the "Restore Canceled" dialog already
+        # fired inside the pass. Arm nothing, switch nothing.
+        return dict(_stats, canceled=True, hard=[], attention=[])
+    # If we get here after a canceled RETRY, an earlier pass DID restore the box: the
+    # post-restore machinery below (markers, boot skin) must still arm. The
+    # "Restore Canceled" dialog from the aborted retry already spoke, so we do not add
+    # a Complete/Problem message on top - fall through to arm + the restart prompt.
 
     # A restore clones the SOURCE box's guisettings, so this box now carries the wrong
     # device name (services.devicename) AND a buffer (filecache.memorysize) sized for the
     # wrong RAM. Drop a persistent marker so the boot service runs the post-restore tune-up
-    # on the next boot: offer to rename this device, then to retune the buffer for it. Written
-    # HERE - AFTER the extract completes and right before the restart prompt - deliberately:
-    # the pre-extract wipe (wipe/One-Tap paths) runs earlier and would remove it, and the
-    # extract itself would overwrite it. Covers BOTH the normal restore and One-Tap (onetap
-    # calls restore(post_wipe=True), which reaches this same point). The marker keeps its
-    # historical name (.ezm_buffer_prompt) - it now gates the whole combined flow. Guarded: a
-    # marker-write failure must never break the restore.
+    # on the next boot. Written HERE - after the final pass - deliberately: the wipe runs
+    # earlier and would remove it, and the extract itself would overwrite it. Guarded: a
+    # marker-write failure must never break the restore. The restore-check marker makes
+    # the boot service re-verify the restored state on the next start (silent on pass).
     try:
         from resources.lib.modules import tools
 
         tools.mark_buffer_prompt_pending()
+        tools.mark_restore_check_pending()
     except Exception:
         pass
 
-    # Truthful completion: "Complete" is only ever claimed when every member the
-    # extract attempted actually landed AND nothing else went wrong. Otherwise the
-    # report says INCOMPLETE, lists exactly what did not restore, and still drives
-    # the (mandatory on post-wipe) restart prompt.
-    extracted_n = result.extracted if result.extracted >= 0 else items
-    total_n = result.total if result.total else items
-    if not result.failed and not problems:
-        ui.ask_restart(
-            "Restore Complete: %d items restored, %d settings applied."
-            % (extracted_n, applied)
-        )
-        return
-    lines = []
-    if result.failed:
-        lines.append("%d item(s) did NOT restore:" % len(result.failed))
-        lines.extend(_failed_lines(result.failed))
-    lines.extend(problems)
-    dialog.ok(AddonTitle, "Restore INCOMPLETE:\n%s" % "\n".join(lines))
-    ui.ask_restart(
-        "Restore INCOMPLETE: %d of %d items restored, %d failed, %d settings applied."
-        % (extracted_n, total_n, len(result.failed), applied)
-    )
+    # The restored skin is persisted LAST (after apply_guisettings, the stale-key purge,
+    # and the tvOS re-vector) so nothing re-saves over it. A pure write, no live switch:
+    # the force-quit reopen boots straight into it with no keep-skin dialog.
+    _apply_boot_skin(_rlog, _boot_skin.get("target"))
+
+    # The locked user-facing vocabulary (owner-edited 2026-07-17) - see MSG_* at module
+    # top. Everything else about this restore lives in the log.
+    if canceled:
+        # A canceled RETRY over an already-restored box: the pass's own "Restore
+        # Canceled" dialog already spoke. Do not add Complete/Problem on top; the box
+        # was restored by the earlier pass, so still drive the restart prompt.
+        ui.ask_restart("")
+        return dict(_stats, canceled=True, hard=[], attention=[])
+    if not hard and not attention:
+        ui.ask_restart(MSG_COMPLETE)
+        return dict(_stats, canceled=False, hard=[], attention=[])
+    if not declined_retry:
+        # HARD = backup CONTENT did not restore (the retry is already spent, so this is
+        # a final notice, not another Try Again). It must use the PROBLEM wording, not
+        # the softer "needs attention" - the box "may not work the way it did before"
+        # (audit Finding C: a hard failure first appearing on the auto-fix pass was
+        # being downgraded to needs-attention). attention-only = the box works but a
+        # check flagged something -> needs-attention.
+        dialog.ok(AddonTitle, MSG_PROBLEM if hard else MSG_NEEDS_ATTENTION)
+    # A wiped box must ALWAYS be driven to the restart prompt, whatever was reported.
+    ui.ask_restart("")
+    return dict(_stats, canceled=False, hard=list(hard), attention=list(attention))
 
 
 def CreateZip(

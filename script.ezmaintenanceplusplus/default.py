@@ -461,7 +461,9 @@ def FRESHSTART(mode="verbose"):
 
             # keep_addon_db() preserves Kodi's add-on state DB so EZ Maintenance++ comes
             # back ENABLED after the restart (not disabled/"gone", which was the bad UX).
-            _f, _k, wipe_failed = onetap._wipe(
+            # _wipe returns (files_removed, keys_removed, failed_count, named_leftovers);
+            # Fresh Start only needs the failed COUNT.
+            _f, _k, wipe_failed, _leftovers = onetap._wipe(
                 HOME, onetap._wipe_excludes(), onetap.keep_addon_db()
             )
         except Exception as e:

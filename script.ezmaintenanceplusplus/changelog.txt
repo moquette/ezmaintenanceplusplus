@@ -86,3 +86,81 @@ v2022.12.28.0
    paused and resumed), honest reporting confirmed. No functional change from
    2026.07.16.0 - this release records the hardware verification and the move to
    CI-driven publishing.
+
+v2026.07.17.0
+- Restore verifies its own work before reporting: a new "Verifying backup..." step triages
+  everything the pre-restore wipe left behind against the backup (overwritten / harmless
+  residue / dangerous stale keys) and auto-fixes the dangerous class with one silent fresh
+  pass. The old mid-flight warning ("could not remove N items; leftovers may shadow...") is
+  gone - it alarmed on states that were provably harmless and its modal could eat other
+  prompts (this is exactly how a restored Apple TV came back in the stock skin).
+- The user-facing vocabulary is now four owner-approved messages, with every count, path,
+  and phase name demoted to the log: "Restore Complete" (the normal case), a Problem
+  prompt with Try Again for genuine restore failures, a needs-attention line when a fix
+  did not hold, and a silent post-restart self-check that only speaks on a real finding.
+  "Restore INCOMPLETE" no longer appears for wipe imperfections - the restore phase and
+  the wipe phase are reported as what they are. restore() now returns a structured summary
+  (extracted/failed/unmapped/attention) so tooling keeps the full truth.
+- Try Again re-runs the entire restore (fresh wipe included) from the already-staged
+  backup, twice at most, then escalates instead of looping.
+- The restored skin comes back reliably: lookandfeel.skin is no longer live-applied
+  mid-restore (its keep-skin countdown was unanswerable behind our dialogs and reverted
+  the skin). It is switched after all dialogs close and the confirmation is answered
+  automatically, then verified.
+- New restorecheck module (read-only verification: leftover triage, stale-key re-read,
+  two-layer duplicate probe) shared by the restore and the boot self-check.
+
+v2026.07.17.1
+- Fix: the restored skin now reliably goes live on Apple TV after a restore.
+  The v2026.07.17.0 cut answered Kodi's keep-this-skin dialog with SendClick(11)
+  alone, which did not land on the Apple TV, so the box reverted to the stock
+  skin (hardware-reproduced on atv2). _apply_boot_skin now falls back to remote
+  navigation (proven to confirm on the device), VERIFIES the skin actually stuck
+  after a settle, and retries several strategies before giving up loudly. New
+  regression test reproduces the SendClick failure and proves the recovery.
+
+v2026.07.17.2
+- Fix: the post-restore verification no longer raises "needs attention" for a
+  stale NSUserDefaults key the wipe could not clear when that key is at a path the
+  backup does not restore - it shadows nothing restored, so it is cruft, logged not
+  alarmed (hardware-repro atv2 2026-07-17: a clean restore falsely said "needs
+  attention"). The genuine signal - a RESTORED file shadowed by a stale key - is a
+  duplicate two-layer listing, which remains the attention case.
+
+v2026.07.17.3
+- Fix: the tvOS settings re-vector (a best-effort durability step after a restore) no
+  longer raises "needs attention" when it misses some files. apply_guisettings has
+  already applied the settings live (which persists on tvOS), so a re-vector miss is
+  not a restore failure - it is logged. atv2 2026-07-17: a perfect restore kept saying
+  "needs attention" because of this. Genuine functional failures (settings apply,
+  IPTV pause/resume, stray-instance sweep, duplicate two-layer listings) still report.
+
+v2026.07.17.4
+- Fix: "needs attention" is now reserved for a genuinely broken restore. tvOS
+  best-effort housekeeping that does not affect the restored box (a re-vector miss,
+  an unclearable stale key not in the archive, an IPTV pause miss that did not
+  materialize, a diagnostic probe that hiccuped) is LOGGED, not raised to the user.
+  atv2 2026-07-17: a perfect restore kept saying "needs attention" over this noise.
+  The signals that still report: settings-apply failure, IPTV re-enable failure,
+  stray/duplicate IPTV instances, and a restored file shadowed by a stale key.
+- The restore now publishes its verdict as a Home window property
+  (ezm_restore_verdict / ezm_restore_findings) so it is readable over JSON-RPC for
+  diagnostics, since this appliance's webserver /vfs refuses the log.
+
+v2026.07.17.5
+- Skin persistence rewrite: after a restore the restored skin is captured from the
+  archive's guisettings BEFORE anything can clobber it, then written directly to disk
+  and the tvOS NSUserDefaults layer as the LAST step - so the force-quit reopen loads
+  it with no keep-this-skin dialog. Removes the flaky live-switch+SendClick confirm
+  that reverted the Apple TV to stock ~1 in 4 restores. Includes a tvOS re-materialize
+  guard so the write never blanks other settings.
+- Silent-loss fix (merge/Dropbox path): a tvOS re-vector miss that could leave a stale
+  key shadowing a restored file now reports needs-attention instead of a false
+  "Complete". On the wipe path (keys already cleared) it stays harmless/log-only.
+- A hard content failure surfacing on the auto-fix retry now shows the Problem wording,
+  not the softer needs-attention.
+- A wiped box is guaranteed to reach the restart prompt even on an unexpected error.
+- Fresh Start: fixed an unpack bug that wiped the box then falsely reported the wipe
+  did not run and skipped the restart. Now completes and restarts correctly.
+- Set-up-this-box: the repo source rename to .T7B dedups by URL (no duplicate entries).
+- Reviewed by three independent agents; the skin boot still owes one on-device run.

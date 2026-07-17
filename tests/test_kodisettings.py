@@ -79,7 +79,12 @@ def test_apply_coerces_types_and_skips_unchanged(kodisettings, tmp_path):
     gs = _write_guisettings(
         tmp_path,
         [
-            ("lookandfeel.skin", "skin.estuary.modv2"),  # changed string -> applied
+            # BOOT-STATE ONLY: live-applying the skin starts Kodi's keep-skin
+            # countdown mid-restore (unanswerable behind EZM++ dialogs) and got
+            # the restored skin REVERTED on atv2 (2026-07-17). It must be
+            # skipped here; wiz._apply_boot_skin persists the restored skin
+            # instead (a pure disk + NSUserDefaults write, no live switch).
+            ("lookandfeel.skin", "skin.estuary.modv2"),
             ("audiooutput.volumesteps", "90"),  # unchanged int -> skipped
             ("ear.enable", "true"),  # changed, coerced to bool -> applied
             ("some.action", "doit"),  # action type -> skipped
@@ -88,12 +93,12 @@ def test_apply_coerces_types_and_skips_unchanged(kodisettings, tmp_path):
     )
     n = ks.apply_guisettings(gs)
     applied = dict(fake.set_calls)
-    assert applied.get("lookandfeel.skin") == "skin.estuary.modv2"
+    assert "lookandfeel.skin" not in applied  # boot-state only, never live-applied
     assert applied.get("ear.enable") is True  # coerced str "true" -> bool True
     assert "audiooutput.volumesteps" not in applied  # unchanged -> not re-applied
     assert "some.action" not in applied  # action type skipped
     assert "unknown.id" not in applied  # unknown id skipped
-    assert n == 2
+    assert n == 1
 
 
 def test_apply_missing_file_returns_zero(kodisettings, tmp_path):

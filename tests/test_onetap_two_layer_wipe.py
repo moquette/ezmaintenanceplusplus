@@ -185,7 +185,7 @@ def test_tvos_wipe_clears_both_layers(env, monkeypatch):
         }
     )
 
-    files_removed, keys_removed, failed = env.onetap._wipe(
+    files_removed, keys_removed, failed, leftovers = env.onetap._wipe(
         str(env.home), env.onetap._wipe_excludes()
     )
 
@@ -225,7 +225,7 @@ def test_tvos_key_wipe_respects_wipe_excludes(env, monkeypatch):
     _w(env.home, "userdata/sources.xml")
     env.set_keys({own: b"<a/>", dep: b"<b/>", "guisettings.xml": b"<c/>"})
 
-    files_removed, keys_removed, failed = env.onetap._wipe(
+    files_removed, keys_removed, failed, leftovers = env.onetap._wipe(
         str(env.home), env.onetap._wipe_excludes()
     )
 
@@ -250,7 +250,7 @@ def test_tvos_key_wipe_respects_keep_files(env, monkeypatch):
     env.set_keys({"Database/Addons33.db": b"sqlite", "guisettings.xml": b"<g/>"})
     keep = {str(env.home / "userdata" / "Database" / "Addons33.db")}
 
-    files_removed, keys_removed, failed = env.onetap._wipe(
+    files_removed, keys_removed, failed, leftovers = env.onetap._wipe(
         str(env.home), env.onetap._wipe_excludes(), keep_files=keep
     )
 
@@ -276,7 +276,7 @@ def test_firetv_wipe_is_noop_on_key_layer(env, monkeypatch):
     _w(env.home, "userdata/guisettings.xml")
     env.set_keys({"guisettings.xml": b"<g/>"})  # a store, even though non-tvOS
 
-    files_removed, keys_removed, failed = env.onetap._wipe(
+    files_removed, keys_removed, failed, leftovers = env.onetap._wipe(
         str(env.home), env.onetap._wipe_excludes()
     )
 
@@ -318,11 +318,12 @@ def test_surviving_key_is_counted_as_failure_and_logged(env, monkeypatch):
     # shape the always-True boolean would hide).
     env.state["fail_keys"] = {"sources.xml"}
 
-    files_removed, keys_removed, failed = env.onetap._wipe(
+    files_removed, keys_removed, failed, leftovers = env.onetap._wipe(
         str(env.home), env.onetap._wipe_excludes()
     )
 
     assert keys_removed == 1 and failed == 1
+    assert ("key", "userdata/sources.xml") in leftovers  # named for triage
     assert env.keys() == {"sources.xml"}
     assert any("SURVIVED" in m and "sources.xml" in m for m in env.logs), (
         "a surviving (restore-shadowing) key must be named in the log"
@@ -343,11 +344,12 @@ def test_posix_remove_failure_is_counted_and_logged(env, monkeypatch):
 
     monkeypatch.setattr("os.remove", _remove)
 
-    files_removed, keys_removed, failed = env.onetap._wipe(
+    files_removed, keys_removed, failed, leftovers = env.onetap._wipe(
         str(env.home), env.onetap._wipe_excludes()
     )
 
     assert files_removed == 1 and failed == 1
+    assert ("file", "userdata/locked.xml") in leftovers  # named for triage
     assert any("1 file failures" in m for m in env.logs)
 
 

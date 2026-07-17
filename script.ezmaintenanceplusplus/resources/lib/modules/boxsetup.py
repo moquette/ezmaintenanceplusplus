@@ -41,7 +41,7 @@ KODI_SHARE_PATH = "Users/moquette/Kodi/Share/"
 KODI_BACKUP_PATH = "Users/moquette/Kodi/Backup/"
 KODI_SHARE_SOURCE_NAME = "KodiShare"
 KODI_BACKUP_SOURCE_NAME = "KodiBackup"
-REPO_SOURCE_NAME = ".tony.7.bones"
+REPO_SOURCE_NAME = ".T7B"
 REPO_SOURCE_URL = "https://tony7bones.github.io/"
 
 
@@ -113,6 +113,29 @@ def add_media_sources(interactive=True):
             files = ET.SubElement(root, "files")
         if files.find("default") is None:
             files.insert(0, ET.Element("default"))
+        # Consolidate the repo source to a SINGLE entry named .T7B, deduped by URL:
+        # a box may carry the old .tony.7.bones AND a newer .T7B on the same url (or two
+        # old ones). Keep the first source on REPO_SOURCE_URL, ensure its name is .T7B,
+        # and remove any other sources on that same url - so the migration can never
+        # leave two entries pointing at the same repo (audit Finding G; the add-loop
+        # below dedups by NAME and would not catch a same-url duplicate).
+        renamed = 0
+        repo_srcs = [
+            s
+            for s in files.findall("source")
+            if (s.findtext("path") or "").strip() == REPO_SOURCE_URL
+        ]
+        if repo_srcs:
+            keep = repo_srcs[0]
+            nm = keep.find("name")
+            if nm is None:
+                nm = ET.SubElement(keep, "name")
+            if (nm.text or "").strip() != REPO_SOURCE_NAME:
+                nm.text = REPO_SOURCE_NAME
+                renamed += 1
+            for extra in repo_srcs[1:]:
+                files.remove(extra)
+                renamed += 1
         have_names = {
             (s.findtext("name") or "").strip() for s in files.findall("source")
         }
@@ -127,7 +150,7 @@ def add_media_sources(interactive=True):
             have_names.add(name)
             have_paths.add(path)
             added += 1
-        if added:
+        if added or renamed:
             with open(xml_path, "w", encoding="utf-8") as f:
                 f.write(ET.tostring(root, encoding="unicode"))
             # tvOS-safe persist: vector into NSUserDefaults + drop the POSIX dupe
@@ -138,7 +161,7 @@ def add_media_sources(interactive=True):
             from resources.lib.modules import nsud
 
             nsud.persist_one("sources.xml", log=_log)
-        _log("sources added=%d" % added)
+        _log("sources added=%d renamed=%d" % (added, renamed))
         if interactive:
             ui.done(
                 "Media sources ready (%d added).\n\nKodi caches sources at "

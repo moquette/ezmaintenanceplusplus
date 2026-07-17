@@ -51,6 +51,17 @@ def _coerce(raw, typ):
     return "" if raw is None else str(raw)  # string / path / addon / etc.
 
 
+# Settings that must arrive as BOOT STATE, never be live-applied. Live-setting
+# lookandfeel.skin makes Kodi switch skins immediately and start its "keep this
+# skin?" countdown - which during a restore is unanswerable (an EZM++ modal or
+# progress dialog owns the screen), so the countdown expires and Kodi REVERTS
+# the skin, overwriting the restored value (hardware-reproduced on atv2,
+# 2026-07-17: the restored box came up in stock Estuary). The restored
+# guisettings.xml already carries the skin; the mandatory post-restore restart
+# boots straight into it with no countdown ever firing.
+_BOOT_STATE_ONLY = frozenset(("lookandfeel.skin",))
+
+
 def apply_guisettings(guisettings_path):
     """Push each value from a restored guisettings.xml into Kodi's live settings via
     JSON-RPC so the restore survives (notably tvOS). Returns the count applied."""
@@ -69,6 +80,8 @@ def apply_guisettings(guisettings_path):
     for node in root.iter("setting"):
         sid = node.get("id")
         if not sid or sid not in live:
+            continue
+        if sid in _BOOT_STATE_ONLY:
             continue
         meta = live[sid]
         if meta.get("type") == "action":

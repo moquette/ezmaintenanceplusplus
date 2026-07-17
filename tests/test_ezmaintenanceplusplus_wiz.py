@@ -1481,8 +1481,9 @@ def test_backup_reports_uncaptured_files_before_claiming_success(
 # --------------------------------------------------------------------------- #
 # Truthful restore reporting (E) + manifest verification (F).
 # --------------------------------------------------------------------------- #
-def _record_restore_report(wiz, monkeypatch):
-    """Capture ask_restart statuses and dialog.ok messages from restore()."""
+def _record_restore_report(wiz, monkeypatch, retry=False):
+    """Capture ask_restart statuses, dialog.ok messages, and dialog.yesno prompts
+    from restore(). `retry` is the canned answer to the locked Try Again prompt."""
     statuses = []
     monkeypatch.setattr(
         wiz.ui, "ask_restart", lambda status="", **k: statuses.append(status)
@@ -1491,14 +1492,25 @@ def _record_restore_report(wiz, monkeypatch):
     monkeypatch.setattr(
         wiz.dialog, "ok", lambda *a, **k: oks.append(" ".join(map(str, a)))
     )
-    return statuses, oks
+    yesnos = []
+
+    def _yesno(*a, **k):
+        yesnos.append(" ".join(str(x) for x in a))
+        return retry
+
+    monkeypatch.setattr(wiz.dialog, "yesno", _yesno)
+    return statuses, oks, yesnos
 
 
-def test_restore_reports_incomplete_when_members_fail(wiz, monkeypatch, tmp_path):
-    """(E) A member that fails to extract makes the report INCOMPLETE and NAMES the
-    member - never 'Restore Complete' computed from the pre-extract member count."""
+def test_restore_member_failure_asks_with_locked_problem_copy(
+    wiz, monkeypatch, tmp_path
+):
+    """(E) A member that fails to extract is a HARD problem: the user sees the
+    LOCKED Problem prompt (Try Again / Close) and nothing else - no counts, no
+    paths, no 'INCOMPLETE' (those live in the log). Declining still drives the
+    restart prompt and never claims Complete."""
     home = _prep_restore(wiz, monkeypatch, tmp_path)
-    statuses, oks = _record_restore_report(wiz, monkeypatch)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch, retry=False)
     # Extraction target for blocked.xml is an existing DIRECTORY -> extract fails.
     (home / "userdata" / "blocked.xml").mkdir(parents=True)
 
@@ -1507,15 +1519,37 @@ def test_restore_reports_incomplete_when_members_fail(wiz, monkeypatch, tmp_path
 
     wiz.restore(str(src), confirm=False)
 
-    assert statuses and statuses[0].startswith("Restore INCOMPLETE"), statuses
-    assert not any(s.startswith("Restore Complete") for s in statuses)
-    assert oks and "INCOMPLETE" in oks[-1] and "blocked.xml" in oks[-1]
+    assert yesnos and wiz.MSG_PROBLEM in yesnos[0], yesnos
+    assert oks == [], "declining Try Again must not stack another dialog"
+    assert statuses == [""], "the restart prompt still runs, with no status jargon"
+    for shown in yesnos + statuses:
+        assert "INCOMPLETE" not in shown and "blocked.xml" not in shown
 
 
-def test_restore_success_reports_true_extracted_count(wiz, monkeypatch, tmp_path):
-    """(E) A clean restore reports the count of members that actually landed."""
+def test_restore_member_failure_retry_twice_then_problem(wiz, monkeypatch, tmp_path):
+    """(E) Accepting Try Again re-runs the whole restore once; a second HARD failure
+    (backup content still did not restore) shows the locked PROBLEM wording - never a
+    third attempt, never the softer needs-attention (audit Finding C: a hard content
+    loss must say 'couldn't be restored', not 'needs attention')."""
+    home = _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch, retry=True)
+    (home / "userdata" / "blocked.xml").mkdir(parents=True)
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(src, [("guisettings.xml", "<s/>"), ("blocked.xml", "<b/>")])
+
+    wiz.restore(str(src), confirm=False)
+
+    assert len(yesnos) == 1, "the Problem prompt asks exactly once (2-attempt cap)"
+    assert oks == [wiz.AddonTitle + " " + wiz.MSG_PROBLEM]
+    assert statuses == [""]
+
+
+def test_restore_success_shows_only_locked_complete(wiz, monkeypatch, tmp_path):
+    """(E) A clean restore shows EXACTLY the locked Complete status - no counts,
+    no settings tally, no extra dialogs. The numbers live in the log."""
     _prep_restore(wiz, monkeypatch, tmp_path)
-    statuses, oks = _record_restore_report(wiz, monkeypatch)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch)
 
     src = tmp_path / "kodi_settings_x.zip"
     _make_valid_zip(
@@ -1529,8 +1563,8 @@ def test_restore_success_reports_true_extracted_count(wiz, monkeypatch, tmp_path
 
     wiz.restore(str(src), confirm=False)
 
-    assert statuses and statuses[0].startswith("Restore Complete: 3 items"), statuses
-    assert oks == [], "a clean restore shows no failure dialog"
+    assert statuses == [wiz.MSG_COMPLETE], statuses
+    assert oks == [] and yesnos == []
 
 
 def test_restore_manifest_mismatch_reports_partial(wiz, monkeypatch, tmp_path):
@@ -1539,7 +1573,7 @@ def test_restore_manifest_mismatch_reports_partial(wiz, monkeypatch, tmp_path):
     import json as _json
 
     _prep_restore(wiz, monkeypatch, tmp_path)
-    statuses, oks = _record_restore_report(wiz, monkeypatch)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch, retry=False)
 
     src = tmp_path / "kodi_settings_x.zip"
     manifest = {"created": "t", "source_os": "tvos", "entries": 5, "failed": []}
@@ -1553,8 +1587,10 @@ def test_restore_manifest_mismatch_reports_partial(wiz, monkeypatch, tmp_path):
 
     wiz.restore(str(src), confirm=False)
 
-    assert statuses and statuses[0].startswith("Restore INCOMPLETE"), statuses
-    assert oks and "manifest mismatch" in oks[-1]
+    assert yesnos and wiz.MSG_PROBLEM in yesnos[0], yesnos
+    assert statuses == [""]
+    for shown in yesnos + oks + statuses:
+        assert "manifest" not in shown, "manifest detail belongs in the log"
 
 
 def test_restore_manifest_backup_gaps_surface(wiz, monkeypatch, tmp_path):
@@ -1563,7 +1599,7 @@ def test_restore_manifest_backup_gaps_surface(wiz, monkeypatch, tmp_path):
     import json as _json
 
     _prep_restore(wiz, monkeypatch, tmp_path)
-    statuses, oks = _record_restore_report(wiz, monkeypatch)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch, retry=False)
 
     src = tmp_path / "kodi_settings_x.zip"
     manifest = {
@@ -1582,8 +1618,10 @@ def test_restore_manifest_backup_gaps_surface(wiz, monkeypatch, tmp_path):
 
     wiz.restore(str(src), confirm=False)
 
-    assert statuses and statuses[0].startswith("Restore INCOMPLETE"), statuses
-    assert oks and "userdata/secret.xml" in oks[-1]
+    assert yesnos and wiz.MSG_PROBLEM in yesnos[0], yesnos
+    assert statuses == [""]
+    for shown in yesnos + oks + statuses:
+        assert "secret.xml" not in shown, "the failed path belongs in the log"
 
 
 def test_restore_matching_manifest_reports_complete_and_skips_manifest(
@@ -1595,7 +1633,7 @@ def test_restore_matching_manifest_reports_complete_and_skips_manifest(
     import json as _json
 
     home = _prep_restore(wiz, monkeypatch, tmp_path)
-    statuses, _oks = _record_restore_report(wiz, monkeypatch)
+    statuses, _oks, _yesnos = _record_restore_report(wiz, monkeypatch)
 
     src = tmp_path / "kodi_settings_x.zip"
     manifest = {"created": "t", "source_os": "other", "entries": 2, "failed": []}
@@ -1610,7 +1648,7 @@ def test_restore_matching_manifest_reports_complete_and_skips_manifest(
 
     wiz.restore(str(src), confirm=False)
 
-    assert statuses and statuses[0].startswith("Restore Complete: 2 items"), statuses
+    assert statuses == [wiz.MSG_COMPLETE], statuses
     assert not (home / "userdata" / wiz.MANIFEST_NAME).exists()
     assert not (home / wiz.MANIFEST_NAME).exists()
 
@@ -1624,7 +1662,7 @@ def test_restore_complete_despite_stale_key_purge_failures(wiz, monkeypatch, tmp
     from resources.lib.modules import nsud
 
     _prep_restore(wiz, monkeypatch, tmp_path)
-    statuses, oks = _record_restore_report(wiz, monkeypatch)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch)
     # The purge reports 3 UNRESOLVED pre-existing keys; the rewrite is clean.
     monkeypatch.setattr(nsud, "purge_stale_keys", lambda root, log=None: (0, 5, 2, 3))
     monkeypatch.setattr(
@@ -1652,12 +1690,12 @@ def test_backup_restore_roundtrip_reports_complete(wiz, monkeypatch, tmp_path):
     _run_create_zip(wiz, srchome, out, prune=True)
 
     _prep_restore(wiz, monkeypatch, tmp_path)
-    statuses, oks = _record_restore_report(wiz, monkeypatch)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch)
 
     wiz.restore(str(out), confirm=False)
 
-    assert statuses and statuses[0].startswith("Restore Complete: 2 items"), statuses
-    assert oks == []
+    assert statuses == [wiz.MSG_COMPLETE], statuses
+    assert oks == [] and yesnos == []
 
 
 # --------------------------------------------------------------------------- #
@@ -1807,3 +1845,507 @@ def test_restore_sweep_drops_nsud_key_without_posix_file(wiz, monkeypatch, tmp_p
     assert not any("guisettings" in d for d in deleted), (
         "the sweep must never delete non-IPTV userdata"
     )
+
+
+# --------------------------------------------------------------------------- #
+# The restore UX contract (owner-locked 2026-07-17): four messages total, no
+# jargon, verification before reporting, silent auto-fix, skin as boot state.
+# Born from the atv2 round-trip where the honest-but-raw reporting read as
+# breakage and its modal ate Kodi's keep-skin confirmation.
+# --------------------------------------------------------------------------- #
+def test_locked_vocabulary_is_pinned(wiz):
+    """The owner-edited strings, byte for byte. Implementation may not reword."""
+    assert wiz.MSG_COMPLETE == "Restore Complete"
+    assert wiz.MSG_PROBLEM == (
+        "Restore Problem\n"
+        "Some of your backup couldn't be restored, so this box may not work "
+        "the way it did before."
+    )
+    assert wiz.MSG_NEEDS_ATTENTION == (
+        "Restore Problem\nThis box needs attention - open EZ Maintenance++."
+    )
+
+
+def test_attention_only_findings_auto_fix_silently(wiz, monkeypatch, tmp_path):
+    """A fixable finding (e.g. a surviving stale key) triggers ONE silent fresh
+    pass - no dialog, no question ("when this occurs, we should just fix it").
+    When the second pass verifies clean, the user only ever sees Complete."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch)
+
+    from resources.lib.modules import restorecheck
+
+    calls = []
+
+    def _fake_verify(leftovers, names, anchor):
+        calls.append(1)
+        if len(calls) == 1:
+            return (["1 stale NSUserDefaults key(s) still shadow restored"], [])
+        return ([], [])
+
+    monkeypatch.setattr(restorecheck, "verify_restored_state", _fake_verify)
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(src, [("guisettings.xml", "<s/>"), ("sources.xml", "<s/>")])
+    wiz.restore(str(src), confirm=False)
+
+    assert len(calls) == 2, "exactly one silent auto-fix pass"
+    assert yesnos == [] and oks == [], "the auto-fix never surfaces a dialog"
+    assert statuses == [wiz.MSG_COMPLETE]
+
+
+def test_attention_surviving_auto_fix_needs_attention(wiz, monkeypatch, tmp_path):
+    """If the silent fresh pass cannot clear the finding, the user sees exactly
+    the locked needs-attention line - no counts, no key paths."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch)
+
+    from resources.lib.modules import restorecheck
+
+    monkeypatch.setattr(
+        restorecheck,
+        "verify_restored_state",
+        lambda *a, **k: (["1 stale key still shadows userdata/x.xml"], []),
+    )
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(src, [("guisettings.xml", "<s/>")])
+    wiz.restore(str(src), confirm=False)
+
+    assert yesnos == [], "attention findings never ask - they auto-fix"
+    assert oks == [wiz.AddonTitle + " " + wiz.MSG_NEEDS_ATTENTION]
+    assert statuses == [""]
+    assert "x.xml" not in oks[0], "key paths belong in the log"
+
+
+def test_restore_arms_both_boot_markers(wiz, monkeypatch, tmp_path):
+    """A finished restore arms the tune-up marker AND the new restore self-check
+    marker (final certainty lives after the restart, where settings are live)."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    _record_restore_report(wiz, monkeypatch)
+    armed = []
+    monkeypatch.setattr(
+        wiz.tools, "mark_buffer_prompt_pending", lambda: armed.append("buffer")
+    )
+    monkeypatch.setattr(
+        wiz.tools, "mark_restore_check_pending", lambda: armed.append("check")
+    )
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(src, [("guisettings.xml", "<s/>")])
+    wiz.restore(str(src), confirm=False)
+
+    assert armed == ["buffer", "check"]
+
+
+def _record_window_props(wiz, monkeypatch):
+    """Swap the fake Window for a recorder so a test can read Window(10000) properties
+    (notably ezm_boot_skin). Returns the shared prop dict."""
+    props = {}
+
+    class _RecWindow:
+        def __init__(self, *a, **k):
+            pass
+
+        def setProperty(self, key, value):
+            props[key] = value
+
+        def getProperty(self, key):
+            return props.get(key, "")
+
+        def clearProperty(self, key):
+            props.pop(key, None)
+
+    monkeypatch.setattr(wiz.xbmcgui, "Window", _RecWindow, raising=False)
+    return props
+
+
+def _no_skin_live_switch(monkeypatch, wiz):
+    """Record every JSON-RPC + builtin so a test can prove _apply_boot_skin does NO live
+    skin switch and answers NO keep-skin dialog. Returns (rpc_calls, builtins)."""
+    rpc = []
+    builtins = []
+
+    def _jsonrpc(payload):
+        rpc.append(payload)
+        return "{}"
+
+    monkeypatch.setattr(wiz.xbmc, "executeJSONRPC", _jsonrpc, raising=False)
+    monkeypatch.setattr(
+        wiz.xbmc, "executebuiltin", lambda cmd: builtins.append(cmd), raising=False
+    )
+    return rpc, builtins
+
+
+def test_boot_skin_persists_restored_skin_to_disk_no_live_switch(
+    wiz, monkeypatch, tmp_path
+):
+    """THE fix (atv2, 2026-07-17): the restored skin is PERSISTED, never live-switched.
+
+    _apply_boot_skin writes the captured skin straight into guisettings.xml on disk (so a
+    force-quit reopen boots it) and does NOT live-set lookandfeel.skin or answer any
+    keep-skin dialog - the flaky mechanism that reverted the box to stock is gone."""
+    home = _prep_restore(wiz, monkeypatch, tmp_path)
+    gp = home / "userdata" / "guisettings.xml"
+    # Simulate the post-apply_guisettings state: the on-disk file carries STOCK.
+    gp.write_text(
+        '<settings><setting id="lookandfeel.skin">skin.estuary</setting></settings>'
+    )
+    props = _record_window_props(wiz, monkeypatch)
+    rpc, builtins = _no_skin_live_switch(monkeypatch, wiz)
+
+    persisted = []
+    from resources.lib.modules import nsud
+
+    monkeypatch.setattr(
+        nsud, "persist_one", lambda rel, log=None: persisted.append(rel) or True
+    )
+
+    logs = []
+    wiz._apply_boot_skin(lambda m: logs.append(m), "skin.estuary7")
+
+    # (1) written straight to disk (write_guisetting), the last-step durable write.
+    import xml.etree.ElementTree as ET
+
+    root = ET.parse(str(gp)).getroot()
+    got = next(
+        n.text for n in root.iter("setting") if n.get("id") == "lookandfeel.skin"
+    )
+    assert got == "skin.estuary7", "the restored skin must be written to disk"
+    # (2) vectored into NSUserDefaults via persist_one (no-op off tvOS).
+    assert persisted == ["guisettings.xml"]
+    # (3) NO live Settings.SetSettingValue for the skin, NO SendClick / keep-skin nav.
+    assert not any("SetSettingValue" in p for p in rpc), "no live skin switch"
+    assert not any("Settings." in p for p in rpc), "no live settings RPC at all"
+    assert builtins == [], "no SendClick / navigation / keep-skin handling remains"
+    # A readable diagnostic is published for JSON-RPC inspection.
+    assert props.get("ezm_boot_skin") == "written:skin.estuary7"
+
+
+def test_boot_skin_vectors_via_persist_one_on_tvos(wiz, monkeypatch, tmp_path):
+    """The tvOS durability path: the restored skin is vectored into NSUserDefaults via
+    nsud.persist_one('guisettings.xml') - the same tvOS-safe primitive boxsetup uses."""
+    home = _prep_restore(wiz, monkeypatch, tmp_path)
+    (home / "userdata" / "guisettings.xml").write_text(
+        '<settings><setting id="lookandfeel.skin">skin.estuary</setting></settings>'
+    )
+    _record_window_props(wiz, monkeypatch)
+    _no_skin_live_switch(monkeypatch, wiz)
+
+    from resources.lib.modules import nsud
+
+    calls = []
+    monkeypatch.setattr(
+        nsud, "persist_one", lambda rel, log=None: calls.append(rel) or True
+    )
+
+    wiz._apply_boot_skin(lambda m: None, "skin.estuary7")
+    assert calls == ["guisettings.xml"], (
+        "guisettings.xml must be vectored into NSUserDefaults (persist_one) on tvOS"
+    )
+
+
+def test_boot_skin_missing_or_empty_is_a_clean_noop(wiz, monkeypatch, tmp_path):
+    """A missing / absent / empty lookandfeel.skin means there is no skin to assert:
+    _read_target_skin returns None and _apply_boot_skin touches nothing, reporting 'none'."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    props = _record_window_props(wiz, monkeypatch)
+    rpc, builtins = _no_skin_live_switch(monkeypatch, wiz)
+
+    from resources.lib.modules import _kodisettings, nsud
+
+    monkeypatch.setattr(
+        _kodisettings,
+        "write_guisetting",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("must not write on no-op")
+        ),
+    )
+    monkeypatch.setattr(
+        nsud,
+        "persist_one",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("must not vector on no-op")
+        ),
+    )
+
+    for empty in (None, "", "   "):
+        wiz._apply_boot_skin(lambda m: None, empty)
+    assert rpc == [] and builtins == [], "a no-op never touches Kodi"
+    assert props.get("ezm_boot_skin") == "none"
+
+
+def test_read_target_skin_captures_absent_and_present(wiz, tmp_path):
+    """_read_target_skin: the archive's skin when present, None when the file is missing,
+    unparseable, or the setting is absent / empty."""
+    present = tmp_path / "present.xml"
+    present.write_text(
+        '<settings><setting id="lookandfeel.skin">skin.estuary7</setting></settings>'
+    )
+    assert wiz._read_target_skin(str(present)) == "skin.estuary7"
+
+    absent_setting = tmp_path / "absent.xml"
+    absent_setting.write_text('<settings><setting id="other">x</setting></settings>')
+    assert wiz._read_target_skin(str(absent_setting)) is None
+
+    empty_setting = tmp_path / "empty.xml"
+    empty_setting.write_text(
+        '<settings><setting id="lookandfeel.skin">   </setting></settings>'
+    )
+    assert wiz._read_target_skin(str(empty_setting)) is None
+
+    assert wiz._read_target_skin(str(tmp_path / "does-not-exist.xml")) is None
+
+
+def test_boot_skin_failure_never_breaks_the_restore(wiz, monkeypatch, tmp_path):
+    """Fully guarded: a raising write_guisetting only logs and records failed:<Error>."""
+    home = _prep_restore(wiz, monkeypatch, tmp_path)
+    (home / "userdata" / "guisettings.xml").write_text(
+        '<settings><setting id="lookandfeel.skin">skin.estuary</setting></settings>'
+    )
+    props = _record_window_props(wiz, monkeypatch)
+
+    from resources.lib.modules import _kodisettings
+
+    def _boom(*a, **k):
+        raise RuntimeError("disk gone")
+
+    monkeypatch.setattr(_kodisettings, "write_guisetting", _boom)
+
+    logs = []
+    wiz._apply_boot_skin(lambda m: logs.append(m), "skin.estuary7")  # must not raise
+    assert any("boot-skin" in m for m in logs)
+    assert props.get("ezm_boot_skin", "").startswith("failed:")
+
+
+def test_restore_captures_skin_before_apply_and_writes_it_back_last(
+    wiz, monkeypatch, tmp_path
+):
+    """End-to-end: restore() captures the archive's skin BEFORE apply_guisettings can
+    rewrite the file, then persists it as the LAST userdata write (after apply, purge,
+    and the tvOS re-vector) - never a live switch."""
+    home = _prep_restore(wiz, monkeypatch, tmp_path)
+    _record_window_props(wiz, monkeypatch)
+    _no_skin_live_switch(monkeypatch, wiz)
+
+    from resources.lib.modules import _kodisettings, nsud
+
+    order = []
+    # apply_guisettings simulates real Kodi stamping STOCK over the archive's skin on disk.
+    gp = home / "userdata" / "guisettings.xml"
+
+    def _apply(path):
+        order.append("apply")
+        try:
+            import xml.etree.ElementTree as ET
+
+            tree = ET.parse(str(gp))
+            r = tree.getroot()
+            for n in r.iter("setting"):
+                if n.get("id") == "lookandfeel.skin":
+                    n.text = "skin.estuary"  # the clobber the fix must survive
+            tree.write(str(gp))
+        except Exception:
+            pass
+        return 0
+
+    monkeypatch.setattr(_kodisettings, "apply_guisettings", _apply)
+    monkeypatch.setattr(
+        nsud,
+        "purge_stale_keys",
+        lambda *a, **k: order.append("purge") or (0, 0, 0, 0),
+    )
+    monkeypatch.setattr(
+        nsud,
+        "rewrite_userdata_xml",
+        lambda *a, **k: order.append("rewrite") or (0, 0, 0),
+    )
+    wg = []
+    real_wg = _kodisettings.write_guisetting
+
+    def _wg(path, sid, val):
+        order.append("write_guisetting")
+        wg.append((sid, val))
+        return real_wg(path, sid, val)
+
+    monkeypatch.setattr(_kodisettings, "write_guisetting", _wg)
+    monkeypatch.setattr(
+        nsud,
+        "persist_one",
+        lambda rel, log=None: order.append("persist_one") or True,
+    )
+
+    src = tmp_path / "kodi_settings_skin.zip"
+    _make_valid_zip(
+        src,
+        [
+            (
+                "guisettings.xml",
+                '<settings><setting id="lookandfeel.skin">'
+                "skin.estuary7</setting></settings>",
+            )
+        ],
+    )
+    wiz.restore(str(src), confirm=False)
+
+    # The restored skin was captured (skin.estuary7) despite apply stamping stock, and
+    # written back via write_guisetting.
+    assert ("lookandfeel.skin", "skin.estuary7") in wg
+    # It is the LAST userdata write: write_guisetting + persist_one come AFTER apply,
+    # purge, and the re-vector.
+    assert order.index("write_guisetting") > order.index("apply")
+    assert order.index("write_guisetting") > order.index("rewrite")
+    assert order.index("persist_one") > order.index("rewrite")
+    # And the file on disk ends on the restored skin, not the stock clobber.
+    import xml.etree.ElementTree as ET
+
+    r = ET.parse(str(gp)).getroot()
+    got = next(n.text for n in r.iter("setting") if n.get("id") == "lookandfeel.skin")
+    assert got == "skin.estuary7"
+
+
+def test_no_live_skin_switch_mechanism_remains_in_sources(wiz):
+    """The flaky live-switch-and-confirm is fully removed from wiz.py: no SendClick, no
+    keep-skin dialog handling, and no live SetSettingValue for lookandfeel.skin."""
+    src = (ADDON_ROOT / "resources" / "lib" / "modules" / "wiz.py").read_text()
+    # The live-switch mechanism's actual code constructs must all be gone (the docstring
+    # may still name SendClick to explain WHY - so match the call form, not the bare word).
+    assert "SendClick(11)" not in src, "the keep-skin SendClick confirm must be gone"
+    assert "IsActive(yesnodialog)" not in src, "the keep-skin dialog probe must be gone"
+    assert "Action(Select)" not in src, "the keep-skin nav confirm must be gone"
+    # No live skin switch: lookandfeel.skin is never handed to Settings.SetSettingValue.
+    assert '"setting": "lookandfeel.skin"' not in src
+
+
+def test_no_mid_flight_wipe_warning_dialog_remains(wiz):
+    """The raw wipe warning is gone from the sources: leftovers are triaged by
+    the verification, never surfaced as a fear."""
+    ADDON = ADDON_ROOT / "resources" / "lib" / "modules"
+    combined = (ADDON / "onetap.py").read_text() + (ADDON / "wiz.py").read_text()
+    # The two retired user-facing strings, by their distinctive tails (comments
+    # may still DESCRIBE the old behavior; the dialogs may not SHOW it).
+    assert "The restore will proceed." not in combined
+    assert "shadow or pollute the restored state" not in combined
+
+
+def test_merge_cancel_after_completed_pass_still_arms(wiz, monkeypatch, tmp_path):
+    """Finding 4: merge restore, pass 1 completes with a fixable finding, the silent
+    auto-fix retry's extract is canceled. The box WAS restored by pass 1, so the
+    tune-up + restore-check markers and the boot skin must still arm - and the pass's
+    own 'Restore Canceled' dialog is the only message (never a stray Complete)."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch)
+
+    # Extract: pass 1 lands clean, pass 2 (the auto-fix retry) is canceled.
+    calls = {"n": 0}
+
+    def _extract(_in, _out, progress, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return wiz.ExtractResult(canceled=False, extracted=1, total=1)
+        return wiz.ExtractResult(canceled=True, extracted=-1)
+
+    monkeypatch.setattr(wiz, "ExtractWithProgress", _extract)
+
+    # Force a fixable (attention-only) finding on pass 1 so a silent retry runs.
+    from resources.lib.modules import restorecheck
+
+    vcalls = {"n": 0}
+
+    def _verify(*a, **k):
+        vcalls["n"] += 1
+        return (
+            (["1 stale key still shadows something"], [])
+            if vcalls["n"] == 1
+            else ([], [])
+        )
+
+    monkeypatch.setattr(restorecheck, "verify_restored_state", _verify)
+
+    armed = []
+    monkeypatch.setattr(
+        wiz.tools, "mark_buffer_prompt_pending", lambda: armed.append("buffer")
+    )
+    monkeypatch.setattr(
+        wiz.tools, "mark_restore_check_pending", lambda: armed.append("check")
+    )
+    skinned = []
+    monkeypatch.setattr(
+        wiz, "_apply_boot_skin", lambda rlog, target=None: skinned.append(True)
+    )
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(src, [("guisettings.xml", "<s/>")])
+    result = wiz.restore(str(src), confirm=False)  # merge (no wipe/post_wipe)
+
+    assert calls["n"] == 2, "the auto-fix retry ran"
+    assert armed == ["buffer", "check"], (
+        "a restored box arms its markers even on a canceled retry"
+    )
+    assert skinned == [True], "the boot skin still applies"
+    assert not any(s == wiz.MSG_COMPLETE for s in statuses), (
+        "a canceled retry never claims Complete"
+    )
+    assert result.get("canceled") is True
+    # The pass's own 'Restore Canceled' dialog fired inside the pass; no extra Problem dialog.
+    assert not any(wiz.MSG_NEEDS_ATTENTION in o for o in oks)
+
+
+def test_failed_member_is_named_in_the_log(wiz, monkeypatch, tmp_path):
+    """The 'named, in the log' half of the honesty contract: a member that fails to
+    extract must be logged by name even though the UI shows only the locked Problem."""
+    home = _prep_restore(wiz, monkeypatch, tmp_path)
+    _record_restore_report(wiz, monkeypatch, retry=False)
+    logs = []
+    monkeypatch.setattr(wiz.xbmc, "log", lambda msg, level=0: logs.append(msg))
+    (home / "userdata" / "blocked.xml").mkdir(parents=True)  # extract target is a dir
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(src, [("guisettings.xml", "<s/>"), ("blocked.xml", "<b/>")])
+    wiz.restore(str(src), confirm=False)
+
+    assert any("failed member" in m and "blocked.xml" in m for m in logs), (
+        "the failed member must be named in the log"
+    )
+
+
+def test_revector_miss_on_merge_path_is_attention_not_silent(wiz, monkeypatch, tmp_path):
+    """audit Finding A/B: on the MERGE path (add-on-top / Dropbox) a tvOS re-vector
+    miss can leave a SURVIVING stale key shadowing the restored file - a silent loss.
+    It MUST surface as needs-attention, never a silent 'Restore Complete'."""
+    from resources.lib.modules import nsud
+
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch)
+    monkeypatch.setattr(nsud, "purge_stale_keys", lambda root, log=None: (0, 0, 0, 0))
+    monkeypatch.setattr(
+        nsud, "rewrite_userdata_xml", lambda root, log=None: (0, 0, 2, 0)
+    )  # 2 files did not re-vector
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(src, [("guisettings.xml", "<s/>"), ("sources.xml", "<s/>")])
+    wiz.restore(str(src), confirm=False)  # MERGE: wipe=False
+
+    assert oks == [wiz.AddonTitle + " " + wiz.MSG_NEEDS_ATTENTION], oks
+    assert not any(s == wiz.MSG_COMPLETE for s in statuses)
+
+
+def test_revector_miss_on_wipe_path_is_harmless_complete(wiz, monkeypatch, tmp_path):
+    """On the WIPE path the wipe already cleared every NSUD key, so a re-vector miss
+    leaves the restored POSIX file served with NO shadow - harmless. It must NOT
+    alarm; the restore says Complete (this is exactly the atv2 clean-restore case)."""
+    from resources.lib.modules import nsud
+
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch)
+    monkeypatch.setattr(nsud, "purge_stale_keys", lambda root, log=None: (0, 0, 0, 0))
+    monkeypatch.setattr(
+        nsud, "rewrite_userdata_xml", lambda root, log=None: (0, 0, 2, 0)
+    )
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(src, [("guisettings.xml", "<s/>"), ("sources.xml", "<s/>")])
+    wiz.restore(str(src), confirm=False, post_wipe=True)  # WIPE path
+
+    assert statuses == [wiz.MSG_COMPLETE], statuses
+    assert oks == [] and yesnos == []

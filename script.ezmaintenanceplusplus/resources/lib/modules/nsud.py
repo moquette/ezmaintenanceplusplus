@@ -391,6 +391,62 @@ def _decode_key_value(v):
     return raw
 
 
+# skin.estuary7 1.0.66+ deliberately DUAL-LAYERS every skinshortcuts *.DATA.xml on
+# tvOS: the skin's syncMenu re-registers a byte-identical NSUserDefaults key for
+# each menu file on every Home load, as the durability sidecar that lets the
+# owner's custom menu survive a Library/Caches purge. Those keys are maintained
+# LIVE by the skin - they are NOT vector-everything-era leftovers, and purging
+# them starts an infinite war the purge cannot win: it drops them each boot, the
+# skin re-registers them at the next Home load, and the run-once marker never
+# sets (observed on atv2, 2026-07-17). They are KEPT, always.
+_SKINSHORTCUTS_SIDECAR_PREFIX = "addon_data/script.skinshortcuts/"
+_SKINSHORTCUTS_SIDECAR_SUFFIX = ".data.xml"
+
+
+def _is_skin_menu_sidecar(rel):
+    """True iff `rel` is a skinshortcuts menu file whose NSUserDefaults key is the
+    skin's own durability sidecar (see the comment above) - never purge material.
+
+    Matches the master profile form AND the per-profile form
+    (profiles/<name>/addon_data/...): a secondary profile's menu sidecar is just
+    as skin-maintained, and purging it would leave that profile's menu with only
+    the purgeable POSIX copy until its next Home load (QA finding F1)."""
+    r = (rel or "").replace("\\", "/").lstrip("/").lower()
+    if not r.endswith(_SKINSHORTCUTS_SIDECAR_SUFFIX):
+        return False
+    if r.startswith(_SKINSHORTCUTS_SIDECAR_PREFIX):
+        return True
+    if r.startswith("profiles/"):
+        parts = r.split("/", 2)
+        return len(parts) == 3 and parts[2].startswith(_SKINSHORTCUTS_SIDECAR_PREFIX)
+    return False
+
+
+def _vfs_dir_names(reldir):
+    """File names xbmcvfs.listdir reports for special://home/userdata/<reldir>,
+    or None when no listing could be observed.
+
+    On tvOS this is the one public observable that can see the LIVE key layer
+    next to the POSIX layer: CTVOSDirectory::GetDirectory
+    (TVOSDirectory.cpp:48-106) lists the POSIX files and then appends every
+    NSUserDefaults key in the dir WITHOUT dedupe. So with a POSIX twin on disk, a
+    basename listed TWICE proves the key is still live, and a single listing
+    proves the key is gone. Re-reading the backing plist off disk instead is NOT
+    a valid post-delete observation: cfprefsd owns that file and flushes it
+    lazily, so a just-dropped key can sit in the stale on-disk snapshot
+    indefinitely - which made every successful drop count as failed and kept the
+    boot service retrying forever (atv2, 2026-07-17)."""
+    special = "special://home/userdata" + ("/" + reldir if reldir else "")
+    try:
+        _dirs, files = xbmcvfs.listdir(special)
+        return [
+            f.decode("utf-8", "replace") if isinstance(f, bytes) else str(f)
+            for f in files
+        ]
+    except Exception:
+        return None
+
+
 def purge_stale_keys(userdata_root, log=None):
     """Purge NSUserDefaults keys left over from the vector-everything era. tvOS ONLY.
 
@@ -411,6 +467,13 @@ def purge_stale_keys(userdata_root, log=None):
         CTVOSFile, so the delete would dispatch to CPosixFile and remove the REAL disk
         file - the only copy. (No such key should exist, since only VFS writes create
         keys; this is a hard guard, not an expectation.)
+      * addon_data/script.skinshortcuts/*.DATA.xml: KEPT, always. Since skin.estuary7
+        1.0.66 the skin deliberately dual-layers every menu file on tvOS - its syncMenu
+        re-registers a byte-identical durable key on every Home load, so the owner's
+        custom menu survives a Library/Caches purge. Those keys are the skin's LIVE
+        durability sidecars, not stale-era leftovers. Purging them is an infinite war
+        the purge cannot win: the skin re-registers each key at the next Home load and
+        the run-once marker never sets (observed on atv2, 2026-07-17).
       * OUT-OF-SCOPE: purged. SAFETY FIRST: if no POSIX file exists at
         `<userdata_root>/<rel>` the key is the ONLY copy of that file, so its decoded
         content is materialized to disk with plain open() BEFORE the key is dropped.
@@ -424,8 +487,17 @@ def purge_stale_keys(userdata_root, log=None):
     dispatches to CTVOSFile::Delete -> DeleteKeyFromPath, which removes ONLY the key and
     (for WantsFile-eligible paths) never touches the POSIX file - the one job that API
     is actually good for. Its boolean return is True whether or not a key existed
-    (TVOSNSUserDefaults.mm:188-202), so every deletion is confirmed by re-reading the
-    plist afterwards; an unconfirmed delete counts as failed, never as purged.
+    (TVOSNSUserDefaults.mm:188-202), so it proves nothing. Re-reading the backing plist
+    proves nothing either: cfprefsd flushes that file lazily, so right after the delete
+    it still shows the OLD snapshot and every successful drop counts as failed (the
+    marker-never-sets every-boot retry loop, atv2 2026-07-17). Each drop is instead
+    verified against the LIVE key layer via xbmcvfs.listdir's no-dedupe merge
+    (TVOSDirectory.cpp:48-106, see _vfs_dir_names): every purge candidate has a POSIX
+    twin on disk by construction (pre-existing or just materialized), so its basename
+    listed TWICE means the key survived (failed) and a single listing means it is gone
+    (purged). When no listing is observable at all, the drop is trusted:
+    CTVOSFile::Delete (TVOSFile.cpp:101-111) is an unconditional removeObjectForKey for
+    a WantsFile-eligible path and cannot leave the key behind.
 
     Hard-gated: a strict (0, 0, 0, 0) no-op unless `_is_tvos()` positively confirms
     Apple TV (and the NSUserDefaults plist resolves, which it only does there). Fully
@@ -434,9 +506,8 @@ def purge_stale_keys(userdata_root, log=None):
     if not _is_tvos() or not userdata_root:
         return (0, 0, 0, 0)
     to_purge = []  # (rel, key) pairs safe to drop (any only-copy already on disk)
-    plist_path = None
     try:
-        plist_path, store = _find_nsud_plist()
+        _plist_path, store = _find_nsud_plist()
         if not store:
             return (0, 0, 0, 0)
         for key in sorted(k for k in store if isinstance(k, str)):
@@ -456,8 +527,20 @@ def purge_stale_keys(userdata_root, log=None):
             if _should_vector(rel):
                 kept += 1  # in-scope: the key is the live store - NEVER purge
                 continue
+            if _is_skin_menu_sidecar(rel):
+                # The skin's own durability sidecar (skin.estuary7 1.0.66+
+                # syncMenu dual-layers every skinshortcuts *.DATA.xml): a LIVE key
+                # the skin maintains, not a stale-era leftover. Purging it only
+                # makes the skin re-register it at the next Home load - keep it,
+                # and leave both layers to the skin (it also re-materializes the
+                # POSIX copy from the key after a Caches purge).
+                kept += 1
+                continue
             posix = os.path.join(userdata_root, *rel.split("/"))
-            if not os.path.exists(posix):
+            # isfile, not exists: a directory squatting on the rel is not a disk
+            # twin, and treating it as one would let the key drop destroy the
+            # only real copy (QA finding F2).
+            if not os.path.isfile(posix):
                 # The key is the ONLY copy. Materialize it to disk first, or keep it.
                 data = _decode_key_value(store[key])
                 if data is None:
@@ -484,21 +567,35 @@ def purge_stale_keys(userdata_root, log=None):
                     continue
                 materialized += 1
             to_purge.append((rel, key))
-        for rel, _key in to_purge:
+        issued = []  # (rel, key) pairs whose delete call completed
+        for rel, key in to_purge:
             try:
                 # tvOS: drops ONLY the NSUserDefaults key; the POSIX file stands.
                 xbmcvfs.delete(_special_for(rel))
+                issued.append((rel, key))
             except Exception:
-                pass  # confirmation below counts it as failed
-        # xbmcvfs.delete's boolean lies (True even when nothing happened), so confirm
-        # against the store itself: re-read the plist and count only vanished keys.
-        after = _load_plist(plist_path) if plist_path else None
-        remaining = set(after) if after is not None else None
-        for _rel, key in to_purge:
-            if remaining is not None and key not in remaining:
-                purged += 1
-            else:
+                failed += 1  # the drop was never issued; the key still shadows
+        # xbmcvfs.delete's boolean lies (True even when nothing happened), and the
+        # backing plist is cfprefsd-lazy (re-reading it right after the delete
+        # shows the OLD snapshot - how every successful drop once counted as
+        # failed and the run-once marker never set). Verify against the LIVE key
+        # layer instead: every issued entry has a POSIX twin on disk (pre-existing
+        # or just materialized), so a basename xbmcvfs.listdir reports TWICE
+        # proves the key survived (TVOSDirectory does not dedupe) and anything
+        # less means it is gone. With no listing observable at all, trust
+        # CTVOSFile::Delete: for a WantsFile-eligible path (all of these, by the
+        # guards above) it is an unconditional removeObjectForKey that cannot
+        # leave the key behind (TVOSFile.cpp:101-111, TVOSNSUserDefaults.mm:188-202).
+        listings = {}
+        for rel, _key in issued:
+            reldir, _sep, base = rel.rpartition("/")
+            if reldir not in listings:
+                listings[reldir] = _vfs_dir_names(reldir)
+            names = listings[reldir]
+            if names is not None and names.count(base) >= 2:
                 failed += 1
+            else:
+                purged += 1
     except Exception:  # noqa: BLE001 - never abort the caller (counts stand as-is)
         pass
     if log:

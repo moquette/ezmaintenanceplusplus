@@ -12,7 +12,14 @@ The fakes model the real tvOS mechanics these tests exist to pin:
   special://home/../../Preferences exactly as on hardware;
 * xbmcvfs.delete on a /userdata/*.xml special path drops ONLY the plist key and leaves
   the POSIX file alone, and returns True whether or not a key existed (the storage-map
-  bug-4 lying boolean) - a 'stuck' key models a delete that silently did nothing.
+  bug-4 lying boolean) - a 'stuck' key models a delete that silently did nothing;
+* xbmcvfs.listdir merges the POSIX names and every LIVE key's basename WITHOUT dedupe
+  (CTVOSDirectory::GetDirectory, TVOSDirectory.cpp:48-106) - the observable the purge's
+  post-delete verification rides;
+* the on-disk plist can LAG the live store (state["flush_lag"]): cfprefsd flushes the
+  file lazily, so right after a delete the plist still shows the dropped key. That lag
+  is the atv2 2026-07-17 defect: a plist re-read counted every successful drop as
+  failed and the run-once marker never set.
 
 nsud imports only os/gzip (real) + xbmc/xbmcvfs (faked here), so the real module is
 exercised in isolation.
@@ -22,6 +29,7 @@ from __future__ import annotations
 
 import gzip
 import importlib
+import os
 import plistlib
 import sys
 import types
@@ -55,7 +63,11 @@ def env(monkeypatch, tmp_path):
     plist_path = prefs / "org.xbmc.kodi-tvos.plist"
 
     deleted: list[str] = []  # every special path handed to xbmcvfs.delete
-    state: dict = {"stuck_keys": set()}  # keys delete() silently fails to remove
+    state: dict = {
+        "stuck_keys": set(),  # keys delete() silently fails to remove (lying True)
+        "flush_lag": False,  # True = cfprefsd lag: delete drops LIVE, plist stays stale
+        "live_dropped": set(),  # keys removed from the LIVE store by delete()
+    }
 
     xbmc = types.ModuleType("xbmc")
     xbmc.log = lambda *a, **k: None
@@ -67,20 +79,60 @@ def env(monkeypatch, tmp_path):
         # Model CTVOSFile::Delete for a WantsFile-eligible path: DeleteKeyFromPath
         # removes only the NSUserDefaults key, never the POSIX file, and the call
         # returns True whether or not a key existed (TVOSNSUserDefaults.mm:188-202).
+        # The LIVE store drops the key immediately; the on-disk plist only follows
+        # when cfprefsd flushes - with flush_lag it stays stale (the atv2 defect).
         deleted.append(special)
         assert special.startswith(SPECIAL_PREFIX), (
             "purge must only ever delete special://home/userdata/ paths, got %r"
             % special
         )
         key = KEY_PREFIX + special[len(SPECIAL_PREFIX) :]
-        if plist_path.exists():
+        if key in state["stuck_keys"]:
+            return True  # the lying boolean: reports success, removed nothing
+        state["live_dropped"].add(key)
+        if not state["flush_lag"] and plist_path.exists():
             data = plistlib.loads(plist_path.read_bytes())
-            if key in data and key not in state["stuck_keys"]:
+            if key in data:
                 del data[key]
                 plist_path.write_bytes(plistlib.dumps(data))
         return True
 
     xbmcvfs.delete = _delete
+
+    def _live_keys():
+        # The LIVE NSUserDefaults state: the plist snapshot minus every key the
+        # delete() above already dropped but cfprefsd has not flushed to disk yet.
+        if not plist_path.exists():
+            return set()
+        keys = {
+            k
+            for k in plistlib.loads(plist_path.read_bytes())
+            if isinstance(k, str) and k.startswith(KEY_PREFIX)
+        }
+        return keys - state["live_dropped"]
+
+    def _listdir(special_dir):
+        # CTVOSDirectory::GetDirectory (TVOSDirectory.cpp:48-106): the POSIX
+        # entries first, then every LIVE key's basename appended WITHOUT dedupe -
+        # the observable nsud's post-delete verification rides.
+        assert special_dir.startswith("special://home/userdata")
+        rel = special_dir[len("special://home/userdata") :].strip("/")
+        real = userdata.joinpath(*rel.split("/")) if rel else userdata
+        try:
+            entries = sorted(os.listdir(str(real)))
+        except OSError:
+            entries = []
+        files = [n for n in entries if (real / n).is_file()]
+        dirs = [n for n in entries if (real / n).is_dir()]
+        prefix = KEY_PREFIX + (rel + "/" if rel else "")
+        key_names = sorted(
+            k[len(prefix) :]
+            for k in _live_keys()
+            if k.startswith(prefix) and "/" not in k[len(prefix) :]
+        )
+        return (dirs, files + key_names)
+
+    xbmcvfs.listdir = _listdir
 
     monkeypatch.setitem(sys.modules, "xbmc", xbmc)
     monkeypatch.setitem(sys.modules, "xbmcvfs", xbmcvfs)
@@ -125,15 +177,15 @@ def _write(base: Path, rel: str, content: bytes = b"<x/>") -> None:
 # --------------------------------------------------------------------------- #
 def test_out_of_scope_key_with_disk_twin_is_purged_disk_kept(env):
     env.enable_tvos()
-    rel = "addon_data/script.skinshortcuts/mainmenu.DATA.xml"
-    env.seed_plist({KEY_PREFIX + rel: b"<stale>old menu</stale>"})
-    _write(env.userdata, rel, b"<fresh>restored menu</fresh>")
+    rel = "addon_data/plugin.video.example/private.xml"
+    env.seed_plist({KEY_PREFIX + rel: b"<stale>old data</stale>"})
+    _write(env.userdata, rel, b"<fresh>restored data</fresh>")
 
     result = env.mod.purge_stale_keys(str(env.userdata))
 
     assert result == (0, 1, 0, 0)
     assert KEY_PREFIX + rel not in env.plist_keys(), "the shadowing key must be gone"
-    assert (env.userdata / rel).read_bytes() == b"<fresh>restored menu</fresh>", (
+    assert (env.userdata / rel).read_bytes() == b"<fresh>restored data</fresh>", (
         "the POSIX file must be untouched - only the key is purged"
     )
     assert env.deleted == [SPECIAL_PREFIX + rel]
@@ -144,8 +196,8 @@ def test_out_of_scope_key_with_disk_twin_is_purged_disk_kept(env):
 # --------------------------------------------------------------------------- #
 def test_key_only_file_is_materialized_then_purged(env):
     env.enable_tvos()
-    rel = "addon_data/script.skinshortcuts/menu.DATA.xml"
-    content = b"<menu>the owner's customized main menu</menu>"
+    rel = "addon_data/plugin.video.example/private.xml"
+    content = b"<data>the owner's only copy of this file</data>"
     env.seed_plist({KEY_PREFIX + rel: content})  # gzipped, as Kodi stores it
 
     result = env.mod.purge_stale_keys(str(env.userdata))
@@ -209,7 +261,7 @@ def test_in_scope_keys_are_kept(env):
 
 def test_mixed_store_purges_only_the_out_of_scope_keys(env):
     env.enable_tvos()
-    stale = "addon_data/script.skinshortcuts/menu.DATA.xml"
+    stale = "addon_data/plugin.video.example/private.xml"
     live = "guisettings.xml"
     env.seed_plist({KEY_PREFIX + stale: b"<stale/>", KEY_PREFIX + live: b"<live/>"})
     _write(env.userdata, stale, b"<fresh/>")
@@ -287,7 +339,7 @@ def test_non_xml_key_is_never_deleted(env):
 # --------------------------------------------------------------------------- #
 def test_stuck_key_counts_failed_and_disk_twin_is_kept(env):
     env.enable_tvos()
-    rel = "addon_data/script.skinshortcuts/menu.DATA.xml"
+    rel = "addon_data/plugin.video.example/private.xml"
     key = KEY_PREFIX + rel
     env.seed_plist({key: b"<stale/>"})
     _write(env.userdata, rel, b"<fresh/>")
@@ -311,3 +363,178 @@ def test_empty_userdata_root_is_a_noop(env):
     env.seed_plist({KEY_PREFIX + "addon_data/foo/private.xml": b"<stale/>"})
     assert env.mod.purge_stale_keys("") == (0, 0, 0, 0)
     assert env.deleted == []
+
+
+# --------------------------------------------------------------------------- #
+# skin.estuary7 1.0.66+ durability sidecars: every skinshortcuts *.DATA.xml key is
+# a LIVE dual-layer copy the skin's syncMenu maintains on every Home load - NEVER
+# purge material. Purging them started the atv2 2026-07-17 war: purge drops the
+# keys each boot, the skin re-registers them, and the run-once marker never sets.
+# --------------------------------------------------------------------------- #
+def test_skinshortcuts_data_keys_are_never_purged(env):
+    env.enable_tvos()
+    dual = "addon_data/script.skinshortcuts/mainmenu.DATA.xml"
+    key_only = "addon_data/script.skinshortcuts/powermenu.DATA.xml"
+    env.seed_plist(
+        {
+            KEY_PREFIX + dual: b"<menu>owner's custom menu</menu>",
+            KEY_PREFIX + key_only: b"<menu>post-purge survivor</menu>",
+        }
+    )
+    _write(env.userdata, dual, b"<menu>owner's custom menu</menu>")
+
+    result = env.mod.purge_stale_keys(str(env.userdata))
+
+    assert result == (0, 0, 2, 0)
+    assert env.deleted == [], "no delete may ever be issued for a skin sidecar"
+    assert KEY_PREFIX + dual in env.plist_keys()
+    assert KEY_PREFIX + key_only in env.plist_keys()
+    assert (env.userdata / dual).read_bytes() == b"<menu>owner's custom menu</menu>"
+    assert not (env.userdata / key_only).exists(), (
+        "a key-only sidecar is left to the skin's own syncMenu re-materialize - "
+        "the purge does not touch either layer of a skin-owned file"
+    )
+
+
+def test_war_scenario_dual_layer_sidecars_all_kept_zero_failed(env):
+    """The exact atv2 2026-07-17 state: skin 1.0.66 has dual-layered every
+    skinshortcuts *.DATA.xml (key + byte-identical POSIX) and in-scope keys are
+    live. The purge must skip ALL of it - zero deletes, zero failed - so the boot
+    service's run-once marker finally sets (it requires failed == 0)."""
+    env.enable_tvos()
+    sidecars = {
+        "addon_data/script.skinshortcuts/%s.DATA.xml" % name: b"<menu>%s</menu>"
+        % name.encode()
+        for name in ("mainmenu", "powermenu", "movies", "tvshows", "music")
+    }
+    in_scope = {
+        "guisettings.xml": b"<gui/>",
+        "sources.xml": b"<sources/>",
+        "addon_data/pvr.iptvsimple/instance-settings-1.xml": b"<iptv/>",
+    }
+    env.seed_plist(
+        {KEY_PREFIX + rel: data for rel, data in {**sidecars, **in_scope}.items()}
+    )
+    for rel, data in sidecars.items():
+        _write(env.userdata, rel, data)  # byte-identical POSIX twin (syncMenu state)
+
+    result = env.mod.purge_stale_keys(str(env.userdata))
+
+    assert result == (0, 0, len(sidecars) + len(in_scope), 0)
+    assert env.deleted == []
+    for rel in list(sidecars) + list(in_scope):
+        assert KEY_PREFIX + rel in env.plist_keys(), "%s must survive" % rel
+    for rel, data in sidecars.items():
+        assert (env.userdata / rel).read_bytes() == data, (
+            "the skin's POSIX layer must be untouched"
+        )
+
+
+def test_skinshortcuts_settings_xml_is_still_in_scope_not_a_sidecar(env):
+    """The sidecar exclusion covers *.DATA.xml only. skinshortcuts' settings.xml
+    is Kodi-framework-owned and already KEPT by _should_vector - pin that the two
+    rules do not fight."""
+    env.enable_tvos()
+    rel = "addon_data/script.skinshortcuts/settings.xml"
+    env.seed_plist({KEY_PREFIX + rel: b"<settings/>"})
+
+    assert env.mod.purge_stale_keys(str(env.userdata)) == (0, 0, 1, 0)
+    assert env.deleted == []
+    assert KEY_PREFIX + rel in env.plist_keys()
+
+
+# --------------------------------------------------------------------------- #
+# The cfprefsd flush lag (the atv2 "N failed" defect): the on-disk plist does not
+# reflect a delete until cfprefsd flushes, so a plist re-read right after the drop
+# still shows the key. The verification must ride the LIVE layer (listdir's
+# no-dedupe merge) and count the drop as purged, not failed.
+# --------------------------------------------------------------------------- #
+def test_purge_counts_survive_cfprefsd_flush_lag(env):
+    env.enable_tvos()
+    rel = "addon_data/plugin.video.example/private.xml"
+    key = KEY_PREFIX + rel
+    env.seed_plist({key: b"<stale/>"})
+    _write(env.userdata, rel, b"<fresh/>")
+    env.state["flush_lag"] = True  # delete drops the LIVE key; the plist stays stale
+
+    result = env.mod.purge_stale_keys(str(env.userdata))
+
+    assert result == (0, 1, 0, 0), (
+        "a successful drop must count as purged even while the stale on-disk "
+        "plist still shows the key - counting it failed is the every-boot "
+        "retry loop from atv2"
+    )
+    assert key in env.plist_keys(), (
+        "precondition: the stale plist snapshot really does still hold the key"
+    )
+    assert env.deleted == [SPECIAL_PREFIX + rel]
+
+
+def test_flush_lag_with_stuck_key_still_counts_failed(env):
+    """flush lag must not blind the verification to a GENUINELY stuck key: the
+    live layer (listdir dup-count) still shows it twice, so it counts failed."""
+    env.enable_tvos()
+    rel = "addon_data/plugin.video.example/private.xml"
+    key = KEY_PREFIX + rel
+    env.seed_plist({key: b"<stale/>"})
+    _write(env.userdata, rel, b"<fresh/>")
+    env.state["flush_lag"] = True
+    env.state["stuck_keys"] = {key}
+
+    assert env.mod.purge_stale_keys(str(env.userdata)) == (0, 0, 0, 1)
+    assert key in env.plist_keys()
+
+
+def test_genuinely_stale_keys_purge_while_sidecars_survive(env):
+    """The mixed post-1.0.66 box: skin sidecars + vector-everything-era leftovers
+    in one store. Only the leftovers go; failed stays 0 so the marker can set."""
+    env.enable_tvos()
+    sidecar = "addon_data/script.skinshortcuts/mainmenu.DATA.xml"
+    stale = "addon_data/plugin.video.example/private.xml"
+    env.seed_plist({KEY_PREFIX + sidecar: b"<menu/>", KEY_PREFIX + stale: b"<old/>"})
+    _write(env.userdata, sidecar, b"<menu/>")
+    _write(env.userdata, stale, b"<new/>")
+
+    result = env.mod.purge_stale_keys(str(env.userdata))
+
+    assert result == (0, 1, 1, 0)
+    assert KEY_PREFIX + sidecar in env.plist_keys()
+    assert KEY_PREFIX + stale not in env.plist_keys()
+    assert env.deleted == [SPECIAL_PREFIX + stale]
+
+
+def test_profile_prefixed_skin_sidecar_is_never_purged(env):
+    """QA finding F1: a secondary profile's skinshortcuts sidecar
+    (profiles/<name>/addon_data/script.skinshortcuts/*.DATA.xml) is just as
+    skin-maintained as the master profile's and must be kept, both layers
+    untouched."""
+    env.enable_tvos()
+    profile_sidecar = (
+        "profiles/Kids/addon_data/script.skinshortcuts/mainmenu.DATA.xml"
+    )
+    env.seed_plist({KEY_PREFIX + profile_sidecar: b"<menu>kids menu</menu>"})
+
+    result = env.mod.purge_stale_keys(str(env.userdata))
+
+    assert result == (0, 0, 1, 0)
+    assert env.deleted == [], "profile-prefixed sidecars are not purge material"
+    assert KEY_PREFIX + profile_sidecar in env.plist_keys()
+    assert not (env.userdata / profile_sidecar).exists(), (
+        "re-materialization is the skin's job, same as the master-profile rule"
+    )
+
+
+def test_directory_shaped_twin_does_not_satisfy_only_copy_check(env):
+    """QA finding F2: a DIRECTORY squatting on a stale key's rel is not a disk
+    twin. The purge must not treat it as one - the materialize path runs, fails
+    on the directory (OSError), and the key is KEPT as the only copy."""
+    env.enable_tvos()
+    stale = "addon_data/plugin.video.example/private.xml"
+    env.seed_plist({KEY_PREFIX + stale: b"<only-copy/>"})
+    (env.userdata / stale).mkdir(parents=True)  # adversarial dir shaped like the file
+
+    result = env.mod.purge_stale_keys(str(env.userdata))
+
+    assert result == (0, 0, 0, 1), "only-copy key must be kept and counted failed"
+    assert env.deleted == [], "no delete may be issued while the key is the only copy"
+    assert KEY_PREFIX + stale in env.plist_keys()

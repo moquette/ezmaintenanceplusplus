@@ -1,17 +1,14 @@
-import os
-import string
-import xbmc
 import xbmcaddon
 import xbmcgui
 from resources.lib.modules.backtothefuture import PY2
 
 Addon = xbmcaddon.Addon()
-addon = Addon.getAddonInfo('id')
-addonName = Addon.getAddonInfo('name')
-moduleName = 'Log Viewer'
+addon = Addon.getAddonInfo("id")
+addonName = Addon.getAddonInfo("name")
+moduleName = "Log Viewer"
 dialog = xbmcgui.Dialog()
-contents = ''
-path = ''
+contents = ""
+path = ""
 
 # get actioncodes from keymap.xml
 ACTION_MOVE_LEFT = 1
@@ -41,7 +38,7 @@ class Viewer(xbmcgui.WindowXML):
     def onInit(self):
         # title box
         title_box = self.getControl(self.title_box_control)
-        title_box.setText(str.format('%s %s') % (addonName, moduleName))
+        title_box.setText(str.format("%s %s") % (addonName, moduleName))
 
         # content box
         content_box = self.getControl(self.content_box_control)
@@ -66,37 +63,42 @@ class Viewer(xbmcgui.WindowXML):
         pass
 
 
-def text_view(loc='', data=''):
+def text_view(loc="", data=""):
     global contents
     global path
-    contents = ''
+    contents = ""
     path = loc
     # todo, path can be a url to an internet file
-    if not path and not data: return
+    if not path and not data:
+        return
     if path and not data:
-        if 'http' in path.lower():
+        if "http" in path.lower():
             # todo, open internet files from a url path
-            dialog.ok('Notice', 'This feature is not yet available')
+            dialog.ok("Notice", "This feature is not yet available")
             return
         # Open and read the file from path location
-        temp_file = open(path, 'rb')
+        temp_file = open(path, "rb")
         contents = temp_file.read()
         temp_file.close()
     # Send contents to text display function
     elif data:
         contents = data
     if not contents:
-        dialog.ok('Notice', 'The file was empty')
+        dialog.ok("Notice", "The file was empty")
         return
-    #contents = str(contents)
-    if not  PY2:
-        contents = contents.decode('UTF-8')
-    contents = contents.replace(' ERROR: ', ' [COLOR red]ERROR[/COLOR]: ') \
-        .replace(' WARNING: ', ' [COLOR gold]WARNING[/COLOR]: ')
+    # contents = str(contents)
+    if not PY2:
+        # A crash can leave invalid UTF-8 at the log tail; replacement
+        # characters mark the corruption instead of killing the viewer.
+        contents = contents.decode("UTF-8", errors="replace")
+    contents = contents.replace(" ERROR: ", " [COLOR red]ERROR[/COLOR]: ").replace(
+        " WARNING: ", " [COLOR gold]WARNING[/COLOR]: "
+    )
 
-    win = Viewer('textview-skin.xml', Addon.getAddonInfo('path'))
+    win = Viewer("textview-skin.xml", Addon.getAddonInfo("path"))
     win.doModal()
     del win
+
 
 # To call module put the following in the addon list or context menu
 # import TextViewer

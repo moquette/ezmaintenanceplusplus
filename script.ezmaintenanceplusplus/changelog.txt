@@ -164,3 +164,25 @@ v2026.07.17.5
   did not run and skipped the restart. Now completes and restarts correctly.
 - Set-up-this-box: the repo source rename to .T7B dedups by URL (no duplicate entries).
 - Reviewed by three independent agents; the skin boot still owes one on-device run.
+
+v2026.07.17.6
+- Ended the boot-time war with skin.estuary7 1.0.66: the stale NSUserDefaults key
+  purge now treats the skin's skinshortcuts *.DATA.xml keys (master profile AND
+  per-profile) as skin-owned durability sidecars and never purges them, in either
+  layer.
+- Root-caused and fixed the purge's "failed" counting: post-delete verification
+  re-read the NSUserDefaults backing plist, which cfprefsd flushes lazily on tvOS,
+  so every successful key drop looked failed, the run-once marker never set, and
+  the purge re-ran (and re-deleted the skin's keys) every boot. Verification now
+  reads the LIVE layer via the xbmcvfs.listdir dup-count (a name listed twice has
+  a surviving key; once means the key is gone).
+- Only-copy safety tightened: a directory squatting on a key's path no longer
+  counts as a disk twin (the key would have been the only real copy).
+- Log viewer / pastebin uploader: crash-damaged logs (invalid UTF-8 written during
+  a hard crash) no longer make both die silently; the bytes are replaced with
+  markers and the log still displays/uploads. Cancel no longer picks the last log
+  by accident, an empty log list says so instead of doing nothing, upload failures
+  close the stuck busy dialog and are logged.
+- Reviewed by two fix agents and two adversarial QA agents; tvOS hardware
+  verification on atv2 recorded in verification/2026.07.17.6.json (android class
+  waived: the changed storage path is tvOS-gated and never executes on Fire OS).

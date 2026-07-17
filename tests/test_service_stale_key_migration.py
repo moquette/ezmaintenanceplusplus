@@ -214,6 +214,32 @@ def test_purge_runs_once_logs_counts_and_writes_marker(env):
     assert env.version in info[0]
 
 
+def test_kept_only_completion_sets_marker(env):
+    """The post-skin-1.0.66 steady state (the atv2 war aftermath): everything in
+    the store is legitimately KEPT (in-scope keys + the skin's skinshortcuts
+    durability sidecars), nothing materialized, purged, or failed. That IS a
+    complete run - the marker must set, ending the every-boot retry loop."""
+    svc = env.load(_nsud_stub(env, result=(0, 0, 42, 0)))
+
+    svc._maybe_purge_stale_nsud_keys()
+
+    assert env.marker().read_text() == env.version
+    svc._maybe_purge_stale_nsud_keys()
+    assert env.purge_calls == [env.userdata], "a kept-only run must not repeat"
+
+
+def test_unresolved_failed_keys_leave_marker_unset_and_warn(env):
+    """failed > 0 means a key is POSITIVELY still shadowing (the new counting
+    only says failed on live evidence) - the marker must stay unset so the next
+    boot retries, and the log must say so."""
+    svc = env.load(_nsud_stub(env, result=(0, 0, 19, 6)))
+
+    svc._maybe_purge_stale_nsud_keys()
+
+    assert not env.marker().exists()
+    assert any("6 key(s) unresolved" in m for m in env.log_lines(LOGWARNING))
+
+
 def test_marker_survives_a_service_restart(env):
     svc = env.load(_nsud_stub(env))
     svc._maybe_purge_stale_nsud_keys()
@@ -362,11 +388,10 @@ def _load_with_tools(monkeypatch, env, tools_mod, enable_result="OK"):
     mod = env.load(_nsud_stub(env))
     # Inject the tools stub and a scriptable executeJSONRPC into the loaded module.
     monkeypatch.setitem(sys.modules, "resources.lib.modules.tools", tools_mod)
-    setattr(
-        sys.modules["resources.lib.modules"], "tools", tools_mod
-    )
-    mod.xbmc.executeJSONRPC = lambda payload: '{"result": %s}' % (
-        '"%s"' % enable_result if enable_result is not None else "null"
+    setattr(sys.modules["resources.lib.modules"], "tools", tools_mod)
+    mod.xbmc.executeJSONRPC = lambda payload: (
+        '{"result": %s}'
+        % ('"%s"' % enable_result if enable_result is not None else "null")
     )
     return mod
 

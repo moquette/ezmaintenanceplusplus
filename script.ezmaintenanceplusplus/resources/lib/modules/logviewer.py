@@ -43,7 +43,7 @@ def logView():
 
     try:
         if select == -1:
-            raise Exception()
+            return
         logfile_path = translatePath("special://logpath")
         logfile_names = (
             "kodi.log",
@@ -62,10 +62,14 @@ def logView():
                 logNames.append(logfile_name)
                 logPaths.append(log_file_path)
 
+        if not logNames:
+            dialog.ok(AddonTitle, "No log files found in " + logfile_path)
+            return
+
         selectLog = control.selectDialog(logNames)
-        selectedLog = logPaths[selectLog]
         if selectLog == -1:
-            raise Exception()
+            return
+        selectedLog = logPaths[selectLog]
         if select == 0:
             from resources.lib.modules import TextViewer
 
@@ -74,8 +78,10 @@ def logView():
             xbmc.executebuiltin("ActivateWindow(busydialognocancel)")
             f = open(selectedLog, "rb")
             text = f.read()
-            text = text.decode("UTF-8")
             f.close()
+            # A crash can leave invalid UTF-8 at the log tail; replacement
+            # characters mark the corruption instead of killing the upload.
+            text = text.decode("UTF-8", errors="replace")
             from resources.lib.modules import pastebin
 
             upload_Link = pastebin.api().paste(unicode(text))
@@ -98,8 +104,12 @@ def logView():
             else:
                 dialog.ok(AddonTitle, "Cannot Upload Log to Pastebin")
 
-    except:
-        pass
+    except Exception as e:
+        xbmc.executebuiltin("Dialog.Close(busydialognocancel)")
+        xbmc.log(
+            "%s : logView failed: %s" % (AddonTitle, e),
+            level=xbmc.LOGWARNING,
+        )
 
 
 ##############################    END    #########################################

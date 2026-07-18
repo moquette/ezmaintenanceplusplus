@@ -2,6 +2,56 @@
 
 This file provides guidance to Claude Code when working in this repository.
 
+## READ FIRST: start at `TASKS.md`
+
+**`TASKS.md` is this project's task index.** It lists every open item and points
+at the detail docs. Two OPEN restore defects (2026-07-18) are summarized below.
+
+### The two open restore defects
+
+**`docs/restore-defects-2026-07-18.md` - diagnosed, NOT fixed, no code changed.**
+
+Read it before touching `wiz.py`, `tools.py`, `ui.py`, `_kodisettings.py`, or
+`service.py`. Short version:
+
+- **Defect A (root cause CONFIRMED, empirically reproduced):** restore correctly
+  writes `addon_data/<skin>/settings.xml`, then `ui.restart()` -> `Quit` ->
+  `CApplication::Stop()` -> `g_SkinInfo->SaveSettings()` serializes the
+  PRE-RESTORE in-memory skin settings back over it. Restored skin settings are
+  destroyed on the way out. NOT tvOS-only: it is silent on Fire TV only because
+  the value there already matched. All seven boxes are latently affected.
+- **The docstring at `wiz.py:753-764` is FALSE.** It claims `Quit` skips Kodi's
+  clean-shutdown flush. It does not. `RestartApp` being desktop-only means `Quit`
+  does not RELAUNCH, not that it skips `CApplication::Stop`.
+  `_kodisettings.py:104-105`, `tools.py:205-210`, and the PVR pause rule below
+  all state the correct behavior. Do not trust that one docstring.
+- **Defect B (mechanism proven, trigger UNKNOWN):** the post-restore device-name
+  keyboard is torn down mid-typing by something external and `_get_keyboard`
+  (`tools.py:482-490`) cannot tell "destroyed" from "cancelled", so the flow
+  silently advances and discards the input. EZM++ sets NO timeout anywhere -
+  do not go hunting for one.
+- **Test trap:** `Skin.HasSetting(<id>)` over JSON-RPC CREATES the setting id in
+  memory (default false) and it persists on flush. `GetInfoBooleans` is not a
+  read-only probe for skin settings. A regression test built on it passes for the
+  wrong reason.
+
+The fix plan and the full task breakdown are in that document. It is PROPOSED and
+has NOT been approved by QA or the architect; that review is required before any
+code is written.
+
+**Defect A is instance number 4 of a class this project already named.** Read
+`repo/docs/playbooks/kodi-settings-clobber.md` (its instance 1 is this exact file
+and owner, and the documented fix is BOTH mechanisms, not one) and
+`repo/docs/plans/atv-every-boot-settings-reassert.md` (an every-boot re-assert
+was REJECTED by unanimous adversarial review on 2026-07-08 - do not re-propose
+it; its verdict section holds the corrected fix that became
+`nsud.rewrite_userdata_xml`).
+
+**`docs/next-update-candidates.md`** is the forward queue for everything else
+investigated but unshipped: the video-cache `readfactor` question (answer: do NOT
+raise it, with source proof), a `memorysize` GUI-list hazard, and an unresolved
+owner decision about credentials stored in cleartext inside the backup zips.
+
 ## What this repo is
 
 **EZ Maintenance++** (`script.ezmaintenanceplusplus`) is a fork of EZ Maintenance+
@@ -10,7 +60,9 @@ TVs). This repo (`moquette/ezmaintenanceplusplus`, public) is the **single sourc
 truth**: the add-on source, its full test suite, and the build/release tooling live
 here and only here.
 
-**Distribution stays in the sibling repo** `~/Code/moquette/tony7bones.github.io`
+**Distribution stays in the sibling repo** (remote `tony7bones/tony7bones.github.io`,
+local checkout `~/Code/moquette/kodi/repo`; the standalone
+`~/Code/moquette/tony7bones.github.io` path older docs cite DOES NOT EXIST)
 (the Tony.7.Bones Kodi repository, a virtual proxy `repository.tony7bones`): this
 repo publishes a GitHub Release asset via `tools/release.sh`, and the proxy carries
 only a hosted metadata mirror (`addons/hosted/script.ezmaintenanceplusplus/` -

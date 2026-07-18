@@ -10,11 +10,28 @@ still true and is not recorded anywhere else.
 **The backup/restore contract lives in `CLAUDE.md`.** It is the single copy.
 Do not restate it here.
 
+## PICK UP HERE (2026-07-18)
+
+**Start at `TASKS.md`** - the project task index (created 2026-07-18; it did not
+exist before, which is how doctrine got missed).
+
+Two OPEN restore defects, diagnosed but NOT fixed, no code changed, no build cut:
+**`docs/restore-defects-2026-07-18.md`**. Defect A (restore loses skin settings
+to Kodi's clean-shutdown flush) has a confirmed, empirically reproduced root
+cause. Defect B (post-restore device-name prompt discards typed input) has a
+proven mechanism but an unidentified trigger. The fix plan in that document is
+PROPOSED and still needs QA + architect approval before any code is written.
+`CLAUDE.md` carries the short version at the top.
+
 ## Repo / build / test
 
-- Repo: `~/Code/moquette/ezmaintenanceplusplus` (its OWN git repo, PUBLIC on GitHub -
+- Repo: its OWN git repo (remote `moquette/ezmaintenanceplusplus`, PUBLIC on GitHub -
   required so a Kodi box can anonymously download a release asset), branch `main`.
   This is the ONLY place the add-on source is edited.
+  **LOCAL CHECKOUT: `~/Code/moquette/kodi/ezmpp`.** The standalone path
+  `~/Code/moquette/ezmaintenanceplusplus` that older docs cite DOES NOT EXIST
+  (verified 2026-07-18); the sibling repos live at `~/Code/moquette/kodi/repo`
+  (tony7bones.github.io) and `~/Code/moquette/kodi/estuary7`.
 - Add-on dir: `script.ezmaintenanceplusplus/`. Version is whatever `addon.xml` says
   (date-stamped `YYYY.MM.DD.N` scheme; check the file, do not trust a number written
   down in any doc, including this one).
@@ -35,7 +52,7 @@ Do not restate it here.
   `tony7bones.github.io` and ship it via `python3 _tools/release.py --proxy` (it is a
   proxy-config change, not a first-party add-on source change - `repository.json` is
   bundled inside the `repository.tony7bones` add-on's own zip).
-- Tests: `cd ~/Code/moquette/ezmaintenanceplusplus && /opt/homebrew/bin/python3 -m
+- Tests: `cd ~/Code/moquette/kodi/ezmpp && /opt/homebrew/bin/python3 -m
 pytest tests/ -q` (system `python3` on this machine is 3.9, too old for this suite).
   `ruff check tests/ tools/` must also be clean. Includes the tvOS storage-contract
   hardware-verification gate (`test_storage_change_requires_device_verification.py` +

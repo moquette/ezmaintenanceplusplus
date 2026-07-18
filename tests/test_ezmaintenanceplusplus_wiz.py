@@ -314,20 +314,11 @@ def test_backup_confirm_shows_final_filename_then_proceeds(wiz, monkeypatch, tmp
     assert "dst" in captured, "confirming must proceed to CreateZip"
 
 
-def test_backup_dropbox_has_name_confirm_before_zip():
-    """The Dropbox backup path must gate the same way: a ui.confirm on the final
-    name BEFORE the zip build. Asserted at the source level (the runtime path
-    imports dropbox_remote, whose module-load side effects are out of scope
-    here); the local path's confirm behavior is exercised end-to-end above."""
-    import inspect
-
-    from resources.lib.modules import wiz as wizmod
-
-    src = inspect.getsource(wizmod._backup_dropbox)
-    assert "ui.confirm" in src, "_backup_dropbox must confirm the name"
-    assert src.index("ui.confirm") < src.index("CreateZip"), (
-        "the confirm must come BEFORE the zip build"
-    )
+# NOTE: the Dropbox name-confirm gate is now asserted BEHAVIORALLY (declining the
+# confirm must reach neither CreateZip nor upload) in
+# test_backup_dropbox_confirm_declined_builds_nothing further down, together with
+# the rest of the wiz-side Dropbox flow. The old source-string assertion that lived
+# here could not tell a live call from a commented-out one.
 
 
 def test_backup_opens_native_settings_when_path_unset(wiz, monkeypatch, tmp_path):
@@ -1999,6 +1990,8 @@ def test_boot_skin_persists_restored_skin_to_disk_no_live_switch(
     persisted = []
     from resources.lib.modules import nsud
 
+    # True is DELIBERATE here: this test models the fully successful path (it asserts
+    # the "written:" verdict below), so a confirmed vector is exactly what is intended.
     monkeypatch.setattr(
         nsud, "persist_one", lambda rel, log=None: persisted.append(rel) or True
     )
@@ -2024,27 +2017,85 @@ def test_boot_skin_persists_restored_skin_to_disk_no_live_switch(
     assert props.get("ezm_boot_skin") == "written:skin.estuary7"
 
 
+def _fake_tvos(wiz, monkeypatch, on=True):
+    """Make wiz._source_os() report 'tvos'. The base fixture answers every
+    getCondVisibility with False, so without this a test named '...on_tvos' silently
+    exercises the DESKTOP path - which is exactly how the unconfirmed-vector gap hid."""
+    monkeypatch.setattr(
+        wiz.xbmc,
+        "getCondVisibility",
+        lambda cond: bool(on) and cond == "System.Platform.TVOS",
+    )
+
+
+def _stub_nsud_layers(monkeypatch):
+    """Neutralize the tvOS storage machinery so a test can isolate wiz's own verdict
+    logic. nsud's real two-layer behavior is covered by the nsud/sandbox-io suites."""
+    from resources.lib.modules import nsud
+
+    monkeypatch.setattr(nsud, "purge_stale_keys", lambda *a, **k: (0, 0, 0, 0))
+    monkeypatch.setattr(nsud, "rewrite_userdata_xml", lambda *a, **k: (0, 0, 0))
+    return nsud
+
+
 def test_boot_skin_vectors_via_persist_one_on_tvos(wiz, monkeypatch, tmp_path):
     """The tvOS durability path: the restored skin is vectored into NSUserDefaults via
-    nsud.persist_one('guisettings.xml') - the same tvOS-safe primitive boxsetup uses."""
+    nsud.persist_one('guisettings.xml') - the same tvOS-safe primitive boxsetup uses.
+
+    An UNCONFIRMED vector (persist_one -> False: the bytes are on disk but the read-back
+    did not prove NSUserDefaults holds them) must be REPORTED, not discarded: the status
+    becomes 'unconfirmed:<skin>' both as the return value and on the diagnostic window
+    property. On tvOS a stale key shadows the disk file, so this is a partial restore."""
     home = _prep_restore(wiz, monkeypatch, tmp_path)
     (home / "userdata" / "guisettings.xml").write_text(
         '<settings><setting id="lookandfeel.skin">skin.estuary</setting></settings>'
     )
-    _record_window_props(wiz, monkeypatch)
+    props = _record_window_props(wiz, monkeypatch)
     _no_skin_live_switch(monkeypatch, wiz)
+    _fake_tvos(wiz, monkeypatch)
 
     from resources.lib.modules import nsud
 
     calls = []
     monkeypatch.setattr(
-        nsud, "persist_one", lambda rel, log=None: calls.append(rel) or True
+        nsud, "persist_one", lambda rel, log=None: calls.append(rel) or False
     )
 
-    wiz._apply_boot_skin(lambda m: None, "skin.estuary7")
+    status = wiz._apply_boot_skin(lambda m: None, "skin.estuary7")
+
     assert calls == ["guisettings.xml"], (
         "guisettings.xml must be vectored into NSUserDefaults (persist_one) on tvOS"
     )
+    assert status == "unconfirmed:skin.estuary7", status
+    # Item 4: the diagnostic property carries it too, for off-box JSON-RPC inspection.
+    assert props.get("ezm_boot_skin") == "unconfirmed:skin.estuary7"
+    # The skin is still on disk - False means "not durably vectored", never "data gone".
+    import xml.etree.ElementTree as ET
+
+    r = ET.parse(str(home / "userdata" / "guisettings.xml")).getroot()
+    got = next(n.text for n in r.iter("setting") if n.get("id") == "lookandfeel.skin")
+    assert got == "skin.estuary7"
+
+
+def test_boot_skin_confirmed_vector_on_tvos_reports_written(wiz, monkeypatch, tmp_path):
+    """The other side of the same branch: a CONFIRMED vector on tvOS still reports
+    'written:', so the new check cannot cry wolf on a healthy Apple TV restore."""
+    home = _prep_restore(wiz, monkeypatch, tmp_path)
+    (home / "userdata" / "guisettings.xml").write_text(
+        '<settings><setting id="lookandfeel.skin">skin.estuary</setting></settings>'
+    )
+    props = _record_window_props(wiz, monkeypatch)
+    _no_skin_live_switch(monkeypatch, wiz)
+    _fake_tvos(wiz, monkeypatch)
+
+    from resources.lib.modules import nsud
+
+    monkeypatch.setattr(nsud, "persist_one", lambda rel, log=None: True)
+
+    assert wiz._apply_boot_skin(lambda m: None, "skin.estuary7") == (
+        "written:skin.estuary7"
+    )
+    assert props.get("ezm_boot_skin") == "written:skin.estuary7"
 
 
 def test_boot_skin_missing_or_empty_is_a_clean_noop(wiz, monkeypatch, tmp_path):
@@ -2075,6 +2126,111 @@ def test_boot_skin_missing_or_empty_is_a_clean_noop(wiz, monkeypatch, tmp_path):
         wiz._apply_boot_skin(lambda m: None, empty)
     assert rpc == [] and builtins == [], "a no-op never touches Kodi"
     assert props.get("ezm_boot_skin") == "none"
+
+
+def _skin_zip(tmp_path, skin="skin.estuary7"):
+    src = tmp_path / "kodi_settings_skin.zip"
+    return _make_valid_zip(
+        src,
+        [
+            (
+                "guisettings.xml",
+                '<settings><setting id="lookandfeel.skin">'
+                "%s</setting></settings>" % skin,
+            )
+        ],
+    )
+
+
+def test_boot_skin_unconfirmed_vector_reports_needs_attention(
+    wiz, monkeypatch, tmp_path
+):
+    """THE fix: an unconfirmed tvOS vector is a PARTIAL restore and must never be
+    reported as Complete.
+
+    persist_one keeps the POSIX copy, so nothing is lost - but on tvOS a stale
+    NSUserDefaults key SHADOWS the disk file, so the reopen this restore asks the user
+    to perform comes back on the PREVIOUS skin. Saying "Restore Complete" there is a
+    false success, and the locked contract forbids it: a partial restore is reported as
+    partial. The finding must name the consequence in the user's terms."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch)
+    props = _record_window_props(wiz, monkeypatch)
+    _no_skin_live_switch(monkeypatch, wiz)
+    _fake_tvos(wiz, monkeypatch)
+    nsud = _stub_nsud_layers(monkeypatch)
+    monkeypatch.setattr(nsud, "persist_one", lambda rel, log=None: False)
+
+    res = wiz.restore(str(_skin_zip(tmp_path)), confirm=False)
+
+    assert res["attention"], "an unconfirmed vector must produce a finding"
+    assert any("previous skin" in a for a in res["attention"]), res["attention"]
+    assert res["hard"] == [], (
+        "the bytes are on disk; this is attention, not lost content"
+    )
+    assert oks == [wiz.AddonTitle + " " + wiz.MSG_NEEDS_ATTENTION], oks
+    assert wiz.MSG_COMPLETE not in statuses, (
+        "a partial restore may never claim Complete"
+    )
+    # Item 4: the diagnostic property is published IN ADDITION to the finding.
+    assert props.get("ezm_boot_skin") == "unconfirmed:skin.estuary7"
+
+
+def test_boot_skin_flaky_vector_self_heals_on_the_retry_without_warning(
+    wiz, monkeypatch, tmp_path
+):
+    """THE ANTI-CRY-WOLF GUARANTEE. Ordering is load-bearing: attempt -> retry ->
+    read-back -> only THEN decide the verdict.
+
+    _apply_boot_skin runs INSIDE _restore_pass, so an unconfirmed vector is an
+    attention-only finding, which triggers the existing SILENT auto-fix pass. Because
+    _apply_boot_skin is idempotent, a one-off flaky read-back is re-attempted and
+    confirms on pass 2 - and the user sees a clean Complete with no warning at all.
+    A transient failure must never reach the user."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch)
+    props = _record_window_props(wiz, monkeypatch)
+    _no_skin_live_switch(monkeypatch, wiz)
+    _fake_tvos(wiz, monkeypatch)
+    nsud = _stub_nsud_layers(monkeypatch)
+
+    attempts = {"n": 0}
+
+    def _persist(rel, log=None):
+        attempts["n"] += 1
+        return attempts["n"] > 1  # fails once, then confirms
+
+    monkeypatch.setattr(nsud, "persist_one", _persist)
+
+    res = wiz.restore(str(_skin_zip(tmp_path)), confirm=False)
+
+    assert attempts["n"] == 2, "the retry must give the vector a SECOND attempt"
+    assert res["attention"] == [], "a self-healed vector must produce NO finding"
+    assert statuses == [wiz.MSG_COMPLETE], statuses
+    assert oks == [] and yesnos == [], "a transient failure must never reach the user"
+    assert props.get("ezm_boot_skin") == "written:skin.estuary7"
+
+
+def test_boot_skin_unconfirmed_vector_off_tvos_is_never_a_finding(
+    wiz, monkeypatch, tmp_path
+):
+    """The non-tvOS path must be completely unaffected. On Fire TV / Android / desktop
+    there is no NSUserDefaults layer to shadow the file, so an unconfirmed vector is
+    not this failure mode and must raise no warning and no new dialog."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch)
+    props = _record_window_props(wiz, monkeypatch)
+    _no_skin_live_switch(monkeypatch, wiz)
+    _fake_tvos(wiz, monkeypatch, on=False)  # Fire TV / Android / desktop
+    nsud = _stub_nsud_layers(monkeypatch)
+    monkeypatch.setattr(nsud, "persist_one", lambda rel, log=None: False)
+
+    res = wiz.restore(str(_skin_zip(tmp_path)), confirm=False)
+
+    assert res["attention"] == [], "no tvOS shadowing layer -> no finding"
+    assert statuses == [wiz.MSG_COMPLETE], statuses
+    assert oks == [] and yesnos == []
+    assert props.get("ezm_boot_skin") == "written:skin.estuary7"
 
 
 def test_read_target_skin_captures_absent_and_present(wiz, tmp_path):
@@ -2171,6 +2327,8 @@ def test_restore_captures_skin_before_apply_and_writes_it_back_last(
         return real_wg(path, sid, val)
 
     monkeypatch.setattr(_kodisettings, "write_guisetting", _wg)
+    # True is DELIBERATE here: this is the clean end-to-end restore (it ends on
+    # MSG_COMPLETE with the restored skin on disk), so the vector really did confirm.
     monkeypatch.setattr(
         nsud,
         "persist_one",
@@ -2353,3 +2511,877 @@ def test_revector_miss_on_wipe_path_is_harmless_complete(wiz, monkeypatch, tmp_p
 
     assert statuses == [wiz.MSG_COMPLETE], statuses
     assert oks == [] and yesnos == []
+
+
+# --------------------------------------------------------------------------- #
+# T-H3: the restore-scoped PVR/IPTV pause.
+#
+# The backup/restore contract names this the ONLY sanctioned add-on toggle in the
+# whole add-on, and its failure mode is severe: a restore that disables the user's
+# IPTV client and never re-enables it leaves live TV dead with no visible cause.
+# The contract says the client is disabled ONLY when the archive carries IPTV
+# config AND the client is live, and is ALWAYS re-enabled afterward - cancel path
+# included - with a loud report when the re-enable does not take.
+#
+# These tests patch _pvr_enabled/_pvr_set_enabled directly rather than steering the
+# JSON-RPC fake: the fixture's executeJSONRPC returns "{}", so _pvr_enabled() is
+# False for every other test in this file and the entire pause block was dead code
+# under test until now.
+# --------------------------------------------------------------------------- #
+
+_IPTV_MEMBER = "addon_data/pvr.iptvsimple/instance-settings-1.xml"
+
+
+def _iptv_zip(tmp_path, name="kodi_settings_202607180101.zip"):
+    """A userdata-anchored archive that CARRIES pvr.iptvsimple config (so the
+    restore-scoped pause is in scope) plus an ordinary settings file."""
+    src = tmp_path / name
+    return _make_valid_zip(
+        src,
+        [
+            ("guisettings.xml", "<settings/>"),
+            (_IPTV_MEMBER, "<instance/>"),
+        ],
+    )
+
+
+def _pvr_recorder(wiz, monkeypatch, enabled=True, reenable_ok=True):
+    """Patch the PVR probe/toggle seam. Returns the recorded (flag, ...) calls."""
+    calls = []
+
+    def _set(flag):
+        calls.append(bool(flag))
+        return reenable_ok if flag else True
+
+    monkeypatch.setattr(wiz, "_pvr_enabled", lambda: enabled)
+    monkeypatch.setattr(wiz, "_pvr_set_enabled", _set)
+    return calls
+
+
+def _pvr_marker_recorder(wiz, monkeypatch):
+    """Patch the crash-recovery marker seam (tools.mark/clear_pvr_pause_marker).
+    wiz imports tools at module top AND lazily inside the pause block; both resolve
+    to the same module object, so one patch covers both call sites."""
+    marks = []
+    monkeypatch.setattr(
+        wiz.tools, "mark_pvr_paused", lambda *a, **k: marks.append("mark")
+    )
+    monkeypatch.setattr(
+        wiz.tools, "clear_pvr_pause_marker", lambda *a, **k: marks.append("clear")
+    )
+    return marks
+
+
+def test_pvr_pause_disables_before_extract_and_reenables_after_rewrite(
+    wiz, monkeypatch, tmp_path
+):
+    """The contract's ordering, asserted as ORDER and not just as call counts: the
+    client is disabled BEFORE the extract (so it cannot flush stale in-memory
+    instance settings over the restored files) and re-enabled only AFTER the tvOS
+    durability rewrite has vectored those files."""
+    from resources.lib.modules import nsud
+
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    events = []
+
+    def _set(flag):
+        events.append("disable" if not flag else "enable")
+        return True
+
+    monkeypatch.setattr(wiz, "_pvr_enabled", lambda: True)
+    monkeypatch.setattr(wiz, "_pvr_set_enabled", _set)
+    _pvr_marker_recorder(wiz, monkeypatch)
+
+    real_extract = wiz.ExtractWithProgress
+
+    def _extract(*a, **k):
+        events.append("extract")
+        return real_extract(*a, **k)
+
+    monkeypatch.setattr(wiz, "ExtractWithProgress", _extract)
+
+    real_rewrite = nsud.rewrite_userdata_xml
+
+    def _rewrite(*a, **k):
+        events.append("rewrite")
+        return real_rewrite(*a, **k)
+
+    monkeypatch.setattr(nsud, "rewrite_userdata_xml", _rewrite)
+
+    wiz.restore(str(_iptv_zip(tmp_path)), confirm=False)
+
+    assert events == ["disable", "extract", "rewrite", "enable"], events
+
+
+def test_pvr_pause_marks_recovery_marker_before_extract_and_clears_on_resume(
+    wiz, monkeypatch, tmp_path
+):
+    """The pause is recorded BEFORE the extract so a crash/power loss mid-restore
+    leaves a marker the boot service can act on, and the marker is cleared only once
+    the client is confirmed re-enabled."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    toggles = _pvr_recorder(wiz, monkeypatch)
+
+    order = []
+    monkeypatch.setattr(
+        wiz.tools, "mark_pvr_paused", lambda *a, **k: order.append("mark")
+    )
+    monkeypatch.setattr(
+        wiz.tools, "clear_pvr_pause_marker", lambda *a, **k: order.append("clear")
+    )
+    real_extract = wiz.ExtractWithProgress
+
+    def _extract(*a, **k):
+        order.append("extract")
+        return real_extract(*a, **k)
+
+    monkeypatch.setattr(wiz, "ExtractWithProgress", _extract)
+
+    res = wiz.restore(str(_iptv_zip(tmp_path)), confirm=False)
+
+    assert toggles == [False, True], toggles
+    assert order == ["mark", "extract", "clear"], order
+    assert res["attention"] == [], res
+
+
+def test_pvr_pause_not_attempted_when_archive_has_no_iptv(wiz, monkeypatch, tmp_path):
+    """The toggle is bounded by the archive: no pvr.iptvsimple config in the zip means
+    the client is never touched, even when it is live (the contract's 'restore never
+    toggles add-ons' default)."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    toggles = _pvr_recorder(wiz, monkeypatch)
+    marks = _pvr_marker_recorder(wiz, monkeypatch)
+
+    src = tmp_path / "kodi_settings_noiptv.zip"
+    _make_valid_zip(src, [("guisettings.xml", "<s/>"), ("sources.xml", "<s/>")])
+    wiz.restore(str(src), confirm=False)
+
+    assert toggles == [], "no IPTV in the archive -> no toggle at all"
+    assert marks == []
+
+
+def test_pvr_pause_not_attempted_when_client_already_disabled(
+    wiz, monkeypatch, tmp_path
+):
+    """The pause protects a LIVE client's teardown flush. An already-disabled (or
+    not-installed) client must never be touched - a restore may not ENABLE anything."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    toggles = _pvr_recorder(wiz, monkeypatch, enabled=False)
+    marks = _pvr_marker_recorder(wiz, monkeypatch)
+
+    wiz.restore(str(_iptv_zip(tmp_path)), confirm=False)
+
+    assert toggles == [], "a disabled client must be left disabled"
+    assert marks == []
+
+
+def test_pvr_pause_failure_to_disable_is_log_only_not_a_finding(
+    wiz, monkeypatch, tmp_path
+):
+    """A pause MISS is a risk, not a realized failure: the restore must not be
+    downgraded on it (that is what cried wolf on clean restores), and nothing is
+    re-enabled afterward because nothing was paused."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    calls = []
+
+    monkeypatch.setattr(wiz, "_pvr_enabled", lambda: True)
+    monkeypatch.setattr(
+        wiz, "_pvr_set_enabled", lambda flag: calls.append(bool(flag)) or False
+    )
+    marks = _pvr_marker_recorder(wiz, monkeypatch)
+
+    res = wiz.restore(str(_iptv_zip(tmp_path)), confirm=False)
+
+    assert calls == [False], "one failed disable attempt, and no bogus re-enable"
+    assert marks == [], "nothing was paused, so no crash-recovery marker is armed"
+    assert res["attention"] == [] and res["hard"] == [], res
+
+
+def test_pvr_reenable_failure_is_loud_and_keeps_the_recovery_marker(
+    wiz, monkeypatch, tmp_path
+):
+    """The severe case: the client WAS disabled and cannot be turned back on. It must
+    surface as a needs-attention finding (never a silent Complete) and the crash
+    recovery marker must NOT be cleared, so the boot service still re-enables it."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch)
+    toggles = _pvr_recorder(wiz, monkeypatch, reenable_ok=False)
+    marks = _pvr_marker_recorder(wiz, monkeypatch)
+
+    res = wiz.restore(str(_iptv_zip(tmp_path)), confirm=False)
+
+    assert any("could not be re-enabled" in a for a in res["attention"]), res
+    assert res["hard"] == [], "a failed re-enable is attention, not lost content"
+    # Attention-only findings trigger one silent auto-fix pass, so the disable/enable
+    # pair runs twice; what matters is that EVERY disable is followed by a re-enable
+    # attempt and that the marker is never cleared on a failed one.
+    assert toggles and toggles == [False, True] * (len(toggles) // 2), toggles
+    assert "clear" not in marks, "the marker must survive a failed re-enable"
+    assert marks.count("mark") == len(toggles) // 2
+    assert oks == [wiz.AddonTitle + " " + wiz.MSG_NEEDS_ATTENTION], oks
+
+
+def test_pvr_pause_cancel_path_still_reenables(wiz, monkeypatch, tmp_path):
+    """ALWAYS re-enable means the cancel path too. A user who aborts a merge restore
+    mid-extract must not be left with a dead IPTV client."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    toggles = _pvr_recorder(wiz, monkeypatch)
+    marks = _pvr_marker_recorder(wiz, monkeypatch)
+    monkeypatch.setattr(
+        wiz,
+        "ExtractWithProgress",
+        lambda *a, **k: wiz.ExtractResult(canceled=True, extracted=1, total=2),
+    )
+
+    res = wiz.restore(str(_iptv_zip(tmp_path)), confirm=False)
+
+    assert res.get("canceled") is True, res
+    assert toggles == [False, True], "a cancel must still resume the client"
+    assert marks == ["mark", "clear"]
+
+
+def test_pvr_cancel_path_reenable_failure_tells_the_user(wiz, monkeypatch, tmp_path):
+    """On the cancel path there is no findings report to ride on, so a failed
+    re-enable has to speak for itself in a dialog."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    statuses, oks, yesnos = _record_restore_report(wiz, monkeypatch)
+    toggles = _pvr_recorder(wiz, monkeypatch, reenable_ok=False)
+    marks = _pvr_marker_recorder(wiz, monkeypatch)
+    monkeypatch.setattr(
+        wiz,
+        "ExtractWithProgress",
+        lambda *a, **k: wiz.ExtractResult(canceled=True, extracted=1, total=2),
+    )
+
+    wiz.restore(str(_iptv_zip(tmp_path)), confirm=False)
+
+    assert toggles == [False, True]
+    assert "clear" not in marks
+    assert any("IPTV client could not be re-enabled" in m for m in oks), oks
+
+
+def test_pvr_pause_survives_a_broken_marker_module(wiz, monkeypatch, tmp_path):
+    """The crash-recovery marker is best-effort: a raising mark/clear must never
+    abort the restore or strand the client disabled."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    toggles = _pvr_recorder(wiz, monkeypatch)
+
+    def _boom(*a, **k):
+        raise RuntimeError("marker store unavailable")
+
+    monkeypatch.setattr(wiz.tools, "mark_pvr_paused", _boom)
+    monkeypatch.setattr(wiz.tools, "clear_pvr_pause_marker", _boom)
+
+    res = wiz.restore(str(_iptv_zip(tmp_path)), confirm=False)
+
+    assert toggles == [False, True]
+    assert res["hard"] == [] and res["attention"] == [], res
+
+
+def test_pvr_probe_helpers_read_the_real_jsonrpc_shapes(wiz, monkeypatch):
+    """The probe/toggle helpers themselves, against Kodi's real response shapes.
+    _pvr_enabled must fail toward 'no pause needed' on any malformed answer, and
+    _pvr_set_enabled must treat anything but Kodi's "OK" as a failure."""
+    answers = {}
+    monkeypatch.setattr(
+        wiz.xbmc, "executeJSONRPC", lambda payload: answers.get("body", "{}")
+    )
+
+    answers["body"] = '{"result":{"addon":{"enabled":true}}}'
+    assert wiz._pvr_enabled() is True
+    answers["body"] = '{"result":{"addon":{"enabled":false}}}'
+    assert wiz._pvr_enabled() is False
+    # Not installed: Kodi answers with an error object and no result.
+    answers["body"] = '{"error":{"code":-32602,"message":"Invalid params."}}'
+    assert wiz._pvr_enabled() is False
+    answers["body"] = "not json at all"
+    assert wiz._pvr_enabled() is False
+
+    answers["body"] = '{"result":"OK"}'
+    assert wiz._pvr_set_enabled(True) is True
+    answers["body"] = '{"result":"Something else"}'
+    assert wiz._pvr_set_enabled(False) is False
+    answers["body"] = '{"error":{"code":-32100}}'
+    assert wiz._pvr_set_enabled(True) is False
+
+
+# --------------------------------------------------------------------------- #
+# T-H1: keep-N rotation, run for REAL.
+#
+# Every pre-existing backup test monkeypatches _rotate_vfs/_rotate_dropbox to a
+# no-op, so the assertions about rotation were negative space: they proved a stub
+# was not called. Rotation DELETES the user's backups, and _is_rolling is the only
+# thing standing between keep-N and a user's renamed golden backup, so the real
+# functions are driven here against fake VFS/Dropbox listings.
+# --------------------------------------------------------------------------- #
+
+
+def _rotation_env(wiz, monkeypatch, keep, files):
+    """Point _keep_n at `keep`, make xbmcvfs.listdir return `files`, and record every
+    xbmcvfs.delete. Returns the recorded delete targets (basenames)."""
+    monkeypatch.setattr(
+        wiz.control, "setting", lambda key: str(keep) if key == "backup.keep" else ""
+    )
+    monkeypatch.setattr(wiz.xbmcvfs, "listdir", lambda p: ([], list(files)))
+    deleted = []
+    monkeypatch.setattr(
+        wiz.xbmcvfs, "delete", lambda p: deleted.append(Path(p).name) or True
+    )
+    return deleted
+
+
+_ROLLING = [
+    "kodi_backup_202601010101.zip",
+    "kodi_backup_202602010101.zip",
+    "kodi_backup_202603010101.zip",
+    "kodi_backup_202604010101.zip",
+]
+_PROTECTED = [
+    "golden_keep_202601010101.zip",  # stamped, but carries a keep token
+    "my_golden_backup.zip",  # user-renamed: no stamp at all
+    "KEEP_this_one_202512310000.zip",  # keep token, any case
+    "notes.txt",  # not a zip
+]
+
+
+def test_is_rolling_only_matches_the_tools_own_naming_contract(wiz):
+    """The single predicate that decides whether a file may be deleted. Every
+    unrecognized shape must be PROTECTED - that failure direction is the contract."""
+    for rolling in _ROLLING:
+        assert wiz._is_rolling(rolling) is True, rolling
+    for protected in _PROTECTED + ["", None, "kodi_backup_2026.zip"]:
+        assert wiz._is_rolling(protected) is False, protected
+    # A stamp that is not TRAILING is not the tool's contract either.
+    assert wiz._is_rolling("kodi_backup_202601010101.zip.bak") is False
+    assert wiz._is_rolling("kodi_backup_2026010101011.zip") is False  # 13 digits
+
+
+def test_name_stamp_is_lexically_sortable_or_empty(wiz):
+    assert wiz._name_stamp("kodi_backup_202601020304.zip") == "202601020304"
+    assert wiz._name_stamp("golden.zip") == ""
+    assert wiz._name_stamp(None) == ""
+    stamps = [wiz._name_stamp(n) for n in _ROLLING]
+    assert stamps == sorted(stamps), "lexical order must equal chronological order"
+
+
+def test_keep_n_defaults_to_zero_on_anything_unparseable(wiz, monkeypatch):
+    """keep-N is the OFF switch: anything the setting cannot parse must mean 0
+    (never rotate), not an accidental prune."""
+    for raw, want in (("3", 3), ("", 0), (None, 0), ("abc", 0), ("2.5", 0)):
+        monkeypatch.setattr(wiz.control, "setting", lambda key, r=raw: r)
+        assert wiz._keep_n() == want, raw
+
+
+def test_rotate_vfs_deletes_only_the_oldest_rolling_past_keep_n(
+    wiz, monkeypatch, tmp_path
+):
+    """The REAL _rotate_vfs against a fake listing: four rolling backups plus
+    protected/renamed files, keep=2. Only the two oldest ROLLING files may go."""
+    deleted = _rotation_env(wiz, monkeypatch, 2, _ROLLING + _PROTECTED)
+
+    wiz._rotate_vfs("/backups")
+
+    assert sorted(deleted) == sorted(_ROLLING[:2]), deleted
+    for survivor in _PROTECTED + _ROLLING[2:]:
+        assert survivor not in deleted, survivor
+
+
+def test_rotate_vfs_never_counts_protected_files_toward_keep_n(wiz, monkeypatch):
+    """Protected files must not consume keep-N slots. With keep=4 and four rolling
+    backups, the four protected files must not push any rolling backup out."""
+    deleted = _rotation_env(wiz, monkeypatch, 4, _ROLLING + _PROTECTED)
+    wiz._rotate_vfs("/backups")
+    assert deleted == [], deleted
+
+
+def test_rotate_vfs_protects_the_backup_just_written(wiz, monkeypatch):
+    """`protect` is how the caller keeps the run's own fresh backup: with keep=1 the
+    protected name is neither deleted nor counted, so one older rolling copy stays."""
+    fresh = "kodi_backup_202605010101.zip"
+    deleted = _rotation_env(wiz, monkeypatch, 1, _ROLLING + [fresh])
+    wiz._rotate_vfs("/backups", protect={fresh})
+    assert fresh not in deleted
+    assert sorted(deleted) == sorted(_ROLLING[:3]), deleted
+
+
+def test_rotate_vfs_keep_zero_is_a_hard_off_switch(wiz, monkeypatch):
+    deleted = _rotation_env(wiz, monkeypatch, 0, _ROLLING)
+    wiz._rotate_vfs("/backups")
+    assert deleted == []
+    deleted_neg = _rotation_env(wiz, monkeypatch, -1, _ROLLING)
+    wiz._rotate_vfs("/backups")
+    assert deleted_neg == []
+
+
+def test_rotate_vfs_swallows_an_unreadable_backup_dir(wiz, monkeypatch):
+    """An offline NFS/SMB share must degrade to 'rotation skipped', never raise into
+    the backup that just succeeded."""
+    deleted = _rotation_env(wiz, monkeypatch, 1, [])
+
+    def _boom(p):
+        raise OSError("share is offline")
+
+    monkeypatch.setattr(wiz.xbmcvfs, "listdir", _boom)
+    wiz._rotate_vfs("/backups")  # must not raise
+    assert deleted == []
+
+
+def test_rotate_vfs_one_failed_delete_does_not_stop_the_rest(wiz, monkeypatch):
+    """A single locked/absent file must not abort the prune of the others."""
+    monkeypatch.setattr(
+        wiz.control, "setting", lambda key: "1" if key == "backup.keep" else ""
+    )
+    monkeypatch.setattr(wiz.xbmcvfs, "listdir", lambda p: ([], list(_ROLLING)))
+    deleted = []
+
+    def _delete(p):
+        name = Path(p).name
+        if name == _ROLLING[0]:
+            raise OSError("file is locked")
+        deleted.append(name)
+        return True
+
+    monkeypatch.setattr(wiz.xbmcvfs, "delete", _delete)
+    wiz._rotate_vfs("/backups")
+    assert sorted(deleted) == sorted(_ROLLING[1:3]), deleted
+
+
+class _FakeDropboxRemote:
+    """The wiz-side seam of the Dropbox transport: only what wiz.py actually calls.
+    The transport itself is covered by tests/test_dropbox_remote.py; this fake exists
+    so wiz's own flow can be driven without importing requests or touching a network."""
+
+    DropboxCanceled = type("DropboxCanceled", (Exception,), {})
+
+    def __init__(self, names=None, list_error=None, upload_error=None):
+        self.names = list(names or [])
+        self.list_error = list_error
+        self.upload_error = upload_error
+        self.uploaded = []
+        self.deleted = []
+        self.downloaded = []
+        self.delete_error_for = set()
+        self.download_result = None
+        self.download_error = None
+
+    def list_backups(self):
+        if self.list_error:
+            raise self.list_error
+        return list(self.names)
+
+    def delete(self, name):
+        if name in self.delete_error_for:
+            raise OSError("dropbox delete failed for %s" % name)
+        self.deleted.append(name)
+
+    def upload(self, local, remote_name, progress=None):
+        if self.upload_error:
+            raise self.upload_error
+        self.uploaded.append(remote_name)
+
+    def download(self, name, progress=None):
+        if self.download_error:
+            raise self.download_error
+        self.downloaded.append(name)
+        return self.download_result
+
+
+def test_rotate_dropbox_deletes_only_rolling_past_keep_n(wiz, monkeypatch):
+    """The REAL _rotate_dropbox against a fake remote. list_backups is newest-first,
+    so keep-N keeps the head and prunes the ROLLING tail only."""
+    monkeypatch.setattr(
+        wiz.control, "setting", lambda key: "2" if key == "backup.keep" else ""
+    )
+    newest_first = list(reversed(_ROLLING)) + _PROTECTED
+    remote = _FakeDropboxRemote(names=newest_first)
+
+    wiz._rotate_dropbox(remote)
+
+    assert sorted(remote.deleted) == sorted(_ROLLING[:2]), remote.deleted
+    for survivor in _PROTECTED:
+        assert survivor not in remote.deleted, survivor
+
+
+def test_rotate_dropbox_protects_the_upload_just_confirmed(wiz, monkeypatch):
+    fresh = "kodi_backup_202605010101.zip"
+    monkeypatch.setattr(
+        wiz.control, "setting", lambda key: "1" if key == "backup.keep" else ""
+    )
+    remote = _FakeDropboxRemote(names=[fresh] + list(reversed(_ROLLING)))
+
+    wiz._rotate_dropbox(remote, protect={fresh})
+
+    assert fresh not in remote.deleted
+    assert sorted(remote.deleted) == sorted(_ROLLING[:3]), remote.deleted
+
+
+def test_rotate_dropbox_keep_zero_is_a_hard_off_switch(wiz, monkeypatch):
+    monkeypatch.setattr(
+        wiz.control, "setting", lambda key: "0" if key == "backup.keep" else ""
+    )
+    remote = _FakeDropboxRemote(names=list(reversed(_ROLLING)))
+    wiz._rotate_dropbox(remote)
+    assert remote.deleted == []
+
+
+def test_rotate_dropbox_swallows_a_raising_list_backups(wiz, monkeypatch):
+    """A Dropbox API/network failure while listing must degrade to 'rotation skipped'
+    and never raise into the backup that already landed."""
+    monkeypatch.setattr(
+        wiz.control, "setting", lambda key: "1" if key == "backup.keep" else ""
+    )
+    remote = _FakeDropboxRemote(
+        names=list(reversed(_ROLLING)), list_error=RuntimeError("429 rate limited")
+    )
+    wiz._rotate_dropbox(remote)  # must not raise
+    assert remote.deleted == []
+
+
+def test_rotate_dropbox_one_failed_delete_does_not_stop_the_rest(wiz, monkeypatch):
+    monkeypatch.setattr(
+        wiz.control, "setting", lambda key: "1" if key == "backup.keep" else ""
+    )
+    remote = _FakeDropboxRemote(names=list(reversed(_ROLLING)))
+    remote.delete_error_for = {_ROLLING[0]}
+    wiz._rotate_dropbox(remote)
+    assert sorted(remote.deleted) == sorted(_ROLLING[1:3]), remote.deleted
+
+
+# --------------------------------------------------------------------------- #
+# T-H2: wiz's own Dropbox backup/restore flow (NOT the transport - that lives in
+# tests/test_dropbox_remote.py). The rule under test is the same one the local
+# path already enforces: rotation runs ONLY after a confirmed-landed, COMPLETE
+# backup, so a failed or canceled run can never prune the last good backup.
+# --------------------------------------------------------------------------- #
+
+
+def _dropbox_backup_env(wiz, monkeypatch, tmp_path, remote, name="mybackup"):
+    """Wire _backup_dropbox's seams: a signed-in token, a keyboard name, an accepted
+    confirm, a CreateZip that really stages a file in special://temp, and a recorded
+    _rotate_dropbox. Returns (calls, staged_paths)."""
+    monkeypatch.setattr(resources_modules(wiz), "dropbox_remote", remote, raising=False)
+    monkeypatch.setattr(
+        wiz.control,
+        "setting",
+        lambda key: "tok" if key == "dropbox_refresh_token" else "",
+    )
+    monkeypatch.setattr(wiz.tools, "_get_keyboard", lambda **k: name)
+    monkeypatch.setattr(wiz.ui, "confirm", lambda *a, **k: True)
+    for fn in ("clearCache", "deleteThumbnails", "purgePackages"):
+        monkeypatch.setattr(wiz.maintenance, fn, lambda **k: None)
+    calls = []
+    monkeypatch.setattr(wiz, "_rotate_dropbox", lambda *a, **k: calls.append("rotate"))
+    staged = []
+
+    def _create_zip(src, dst, *a, **k):
+        staged.append(dst)
+        Path(dst).parent.mkdir(parents=True, exist_ok=True)
+        Path(dst).write_bytes(b"PK\x03\x04staged")
+        return wiz.ZipResult(entries=2)
+
+    monkeypatch.setattr(wiz, "CreateZip", _create_zip)
+    return calls, staged
+
+
+def resources_modules(wiz):
+    """The `resources.lib.modules` package object - the binding site the lazy
+    `from resources.lib.modules import dropbox_remote` inside wiz resolves against."""
+    return importlib.import_module("resources.lib.modules")
+
+
+def test_backup_dropbox_happy_path_uploads_rotates_and_cleans_the_stage(
+    wiz, monkeypatch, tmp_path
+):
+    """A complete backup that lands: the staged local zip is uploaded, rotation runs
+    with the new name PROTECTED, and the temp stage is always removed."""
+    remote = _FakeDropboxRemote()
+    calls, staged = _dropbox_backup_env(wiz, monkeypatch, tmp_path, remote)
+    protects = []
+    monkeypatch.setattr(
+        wiz,
+        "_rotate_dropbox",
+        lambda dr, protect=None: (
+            calls.append("rotate"),
+            protects.append(set(protect or ())),
+        ),
+    )
+
+    home = tmp_path / "home"
+    home.mkdir()
+    wiz._backup_dropbox("full", "kodi_backup", str(home))
+
+    assert len(remote.uploaded) == 1, remote.uploaded
+    uploaded = remote.uploaded[0]
+    assert uploaded.startswith("mybackup_") and uploaded.endswith(".zip")
+    assert calls == ["rotate"], "a landed, complete backup rotates"
+    assert protects == [{uploaded}], "the fresh backup must be protected from itself"
+    assert staged and not Path(staged[0]).exists(), "the temp stage must be removed"
+
+
+def test_backup_dropbox_confirm_declined_builds_nothing(wiz, monkeypatch, tmp_path):
+    """Declining the final-name confirm must abort BEFORE the zip build - no zip, no
+    upload, no rotation (the behavioral replacement for the old source-string test)."""
+    remote = _FakeDropboxRemote()
+    calls, staged = _dropbox_backup_env(wiz, monkeypatch, tmp_path, remote)
+    monkeypatch.setattr(wiz.ui, "confirm", lambda *a, **k: False)
+
+    home = tmp_path / "home"
+    home.mkdir()
+    wiz._backup_dropbox("full", "kodi_backup", str(home))
+
+    assert staged == [], "the confirm must gate the zip build"
+    assert remote.uploaded == [] and calls == []
+
+
+def test_backup_dropbox_without_a_token_does_nothing(wiz, monkeypatch, tmp_path):
+    remote = _FakeDropboxRemote()
+    calls, staged = _dropbox_backup_env(wiz, monkeypatch, tmp_path, remote)
+    monkeypatch.setattr(wiz.control, "setting", lambda key: "  ")
+
+    home = tmp_path / "home"
+    home.mkdir()
+    wiz._backup_dropbox("full", "kodi_backup", str(home))
+
+    assert staged == [] and remote.uploaded == [] and calls == []
+
+
+def test_backup_dropbox_canceled_zip_never_uploads_or_rotates(
+    wiz, monkeypatch, tmp_path
+):
+    remote = _FakeDropboxRemote()
+    calls, staged = _dropbox_backup_env(wiz, monkeypatch, tmp_path, remote)
+
+    def _canceled(src, dst, *a, **k):
+        staged.append(dst)
+        Path(dst).parent.mkdir(parents=True, exist_ok=True)
+        Path(dst).write_bytes(b"partial")
+        return wiz.ZipResult(canceled=True)
+
+    monkeypatch.setattr(wiz, "CreateZip", _canceled)
+
+    home = tmp_path / "home"
+    home.mkdir()
+    wiz._backup_dropbox("full", "kodi_backup", str(home))
+
+    assert remote.uploaded == [] and calls == []
+    assert not Path(staged[0]).exists(), "a canceled run still cleans its stage"
+
+
+def test_backup_dropbox_tvos_capture_failure_never_uploads_or_rotates(
+    wiz, monkeypatch, tmp_path
+):
+    """A BackupCaptureError means the zip would silently miss the owner's settings:
+    nothing is uploaded and the previous remote backup must not be pruned."""
+    remote = _FakeDropboxRemote()
+    calls, _staged = _dropbox_backup_env(wiz, monkeypatch, tmp_path, remote)
+
+    def _raise(src, dst, *a, **k):
+        raise wiz.BackupCaptureError("NSUserDefaults capture failed")
+
+    monkeypatch.setattr(wiz, "CreateZip", _raise)
+
+    home = tmp_path / "home"
+    home.mkdir()
+    wiz._backup_dropbox("full", "kodi_backup", str(home))
+
+    assert remote.uploaded == [] and calls == []
+
+
+@pytest.mark.parametrize(
+    "error_name",
+    ["canceled", "network"],
+)
+def test_backup_dropbox_failed_upload_never_rotates(
+    wiz, monkeypatch, tmp_path, error_name
+):
+    """The load-bearing rule: an upload that did NOT land (user cancel or transport
+    error) must leave the remote folder untouched. Rotating here with backup.keep=1
+    would delete the last good backup in favor of one that never arrived."""
+    remote = _FakeDropboxRemote()
+    remote.upload_error = (
+        remote.DropboxCanceled("user canceled")
+        if error_name == "canceled"
+        else RuntimeError("connection reset")
+    )
+    calls, staged = _dropbox_backup_env(wiz, monkeypatch, tmp_path, remote)
+
+    home = tmp_path / "home"
+    home.mkdir()
+    wiz._backup_dropbox("full", "kodi_backup", str(home))
+
+    assert calls == [], "a failed upload must never rotate"
+    assert not Path(staged[0]).exists(), "the stage is cleaned on every exit path"
+
+
+def test_backup_dropbox_incomplete_backup_uploads_but_does_not_rotate(
+    wiz, monkeypatch, tmp_path
+):
+    """A swiss-cheese backup (some files could not be captured) is KEPT and reported
+    honestly, but it must not prune the last COMPLETE backup."""
+    remote = _FakeDropboxRemote()
+    calls, staged = _dropbox_backup_env(wiz, monkeypatch, tmp_path, remote)
+
+    def _partial(src, dst, *a, **k):
+        staged.append(dst)
+        Path(dst).parent.mkdir(parents=True, exist_ok=True)
+        Path(dst).write_bytes(b"PK\x03\x04staged")
+        return wiz.ZipResult(entries=2, failed=["userdata/locked.xml (IOError)"])
+
+    monkeypatch.setattr(wiz, "CreateZip", _partial)
+    oks = []
+    monkeypatch.setattr(
+        wiz.dialog, "ok", lambda *a, **k: oks.append(" ".join(map(str, a)))
+    )
+
+    home = tmp_path / "home"
+    home.mkdir()
+    wiz._backup_dropbox("full", "kodi_backup", str(home))
+
+    assert len(remote.uploaded) == 1, "the incomplete backup is still kept"
+    assert calls == [], "an incomplete backup must never rotate"
+    assert any("could NOT be captured" in m for m in oks), oks
+
+
+def _dropbox_restore_env(wiz, monkeypatch, remote, select=0):
+    monkeypatch.setattr(resources_modules(wiz), "dropbox_remote", remote, raising=False)
+    monkeypatch.setattr(
+        wiz.control,
+        "setting",
+        lambda key: "tok" if key == "dropbox_refresh_token" else "",
+    )
+    monkeypatch.setattr(wiz.control, "selectDialog", lambda *a, **k: select)
+    restored = []
+    monkeypatch.setattr(wiz, "restore", lambda local, *a, **k: restored.append(local))
+    return restored
+
+
+def test_restore_dropbox_downloads_then_restores_then_removes_the_temp(
+    wiz, monkeypatch, tmp_path
+):
+    """The happy path: the chosen backup is downloaded to a LOCAL staged path, handed
+    to restore() as a plain path (no '://', so restore extracts it directly), and the
+    temp copy is removed afterward."""
+    remote = _FakeDropboxRemote(names=["kodi_backup_202607010101.zip"])
+    staged = tmp_path / "temp" / "kodi_backup_202607010101.zip"
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    staged.write_bytes(b"PK\x03\x04")
+    remote.download_result = "special://temp/kodi_backup_202607010101.zip"
+    restored = _dropbox_restore_env(wiz, monkeypatch, remote)
+
+    wiz._restore_dropbox()
+
+    assert remote.downloaded == ["kodi_backup_202607010101.zip"]
+    assert restored == [str(staged)], restored
+    assert "://" not in restored[0], "restore() must get a local path"
+    assert not staged.exists(), "the downloaded temp must be removed"
+
+
+def test_restore_dropbox_removes_the_temp_even_when_restore_raises(
+    wiz, monkeypatch, tmp_path
+):
+    """The `finally: os.remove(local)` cleanup: a restore that blows up must not leave
+    a full backup zip parked in special://temp forever."""
+    remote = _FakeDropboxRemote(names=["kodi_backup_202607010101.zip"])
+    staged = tmp_path / "temp" / "kodi_backup_202607010101.zip"
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    staged.write_bytes(b"PK\x03\x04")
+    remote.download_result = "special://temp/kodi_backup_202607010101.zip"
+    _dropbox_restore_env(wiz, monkeypatch, remote)
+
+    def _boom(*a, **k):
+        raise RuntimeError("restore exploded")
+
+    monkeypatch.setattr(wiz, "restore", _boom)
+
+    with pytest.raises(RuntimeError):
+        wiz._restore_dropbox()
+    assert not staged.exists(), "the temp must be cleaned on the exception path too"
+
+
+def test_restore_dropbox_canceled_download_restores_nothing(wiz, monkeypatch, tmp_path):
+    remote = _FakeDropboxRemote(names=["kodi_backup_202607010101.zip"])
+    remote.download_error = remote.DropboxCanceled("user canceled")
+    restored = _dropbox_restore_env(wiz, monkeypatch, remote)
+
+    wiz._restore_dropbox()
+
+    assert restored == [], "a canceled download must not start a restore"
+
+
+def test_restore_dropbox_failed_download_restores_nothing(wiz, monkeypatch, tmp_path):
+    remote = _FakeDropboxRemote(names=["kodi_backup_202607010101.zip"])
+    remote.download_error = RuntimeError("connection reset")
+    restored = _dropbox_restore_env(wiz, monkeypatch, remote)
+    oks = []
+    monkeypatch.setattr(
+        wiz.dialog, "ok", lambda *a, **k: oks.append(" ".join(map(str, a)))
+    )
+
+    wiz._restore_dropbox()
+
+    assert restored == []
+    assert any("Could not download" in m for m in oks), oks
+
+
+def test_restore_dropbox_list_failure_and_empty_folder_restore_nothing(
+    wiz, monkeypatch, tmp_path
+):
+    oks = []
+    monkeypatch.setattr(
+        wiz.dialog, "ok", lambda *a, **k: oks.append(" ".join(map(str, a)))
+    )
+    remote = _FakeDropboxRemote(list_error=RuntimeError("401"))
+    restored = _dropbox_restore_env(wiz, monkeypatch, remote)
+    wiz._restore_dropbox()
+    assert restored == [] and remote.downloaded == []
+    assert any("Could not list" in m for m in oks), oks
+
+    empty = _FakeDropboxRemote(names=[])
+    restored2 = _dropbox_restore_env(wiz, monkeypatch, empty)
+    wiz._restore_dropbox()
+    assert restored2 == [] and empty.downloaded == []
+    assert any("No backups found" in m for m in oks), oks
+
+
+def test_restore_dropbox_backing_out_of_the_picker_downloads_nothing(
+    wiz, monkeypatch, tmp_path
+):
+    remote = _FakeDropboxRemote(names=["kodi_backup_202607010101.zip"])
+    restored = _dropbox_restore_env(wiz, monkeypatch, remote, select=-1)
+
+    wiz._restore_dropbox()
+
+    assert remote.downloaded == [] and restored == []
+
+
+def test_restore_dropbox_without_a_token_does_nothing(wiz, monkeypatch, tmp_path):
+    remote = _FakeDropboxRemote(names=["kodi_backup_202607010101.zip"])
+    restored = _dropbox_restore_env(wiz, monkeypatch, remote)
+    monkeypatch.setattr(wiz.control, "setting", lambda key: "")
+
+    wiz._restore_dropbox()
+
+    assert remote.downloaded == [] and restored == []
+
+
+# --------------------------------------------------------------------------- #
+# D5: dead extractor removal. ExtractWithProgress is the ONE extractor; the old
+# ExtractZip dispatcher and its silent ExtractNOProgress branch had no callers
+# (dead code calling dead code) and are gone. This guard keeps them gone: a silent,
+# progress-less, whole-archive extractall() is exactly the "restore that lies about
+# what landed" shape the ExtractResult contract exists to prevent.
+# --------------------------------------------------------------------------- #
+
+
+def test_dead_extractors_are_gone_and_stay_gone(wiz):
+    assert not hasattr(wiz, "ExtractZip")
+    assert not hasattr(wiz, "ExtractNOProgress")
+    src = (ADDON_ROOT / "resources" / "lib" / "modules" / "wiz.py").read_text(
+        encoding="utf-8"
+    )
+    # The CALL form only - the removal note in wiz.py names the function in prose.
+    assert ".extractall(" not in src, (
+        "a whole-archive extractall() cannot report per-member failures"
+    )
+    for gone in ("def ExtractZip", "def ExtractNOProgress"):
+        assert gone not in src, "wiz.py must no longer contain %r" % gone

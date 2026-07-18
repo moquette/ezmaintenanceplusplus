@@ -773,14 +773,20 @@ def _apply_boot_skin(rlog, target):
     via _kodisettings.write_guisetting (the durable path on Fire TV / desktop), and (b)
     vectored into NSUserDefaults via nsud.persist_one (the durable path on tvOS; a no-op
     rewrite of identical bytes elsewhere). Publishes Window(10000) property "ezm_boot_skin"
-    (written:<skin> / none / failed:<Error>) for off-box inspection over JSON-RPC. Fully
-    guarded: any failure is logged and NEVER breaks the restore."""
+    (written:<skin> / unconfirmed:<skin> / none / failed:<Error>) for off-box inspection
+    over JSON-RPC. Fully guarded: any failure is logged and NEVER breaks the restore.
+
+    RETURNS that same status string, so the caller can weigh it in the restore verdict.
+    "unconfirmed:<skin>" is the one the caller must act on: tvOS wrote the skin to disk
+    but the read-back did not prove NSUserDefaults holds it, and on tvOS a stale key
+    SHADOWS the disk file - the box would reopen on the PREVIOUS skin. Reporting that as
+    Complete is exactly the false success the locked contract forbids."""
     prop = "none"
     try:
         target = (target or "").strip()
         if not target:
             rlog("boot-skin: no restored skin to assert; nothing to do")
-            return
+            return prop
         from resources.lib.modules import _kodisettings, nsud
 
         guisettings_path = os.path.join(control.USERDATA, "guisettings.xml")
@@ -809,23 +815,33 @@ def _apply_boot_skin(rlog, target):
         )
         # Vector guisettings.xml into NSUserDefaults on tvOS (the durable store there); a
         # harmless no-op rewrite of identical bytes on Fire TV / Android / desktop.
-        nsud.persist_one("guisettings.xml", log=rlog)
-        if ok:
-            prop = "written:%s" % target
-            rlog("boot-skin: persisted restored skin %s (no live switch)" % target)
-        else:
+        vectored = nsud.persist_one("guisettings.xml", log=rlog)
+        if not ok:
             prop = "failed:write_guisetting"
             rlog("boot-skin: write_guisetting could not persist %s" % target)
+        elif not vectored and _source_os() == "tvos":
+            # tvOS ONLY. persist_one kept the POSIX copy (nothing is lost) but could not
+            # prove NSUserDefaults holds the same bytes - and on tvOS a key SHADOWS the
+            # disk file, so the reopen this restore asks the user to perform would come
+            # back on the OLD skin. Off tvOS there is no shadowing layer, so a False here
+            # is not this failure mode and never becomes a warning.
+            prop = "unconfirmed:%s" % target
+            rlog(
+                "boot-skin: %s written to disk but the tvOS vector was NOT confirmed; "
+                "a stale NSUserDefaults key may shadow it" % target
+            )
+        else:
+            prop = "written:%s" % target
+            rlog("boot-skin: persisted restored skin %s (no live switch)" % target)
     except Exception as e:
         prop = "failed:%s" % type(e).__name__
         rlog("boot-skin: failed (%s: %s); restore stands" % (type(e).__name__, e))
     finally:
         try:
-            import xbmcgui as _xg
-
-            _xg.Window(10000).setProperty("ezm_boot_skin", prop)
+            xbmcgui.Window(10000).setProperty("ezm_boot_skin", prop)
         except Exception:
             pass
+    return prop
 
 
 def restore(
@@ -1038,8 +1054,6 @@ def restore(
                     # restore is interrupted (crash, power loss) the boot service
                     # re-enables the client instead of leaving it disabled forever.
                     try:
-                        from resources.lib.modules import tools
-
                         tools.mark_pvr_paused()
                     except Exception:
                         pass
@@ -1284,6 +1298,26 @@ def restore(
                 ver_attention = []
         attention.extend(ver_attention)
 
+        # The restored skin is persisted LAST (after apply_guisettings, the stale-key
+        # purge, the tvOS re-vector, and the verification) so nothing re-saves over it.
+        # A pure write, never a live switch.
+        #
+        # This runs INSIDE the pass - not after the attempt loop - for two reasons that
+        # are both load-bearing:
+        #   1. its result reaches the verdict, so an unconfirmed tvOS vector can no
+        #      longer be reported as "Restore Complete" while the box quietly reopens
+        #      on the previous skin (a partial restore must never claim success), and
+        #   2. it therefore gets the SAME auto-fix retry every other attention-only
+        #      finding gets. _apply_boot_skin is idempotent, so a one-off flaky
+        #      read-back self-heals on the silent second pass and NEVER reaches the
+        #      user. Only a failure that survives both passes is warned about.
+        boot_skin = _apply_boot_skin(_rlog, _boot_skin.get("target"))
+        if str(boot_skin or "").startswith("unconfirmed:"):
+            attention.append(
+                "the restored skin may not have been saved - this box may open "
+                "with the previous skin"
+            )
+
         extracted_n = result.extracted if result.extracted >= 0 else items
         total_n = result.total if result.total else items
         _rlog(
@@ -1369,11 +1403,9 @@ def restore(
     # window property is the only reliable off-box visibility into what the restore
     # decided). Best-effort; never affects the restore.
     try:
-        import xbmcgui as _xg
-
         verdict = "hard" if hard else ("attention" if attention else "complete")
-        _xg.Window(10000).setProperty("ezm_restore_verdict", verdict)
-        _xg.Window(10000).setProperty(
+        xbmcgui.Window(10000).setProperty("ezm_restore_verdict", verdict)
+        xbmcgui.Window(10000).setProperty(
             "ezm_restore_findings", " || ".join((hard or []) + (attention or []))[:900]
         )
     except Exception:
@@ -1396,17 +1428,15 @@ def restore(
     # marker-write failure must never break the restore. The restore-check marker makes
     # the boot service re-verify the restored state on the next start (silent on pass).
     try:
-        from resources.lib.modules import tools
-
         tools.mark_buffer_prompt_pending()
         tools.mark_restore_check_pending()
     except Exception:
         pass
 
-    # The restored skin is persisted LAST (after apply_guisettings, the stale-key purge,
-    # and the tvOS re-vector) so nothing re-saves over it. A pure write, no live switch:
-    # the force-quit reopen boots straight into it with no keep-skin dialog.
-    _apply_boot_skin(_rlog, _boot_skin.get("target"))
+    # NOTE: the boot skin is applied INSIDE _restore_pass (see the note there), not here.
+    # It used to run at this point, after the verdict was already computed, which made an
+    # unconfirmed tvOS vector invisible to the report - the box could reopen on the old
+    # skin having been told "Restore Complete".
 
     # The locked user-facing vocabulary (owner-edited 2026-07-17) - see MSG_* at module
     # top. Everything else about this restore lives in the log.
@@ -1681,35 +1711,12 @@ def _as_count(value):
 
 
 # EXTRACT ZIP
-def ExtractZip(
-    _in, _out, progress=None, skip_prefix=None, cancelable=True, skip_member=None
-):
-    """Extract _in over _out. `progress` is a ui.Progress (gauge + cancel); None means a
-    silent extract. cancelable=False makes the extract UNINTERRUPTIBLE (the post-wipe
-    One-Tap path, where a cancel would strand a wiped box)."""
-    if progress is not None:
-        return ExtractWithProgress(
-            _in,
-            _out,
-            progress,
-            skip_prefix=skip_prefix,
-            cancelable=cancelable,
-            skip_member=skip_member,
-        )
-    return ExtractNOProgress(_in, _out)
-
-
-def ExtractNOProgress(_in, _out):
-    try:
-        zin = zipfile.ZipFile(_in, "r")
-        names = zin.namelist()
-        zin.extractall(_out)
-        return ExtractResult(extracted=len(names), total=len(names))
-    except Exception as e:
-        return ExtractResult(
-            failed=["archive extract failed (%s: %s)" % (type(e).__name__, e)]
-        )
-
+#
+# ExtractWithProgress (below) is the ONE extractor. The old ExtractZip dispatcher and
+# its silent ExtractNOProgress branch were removed: nothing called ExtractZip, and
+# ExtractNOProgress was reachable only from it. ExtractNOProgress also used a bare
+# extractall(), which cannot report WHICH members failed - the exact "restore that
+# lies about what landed" shape the ExtractResult contract exists to prevent.
 
 # How often the extract refreshes the progress dialog. See the CRASH FIX note in
 # ExtractWithProgress: redrawing it for every one of thousands of files SIGSEGVs Kodi's
@@ -1853,8 +1860,6 @@ def _pvr_set_enabled(flag):
 def _clear_pvr_pause_marker():
     """Clear the crash-recovery marker once the IPTV client is confirmed enabled."""
     try:
-        from resources.lib.modules import tools
-
         tools.clear_pvr_pause_marker()
     except Exception:
         pass

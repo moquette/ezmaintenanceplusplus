@@ -517,3 +517,440 @@ def test_ask_restart_desktop_still_says_restart(ui):
     assert ui.ask_restart("Restore Complete: 5 items, 3 settings applied.") is False
     assert "restart now" in cap["message"].lower()
     assert cap["yes"] == "Restart"
+
+
+# --------------------------------------------------------------------------- #
+# Progress
+#
+# ui.py's module docstring claims Progress's guarantees are "enforced by
+# test_ui.py". They were not: until now no test in this file (or any other)
+# ever CONSTRUCTED a Progress. Every claim below was load-bearing prose only.
+#
+# The two that matter most are invisible to any functional test of a caller:
+#   * the cancel latch. If it regressed to polling iscanceled() every time, a
+#     backend that flips the flag back would silently un-cancel a running
+#     restore mid-flight, and the copy loop would resume writing.
+#   * as_dropbox_callback's `return not cancelled()` inversion. It is described
+#     in-source as "the ONLY place that lives". Drop the `not` and every upload
+#     aborts on its first chunk; add a second one and cancel stops working. Both
+#     directions are silent - the callback's return value is consumed by the
+#     dropbox SDK, never by this add-on.
+# --------------------------------------------------------------------------- #
+class _FakeDialogProgress:
+    """A DialogProgress stand-in that RECORDS: every create/update/close, and
+    every iscanceled() poll (the count is what the latch test asserts on)."""
+
+    def __init__(self, cancel_sequence=None):
+        # A sequence, not a constant: the whole point of the latch is that a
+        # backend which answers True then False must not un-cancel the run.
+        self._cancel_sequence = list(cancel_sequence or [])
+        self.polls = 0
+        self.creates = []
+        self.updates = []
+        self.closes = 0
+        self.close_error = None
+        self.iscanceled_error = None
+
+    def create(self, heading, message=""):
+        self.creates.append((heading, message))
+
+    def update(self, pct, message=""):
+        self.updates.append((pct, message))
+
+    def iscanceled(self):
+        self.polls += 1
+        if self.iscanceled_error is not None:
+            raise self.iscanceled_error
+        if not self._cancel_sequence:
+            return False
+        return self._cancel_sequence.pop(0)
+
+    def close(self):
+        self.closes += 1
+        if self.close_error is not None:
+            raise self.close_error
+
+
+def _progress(ui, monkeypatch, cancel_sequence=None, message="Backing up"):
+    """A real ui.Progress driven by a recording fake dialog."""
+    dp = _FakeDialogProgress(cancel_sequence)
+    monkeypatch.setattr(ui.xbmcgui, "DialogProgress", lambda: dp)
+    return ui.Progress(message), dp
+
+
+# -- the cancel latch -------------------------------------------------------- #
+def test_cancelled_latches_and_stops_polling_the_backend(ui, monkeypatch):
+    """Once cancelled, cancelled() must answer True from memory and never poll
+    iscanceled() again - the docstring's "some backends flip it back" claim.
+    The poll COUNT is the assertion: a re-poll is what would let a backend
+    un-cancel an in-flight restore."""
+    p, dp = _progress(ui, monkeypatch, cancel_sequence=[True, False, False])
+    assert p.cancelled() is True
+    assert dp.polls == 1
+    # The fake would answer False on polls 2 and 3. The latch must not ask.
+    assert p.cancelled() is True
+    assert p.cancelled() is True
+    assert dp.polls == 1, "iscanceled() was re-polled after the cancel latched"
+
+
+def test_cancelled_keeps_polling_until_the_user_actually_cancels(ui, monkeypatch):
+    """The latch must not fire early: before a cancel, every call is a real poll,
+    otherwise a cancel pressed mid-copy would never be seen."""
+    p, dp = _progress(ui, monkeypatch, cancel_sequence=[False, False, True])
+    assert p.cancelled() is False
+    assert p.cancelled() is False
+    assert dp.polls == 2
+    assert p.cancelled() is True
+    assert dp.polls == 3
+    assert p.cancelled() is True
+    assert dp.polls == 3  # latched from here on
+
+
+def test_cancelled_treats_a_raising_backend_as_not_cancelled(ui, monkeypatch):
+    """A dialog that throws must not be read as a cancel (that would abort a
+    healthy backup) and must not propagate (ui.py is a single point of failure
+    for every path in the add-on)."""
+    p, dp = _progress(ui, monkeypatch)
+    dp.iscanceled_error = RuntimeError("dialog is gone")
+    assert p.cancelled() is False
+    assert p.cancelled() is False
+    # The poll COUNT is what proves "nothing latched": a swallowed error must
+    # leave the latch untouched, so every call is still a real poll. Without
+    # this, a Progress that latched on the exception would pass identically.
+    assert dp.polls == 2
+
+
+# -- as_dropbox_callback: the inversion -------------------------------------- #
+def test_dropbox_callback_returns_true_while_running(ui, monkeypatch):
+    """dropbox_remote's callback contract: return TRUE to continue. An inverted
+    `not` here would abort every upload on its very first chunk."""
+    p, _dp = _progress(ui, monkeypatch)
+    cb = p.as_dropbox_callback()
+    assert cb(0, 1000) is True
+    assert cb(500, 1000) is True
+    assert cb(1000, 1000) is True
+
+
+def test_dropbox_callback_returns_false_once_cancelled(ui, monkeypatch):
+    """...and FALSE to abort. A missing `not` here would make cancel a no-op:
+    the user presses cancel, the dialog closes, and the upload keeps running."""
+    p, _dp = _progress(ui, monkeypatch, cancel_sequence=[False, True])
+    cb = p.as_dropbox_callback()
+    assert cb(100, 1000) is True
+    assert cb(200, 1000) is False
+    assert cb(300, 1000) is False  # stays aborted (the latch)
+
+
+def test_dropbox_callback_reports_progress_as_bytes(ui, monkeypatch):
+    """The callback is also the progress report - it must render the MB body,
+    not just answer the continue/abort question."""
+    p, dp = _progress(ui, monkeypatch, message="Uploading to Dropbox")
+    dp.updates.clear()
+    p.as_dropbox_callback()(5 * 1024 * 1024, 10 * 1024 * 1024)
+    pct, body = dp.updates[-1]
+    assert pct == 50
+    assert "5.0 MB / 10.0 MB" in body
+    assert "Uploading to Dropbox" in body
+
+
+# -- _pct: the single divide-by-zero guard for the whole add-on -------------- #
+def test_pct_normal_range(ui):
+    assert ui._pct(0, 100) == 0
+    assert ui._pct(50, 100) == 50
+    assert ui._pct(100, 100) == 100
+
+
+def test_pct_indeterminate_totals_pin_at_zero_and_never_raise(ui):
+    """An empty folder (total 0) is the exact shape that raised
+    ZeroDivisionError before this guard existed. None and a negative total are
+    the same "we do not know the size" case."""
+    assert ui._pct(0, 0) == 0
+    assert ui._pct(500, 0) == 0
+    assert ui._pct(500, None) == 0
+    assert ui._pct(500, -1) == 0
+
+
+def test_pct_survives_non_numeric_inputs(ui):
+    """A caller handing in a string/None `done` (a stat that failed) must degrade
+    to 0, not crash a backup at the progress-reporting line."""
+    assert ui._pct(None, 100) == 0
+    assert ui._pct("nope", 100) == 0
+
+
+def test_pct_clamps_out_of_range_values(ui):
+    """Kodi's update() takes 0..100; a done>total overshoot (a size that grew
+    mid-copy) must clamp rather than pass 140 to the dialog."""
+    assert ui._pct(140, 100) == 100
+    assert ui._pct(-40, 100) == 0
+
+
+# -- _fmt_bytes: the indeterminate branch ------------------------------------ #
+def test_fmt_bytes_shows_both_sides_when_the_total_is_known(ui):
+    assert ui._fmt_bytes(1024 * 1024, 2 * 1024 * 1024) == "1.0 MB / 2.0 MB"
+
+
+def test_fmt_bytes_shows_only_progress_when_the_total_is_unknown(ui):
+    """total 0/None/negative = indeterminate: show what has been done, never
+    "5.0 MB / 0.0 MB", which reads as a broken copy."""
+    for total in (0, None, -1):
+        assert ui._fmt_bytes(3 * 1024 * 1024, total) == "3.0 MB"
+
+
+def test_fmt_bytes_treats_a_missing_done_as_zero(ui):
+    assert ui._fmt_bytes(None, None) == "0.0 MB"
+
+
+def test_bytes_reports_an_indeterminate_total_without_raising(ui, monkeypatch):
+    """The guard end to end through the real Progress: the empty-folder case
+    must render a live 0% bar, not raise."""
+    p, dp = _progress(ui, monkeypatch, message="Compressing")
+    dp.updates.clear()
+    p.bytes(0, 0)
+    pct, body = dp.updates[-1]
+    assert pct == 0
+    assert "0.0 MB" in body
+    assert "/" not in body
+
+
+def test_items_reports_an_indeterminate_total_without_raising(ui, monkeypatch):
+    p, dp = _progress(ui, monkeypatch, message="Extracting")
+    dp.updates.clear()
+    p.items(7, 0)
+    pct, body = dp.updates[-1]
+    assert pct == 0
+    assert "7" in body
+    assert "/" not in body
+
+
+def test_items_shows_both_sides_when_the_total_is_known(ui, monkeypatch):
+    p, dp = _progress(ui, monkeypatch, message="Extracting")
+    dp.updates.clear()
+    p.items(3, 12)
+    pct, body = dp.updates[-1]
+    assert pct == 25
+    assert "3 / 12" in body
+
+
+# -- construction + lifecycle ------------------------------------------------ #
+def test_progress_seeds_the_bar_at_zero_on_create(ui, monkeypatch):
+    """ "Seed at 0 so total==0 paths still show a live, honest bar instead of a
+    phantom 100% flash before the first real update"." """
+    p, dp = _progress(ui, monkeypatch, message="Backing up")
+    assert dp.creates == [("EZ Maintenance++", "Backing up")]
+    assert dp.updates[0] == (0, "Backing up")
+    p.close()
+
+
+def test_progress_accepts_an_explicit_heading(ui, monkeypatch):
+    dp = _FakeDialogProgress()
+    monkeypatch.setattr(ui.xbmcgui, "DialogProgress", lambda: dp)
+    ui.Progress("Working", heading="Something Else")
+    assert dp.creates[0][0] == "Something Else"
+
+
+def test_message_replaces_the_base_line(ui, monkeypatch):
+    """The restore path moves a live dialog from "Downloading" to "Restoring"."""
+    p, dp = _progress(ui, monkeypatch, message="Downloading")
+    p.message("Restoring")
+    assert dp.updates[-1] == (0, "Restoring")
+    p.bytes(1024 * 1024, 2 * 1024 * 1024)
+    assert "Restoring" in dp.updates[-1][1]
+    assert "Downloading" not in dp.updates[-1][1]
+
+
+def test_render_swallows_a_failing_update(ui, monkeypatch):
+    """A dialog torn down by Kodi under a running job must not take the job with
+    it - reporting progress is never worth failing a backup over.
+
+    "Did not raise" is NOT sufficient evidence here: a bytes()/items()/message()
+    that did nothing at all would also not raise. So the failing update RECORDS
+    each attempt before throwing, and the assertions are on those attempts -
+    the swallow is only proven if the render was genuinely tried and its
+    computed pct/body reached the dialog on the way to failing."""
+    p, dp = _progress(ui, monkeypatch, message="Backing up")
+    attempts = []
+
+    def _boom(pct, message=""):
+        attempts.append((pct, message))
+        raise RuntimeError("dialog is gone")
+
+    dp.update = _boom
+
+    p.bytes(1024 * 1024, 4 * 1024 * 1024)  # must not raise
+    assert len(attempts) == 1, "bytes() never even attempted to render"
+    assert attempts[-1][0] == 25
+    assert "1.0 MB / 4.0 MB" in attempts[-1][1]
+
+    p.items(3, 12)
+    assert len(attempts) == 2, "items() never even attempted to render"
+    assert attempts[-1][0] == 25
+    assert "3 / 12" in attempts[-1][1]
+
+    p.message("Restoring")
+    assert len(attempts) == 3, "message() never even attempted to render"
+    assert attempts[-1] == (0, "Restoring")
+
+    # And the object is still usable afterwards - a swallowed render error must
+    # not leave Progress in a state where the next call misbehaves.
+    assert p.cancelled() is False
+
+
+def test_close_is_idempotent(ui, monkeypatch):
+    """close() runs from both the caller and __exit__ on every `with`. A second
+    close must be a no-op, not a second close() on a dialog Kodi already tore
+    down."""
+    p, dp = _progress(ui, monkeypatch)
+    p.close()
+    p.close()
+    p.close()
+    assert dp.closes == 1
+
+
+def test_close_swallows_a_failing_backend_close(ui, monkeypatch):
+    p, dp = _progress(ui, monkeypatch)
+    dp.close_error = RuntimeError("already gone")
+    p.close()  # must not raise
+    assert dp.closes == 1
+    p.close()  # and stays latched closed
+    assert dp.closes == 1
+
+
+def test_context_manager_closes_on_a_clean_exit(ui, monkeypatch):
+    dp = _FakeDialogProgress()
+    monkeypatch.setattr(ui.xbmcgui, "DialogProgress", lambda: dp)
+    with ui.Progress("Working") as p:
+        assert isinstance(p, ui.Progress)
+        p.bytes(1, 2)
+    assert dp.closes == 1
+
+
+def test_context_manager_closes_and_never_masks_the_real_exception(ui, monkeypatch):
+    """__exit__ returns False, so the body's exception propagates - a failed
+    backup must never be swallowed into a silent success by the progress
+    dialog's cleanup."""
+    dp = _FakeDialogProgress()
+    monkeypatch.setattr(ui.xbmcgui, "DialogProgress", lambda: dp)
+    with pytest.raises(ValueError, match="the real failure"):
+        with ui.Progress("Working"):
+            raise ValueError("the real failure")
+    assert dp.closes == 1
+
+
+def test_context_manager_close_error_does_not_mask_the_body_exception(ui, monkeypatch):
+    """The exact case the __exit__ comment names: close() itself failing must not
+    replace the body's exception with a cleanup error - the caller would then
+    diagnose the wrong failure entirely."""
+    dp = _FakeDialogProgress()
+    monkeypatch.setattr(ui.xbmcgui, "DialogProgress", lambda: dp)
+    p = ui.Progress("Working")
+
+    def _boom():
+        raise RuntimeError("close blew up")
+
+    p.close = _boom
+    with pytest.raises(ValueError, match="the real failure"):
+        with p:
+            raise ValueError("the real failure")
+
+
+def test_context_manager_close_error_does_not_crash_a_clean_exit(ui, monkeypatch):
+    """...and on a clean exit there is no exception to mask, so a failing close
+    must simply be absorbed.
+
+    "Did not raise" is NOT sufficient evidence: an __exit__ that never called
+    close() at all would pass that too, and would be a resource leak (the
+    dialog stays on screen over a finished job). The failing close RECORDS its
+    call, so this proves __exit__ both CALLED close and SWALLOWED its error -
+    two distinct facts, neither provable from the absence of an exception."""
+    dp = _FakeDialogProgress()
+    monkeypatch.setattr(ui.xbmcgui, "DialogProgress", lambda: dp)
+    p = ui.Progress("Working")
+    calls = []
+
+    def _boom():
+        calls.append(1)
+        raise RuntimeError("close blew up")
+
+    p.close = _boom
+    with p:
+        pass  # must not raise
+
+    assert calls == [1], "__exit__ did not call close() on a clean exit"
+
+
+# -- two unguarded gaps found while writing this file ------------------------ #
+# Both are REPORTED, not fixed: they are behavior changes in a module every path
+# in the add-on funnels through, and that is the owner's call, not a test's.
+# They are encoded as xfail rather than as assertions on the current behavior so
+# that fixing them turns these green instead of breaking the suite.
+
+
+@pytest.mark.xfail(
+    reason=(
+        "items() is not guarded the way bytes() is. _pct and _fmt_bytes both "
+        "defend against a None/non-numeric `done`, but items() formats its own "
+        "body with an inline '%d / %d' and raises TypeError on the same input "
+        "bytes() survives. A caller whose item count came back None (a listing "
+        "that failed) crashes the whole operation at the progress-reporting "
+        "line - reporting progress should never be able to fail a backup. Note "
+        "items(1, None) is fine (the `total and total > 0` guard short-circuits); "
+        "it is specifically a non-numeric `done` that is unguarded."
+    ),
+    # strict: this MUST go red the moment the bug is fixed, so the marker gets
+    # removed with the fix instead of quietly outliving it. A non-strict xfail
+    # here is inert in both directions - it cannot fail while the bug persists
+    # (by design) and it cannot fail once it is fixed either, so it would never
+    # signal anything to anyone.
+    strict=True,
+)
+def test_items_should_survive_a_non_numeric_done_like_bytes_does(ui, monkeypatch):
+    p, _dp = _progress(ui, monkeypatch)
+    p.bytes(None, None)  # guarded today
+    p.items(None, 5)  # raises TypeError today
+    p.items("nope", 0)
+
+
+@pytest.mark.xfail(
+    reason=(
+        "Progress.__init__ is the only method in the class that does NOT swallow "
+        "a backend error. _render, cancelled and close all guard theirs, per the "
+        "__exit__ comment's rule that 'ui.py is now a single point of failure' - "
+        "but if xbmcgui.DialogProgress() or its create() raises, the constructor "
+        "propagates and takes down the caller's entire operation before it starts. "
+        "Related: the `if self._dp is not None` checks in cancelled()/close() are "
+        "dead branches today, since __init__ either sets _dp or raises. Setting "
+        "_dp = None on a failed create would make those checks live and make a "
+        "progress-less run degrade instead of abort."
+    ),
+    # strict: this MUST go red the moment the bug is fixed, so the marker gets
+    # removed with the fix instead of quietly outliving it. A non-strict xfail
+    # here is inert in both directions - it cannot fail while the bug persists
+    # (by design) and it cannot fail once it is fixed either, so it would never
+    # signal anything to anyone.
+    strict=True,
+)
+def test_progress_should_survive_a_dialog_that_cannot_be_created(ui, monkeypatch):
+    class _BoomDialogProgress(_FakeDialogProgress):
+        def create(self, heading, message=""):
+            raise RuntimeError("no dialog available")
+
+    monkeypatch.setattr(ui.xbmcgui, "DialogProgress", _BoomDialogProgress)
+    p = ui.Progress("Backing up")  # raises today
+    p.bytes(1, 2)
+    assert p.cancelled() is False
+    p.close()
+
+
+def test_progress_drives_a_real_copy_cancel(ui, monkeypatch):
+    """The integration the latch exists for: a REAL Progress (not the
+    SimpleNamespace stub the other copy tests use) cancelling a real
+    _copy_once. Proves the two halves fit - copy calls cancelled(), gets the
+    latched answer, cleans its partial, and returns COPY_CANCELLED."""
+    store = {"nfs://src": b"x" * 1000}
+    _install_fake_vfs(monkeypatch, ui, store=store)
+    p, dp = _progress(ui, monkeypatch, cancel_sequence=[True])
+    with p:
+        assert ui._copy_once("nfs://src", "nfs://dst", progress=p) == ui.COPY_CANCELLED
+    assert "nfs://dst" not in store
+    assert "nfs://dst.ezmpart" not in store
+    assert dp.polls == 1

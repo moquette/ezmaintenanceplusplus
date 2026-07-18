@@ -217,7 +217,7 @@ def _zip_names(zip_path):
 
 def _extract(zip_path, dest_root):
     """The restore extractor: plain zipfile (a POSIX write that BYPASSES CTVOSFile),
-    exactly what wiz.ExtractZip does."""
+    exactly what wiz.ExtractWithProgress does."""
     with zipfile.ZipFile(str(zip_path)) as z:
         z.extractall(str(dest_root))
 

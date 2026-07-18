@@ -4,3 +4,12 @@ __pycache__/
 .DS_Store
 dist/
 
+# Tooling scratch output, not project source.
+.pytest_cache/
+.ruff_cache/
+
+# Browser-automation scratch (console logs + page snapshots from an MCP
+# Playwright session). Nine of these were committed in 2026-07-01 by accident;
+# they are transient debugging output, not source.
+.playwright-mcp/
+

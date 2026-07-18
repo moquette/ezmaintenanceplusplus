@@ -31,6 +31,16 @@ A genuine hotfix that cannot wait for a device run may ship by committing an art
 {"waived": "<reason>"} for a class. That is a deliberate, reviewable act in git history -
 the opposite of a checklist quietly left unticked.
 
+WHEN YOU WRITE A WAIVER: name the box in words ("atv2", "the office Fire TV"), never its
+IP. This repo is PUBLIC and these artifacts are committed, so an address typed into a
+waiver rationale is a published address. Nothing generates this prose - a human writes it,
+so nothing but this note and the guard stands between a typed IP and publication. The
+guard is test_committed_verification_artifacts_carry_no_device_address in
+test_verify_device_checks.py; it scans the WHOLE artifact including waiver prose, and it
+is deliberately not narrowed to machine fields for exactly this reason. Three IPs were
+redacted out of waiver prose on 2026-07-18; the box names were already in the same
+sentences, so nothing evidentiary was lost.
+
 FINGERPRINT SCOPE (widened 2026-07-16; original GAP 3 review 2026-07-14)
 ------------------------------------------------------------------------
 The 2026-07-14 review scoped CONTRACT_FILES to (nsud.py, boxsetup.py) because the
@@ -47,6 +57,7 @@ onetap - and wiz.py, whose restore orchestration decides when each of those runs
 """
 
 import hashlib
+import importlib.util
 import json
 import pathlib
 import re
@@ -156,15 +167,60 @@ def test_storage_contract_change_has_a_device_run():
         )
 
 
+def _load_generator():
+    """Import tools/verify_device.py directly (it is import-safe: no side effects, no
+    device contact at module scope)."""
+    spec = importlib.util.spec_from_file_location(
+        "_gate_verify_device", ROOT / "tools/verify_device.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def test_fingerprint_helper_matches_the_generator():
     """The gate and the generator must fingerprint the SAME files, or the gate is blind.
 
     verify_device.py computes the fingerprint the artifacts are stamped with; if these two
     lists ever drift, an artifact could 'match' while covering different code.
+
+    This used to assert `f.name in verify_device_source_text` for each file, which was
+    weak in three ways and blind in one that matters:
+      1. A filename mentioned only in a COMMENT or docstring satisfied a substring test,
+         and this tool's own docstring names every one of these modules.
+      2. It compared basenames, not resolved paths, so a same-named module in another
+         directory would collide and a path change would go unnoticed.
+      3. Worst: it was ONE-DIRECTIONAL (gate subset of generator). Adding a file to
+         verify_device.CONTRACT_FILES that this gate lacked passed GREEN - the loop
+         never inspected it. The generator would then stamp artifacts with a fingerprint
+         covering N+1 files while the gate validated N, so a storage-contract change to
+         that extra file would never demand a device run. The gate goes blind in exactly
+         the scenario it exists to prevent, and this list DOES get edited under pressure
+         (it was widened from 2 files to 5 on 2026-07-16).
+
+    So compare the artifacts themselves, bidirectionally, plus the computed fingerprint.
+    The two assertions fail for different reasons and both are worth having: set equality
+    catches list drift, fingerprint equality additionally catches divergence in the
+    HASHING itself (sort order, bytes-vs-text read, an added salt) that identical file
+    lists would still hide.
     """
-    gen = (ROOT / "tools/verify_device.py").read_text()
-    for f in CONTRACT_FILES:
-        assert f.name in gen, (
-            "%s is in this gate's CONTRACT_FILES but not in verify_device.py - the "
-            "fingerprints will disagree. Keep the two lists in lockstep." % f.name
+    gen = _load_generator()
+
+    ours = {p.resolve() for p in CONTRACT_FILES}
+    theirs = {pathlib.Path(p).resolve() for p in gen.CONTRACT_FILES}
+    assert ours == theirs, (
+        "this gate and verify_device.py disagree about which files the storage "
+        "fingerprint covers.\n  only in the gate:      %s\n  only in the generator: %s\n"
+        "Keep the two lists in lockstep, or an artifact can 'match' while covering "
+        "different code."
+        % (
+            sorted(p.name for p in ours - theirs) or "(none)",
+            sorted(p.name for p in theirs - ours) or "(none)",
         )
+    )
+
+    assert gen.storage_fingerprint() == _fingerprint(), (
+        "the file lists agree but the computed fingerprints differ, so the two sides "
+        "hash the same files differently (sort order, read mode, or salt). An artifact "
+        "stamped by the generator can never match this gate."
+    )

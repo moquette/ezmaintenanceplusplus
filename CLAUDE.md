@@ -103,7 +103,7 @@ for backup/restore failures and cross-references back to this repo.
   `generate_repo.py` and the skin repo's `build_skin.py`. `./build.sh --check` builds
   twice and byte-compares.
 - **Tests are mandatory before any release.** `/opt/homebrew/bin/python3 -m pytest
-tests/ -q` (the system `python3` on this machine is 3.9, too old for this suite).
+  tests/ -q` (the system `python3` on this machine is 3.9, too old for this suite).
   `ruff check tests/ tools/` must also be clean.
 - **`tools/release.sh` is the only sanctioned release path.** It builds, tags
   `v<version>` anchored to `origin/main` (never local/unpushed work - a release can

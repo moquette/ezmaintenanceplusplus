@@ -43,7 +43,7 @@ PROPOSED and still needs QA + architect approval before any code is written.
   GitHub Release asset on `moquette/ezmaintenanceplusplus` via `gh release create`,
   then verifies the asset is anonymously downloadable and its sha256 matches the
   local build (refuses to leave a broken release in place). `tools/release.sh
---dry-run` shows the plan without tagging/releasing.
+  --dry-run` shows the plan without tagging/releasing.
 - Distribution: `tony7bones.github.io` carries only a metadata pointer at
   `addons/hosted/script.ezmaintenanceplusplus/` (addon.xml + icon.png + fanart.jpg,
   hand-synced to the released version - same pattern as `addons/hosted/skin.estuary7/`)
@@ -53,7 +53,7 @@ PROPOSED and still needs QA + architect approval before any code is written.
   proxy-config change, not a first-party add-on source change - `repository.json` is
   bundled inside the `repository.tony7bones` add-on's own zip).
 - Tests: `cd ~/Code/moquette/kodi/ezmpp && /opt/homebrew/bin/python3 -m
-pytest tests/ -q` (system `python3` on this machine is 3.9, too old for this suite).
+  pytest tests/ -q` (system `python3` on this machine is 3.9, too old for this suite).
   `ruff check tests/ tools/` must also be clean. Includes the tvOS storage-contract
   hardware-verification gate (`test_storage_change_requires_device_verification.py` +
   `tools/verify_device.py` + `verification/*.json`) - a change to `nsud.py`/`boxsetup.py`

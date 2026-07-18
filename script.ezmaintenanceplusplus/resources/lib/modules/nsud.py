@@ -297,7 +297,13 @@ def persist_one(rel, log=None):
     Manager stops listing the file (and its contents) twice - the
     tvOS-restore-duplicate-userdata bug. A strict no-op rewrite of identical bytes
     on Fire TV / Android / desktop (there the special:// path IS the POSIX file).
-    Returns True on a confirmed vector; guarded, never raises."""
+
+    Returns True iff the file is now coherently persisted: the vector was written AND (on
+    tvOS) a read-back confirmed the durable store holds the identical bytes, OR the file is
+    private add-on data that is deliberately left as plain POSIX. Returns False on a failed
+    write and on an UNCONFIRMED read-back - in both cases the POSIX copy is intentionally
+    left standing, so False means "your bytes are still on disk but NOT durably vectored",
+    never "your data is gone". Guarded, never raises."""
     rel = (rel or "").replace("\\", "/")
     special = _special_for(rel)
     posix = xbmcvfs.translatePath(special)
@@ -313,7 +319,20 @@ def persist_one(rel, log=None):
             if log:
                 log("nsud.persist_one: vector failed for %s (POSIX stands)" % rel)
             return False
-        if _is_tvos() and _vector_confirmed(special, posix):
+        if _is_tvos():
+            if not _vector_confirmed(special, posix):
+                # write() said OK but the read-back does not match, so the durable store
+                # does NOT provably hold the bytes (the tvOS budget silently evicting or
+                # truncating a key). Keeping the POSIX copy is right - it is now the only
+                # good copy - but this is NOT the confirmed vector the caller asked for, so
+                # say so instead of reporting success. Same shape as the _vfs_rewrite_once
+                # failure above: log + return False, never a half-truth.
+                if log:
+                    log(
+                        "nsud.persist_one: read-back did not confirm %s "
+                        "(POSIX stands as the only copy)" % rel
+                    )
+                return False
             try:
                 os.remove(posix)
             except OSError:

@@ -26,6 +26,11 @@ tempPath = translatePath("special://temp")
 databasePath = translatePath("special://database")
 THUMBS = translatePath(os.path.join("special://home/userdata/Thumbnails", ""))
 
+# Must match <default>4</default> for autoCleanHour in resources/settings.xml. Kodi's
+# settings UI renders that declared default for an absent setting, so a fallback that
+# disagrees with it would run maintenance at an hour the user was never shown.
+DEFAULT_AUTOCLEAN_HOUR = 4
+
 addon_id = "script.ezmaintenanceplusplus"
 fanart = translatePath(os.path.join("special://home/addons/" + addon_id, "fanart.jpg"))
 iconpath = translatePath(os.path.join("special://home/addons/" + addon_id, "icon.png"))
@@ -249,20 +254,41 @@ def clearAll(mode="verbose"):
 def determineNextMaintenance():
     getSetting = xbmcaddon.Addon().getSetting
 
-    autoCleanDays = getSetting("autoCleanDays")
-    if autoCleanDays is None:
+    # Kodi's getSetting returns "" (never None) for an absent or blank setting, so the old
+    # `is None` guards were dead code and int("") raised. This runs on the SERVICE thread at
+    # boot (service.py), where an uncaught ValueError kills the scheduler for the session -
+    # so degrade to "no schedule" instead, same as getNextMaintenance below.
+    try:
+        days = int(getSetting("autoCleanDays"))
+    except (TypeError, ValueError):
+        # Loud: this silently turns auto-clean OFF for the session, so it must not be
+        # invisible. A user who configured a schedule would otherwise never learn it
+        # stopped running.
+        xbmc.log(
+            "ezmaintenanceplusplus: autoCleanDays is not a number (%r); "
+            "auto-clean scheduling is DISABLED for this session"
+            % (getSetting("autoCleanDays"),),
+            level=xbmc.LOGWARNING,
+        )
         days = 0
-    else:
-        days = int(autoCleanDays)
 
     t1 = 0
 
     if days > 0:
-        autoCleanHour = getSetting("autoCleanHour")
-        if autoCleanHour is None:
-            hour = 0
-        else:
-            hour = int(autoCleanHour)
+        # A bad hour must not cost us the whole schedule. Fall back to the value
+        # settings.xml DECLARES as the default (4 AM, deliberately off-hours) - Kodi's
+        # settings UI shows that default for an absent setting, so falling back to
+        # anything else would run maintenance at an hour the user was never shown.
+        try:
+            hour = int(getSetting("autoCleanHour"))
+        except (TypeError, ValueError):
+            xbmc.log(
+                "ezmaintenanceplusplus: autoCleanHour is not a number (%r); "
+                "falling back to the declared default of %02d:00, schedule preserved"
+                % (getSetting("autoCleanHour"), DEFAULT_AUTOCLEAN_HOUR),
+                level=xbmc.LOGWARNING,
+            )
+            hour = DEFAULT_AUTOCLEAN_HOUR
 
         t0 = int(math.floor(time.time()))
 

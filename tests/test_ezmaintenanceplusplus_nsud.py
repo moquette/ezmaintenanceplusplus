@@ -48,12 +48,12 @@ class _FakeFile:
             return False
         self._store[self._path] = bytes(
             data
-        )  # REPLACE (not append) — the tvOS semantics
+        )  # REPLACE (not append) - the tvOS semantics
         return True
 
     def readBytes(self):
         # Read-back path. `evict_on_readback` models the tvOS store silently dropping a key
-        # despite write()==True (the ~500 KB budget) — read returns empty though write said OK.
+        # despite write()==True (the ~500 KB budget) - read returns empty though write said OK.
         if self._path in self._state.get("evict_on_readback", set()):
             return bytearray(b"")
         return bytearray(self._store.get(self._path, b""))
@@ -63,8 +63,15 @@ class _FakeFile:
 
 
 @pytest.fixture
-def nsud(monkeypatch):
-    """Import the real nsud.py with faked xbmc/xbmcvfs; expose recorders."""
+def nsud(monkeypatch, tmp_path):
+    """Import the real nsud.py with faked xbmc/xbmcvfs; expose recorders.
+
+    `tmp_path` doubles as the userdata root: the fake `translatePath` maps
+    special://home/userdata/<rel> onto it, so a test that writes <tmp_path>/sources.xml
+    and calls persist_one("sources.xml") is talking about the same file. That mirrors
+    the real box, where persist_one derives the POSIX path from the special:// path
+    rather than being handed a directory the way rewrite_userdata_xml is.
+    """
     store: dict[str, bytes] = {}  # special path -> final bytes in "NSUserDefaults"
     writes: list[tuple[str, bytes]] = []  # every (path, bytes) write call
     events: list[str] = []  # ordered trace: enable:.. / sleep / write:<path>
@@ -99,6 +106,16 @@ def nsud(monkeypatch):
     # captured even though the write itself happens on .write().
     xbmcvfs.File = _make_file
 
+    _USERDATA_PREFIX = "special://home/userdata/"
+
+    def _translate_path(path):
+        p = str(path)
+        if p.startswith(_USERDATA_PREFIX):
+            return str(tmp_path / p[len(_USERDATA_PREFIX) :])
+        return p
+
+    xbmcvfs.translatePath = _translate_path
+
     monkeypatch.setitem(sys.modules, "xbmc", xbmc)
     monkeypatch.setitem(sys.modules, "xbmcvfs", xbmcvfs)
     monkeypatch.syspath_prepend(str(ADDON_MODULES))
@@ -127,7 +144,7 @@ def test_single_write_per_file_full_content(nsud, tmp_path):
 
     special = "special://home/userdata/guisettings.xml"
     per_file = [w for w in nsud.writes if w[0] == special]
-    assert len(per_file) == 1, "must be exactly ONE write() per file — never chunk"
+    assert len(per_file) == 1, "must be exactly ONE write() per file - never chunk"
     assert nsud.store[special] == big, "the whole file must land, not a tail fragment"
 
 
@@ -214,14 +231,14 @@ def test_write_failure_leaves_source_and_counts_failed(nsud, tmp_path):
     written, _skipped, failed = nsud.mod.rewrite_userdata_xml(str(tmp_path))
 
     assert written == 0 and failed == 1
-    # POSIX source is untouched (no data loss — worst case is the pre-existing shadow).
+    # POSIX source is untouched (no data loss - worst case is the pre-existing shadow).
     assert (tmp_path / "guisettings.xml").read_bytes() == b"<settings/>"
 
 
 # --------------------------------------------------------------------------- #
 # tvOS duplicate-entry fix: after a CONFIRMED vector into NSUserDefaults, and ONLY on tvOS,
 # drop the redundant POSIX copy so File Manager stops listing every userdata file twice.
-# The gate is a hard safety boundary — on any other platform special://home/userdata IS the
+# The gate is a hard safety boundary - on any other platform special://home/userdata IS the
 # POSIX file, so dropping it would delete what was just written.
 # --------------------------------------------------------------------------- #
 def _enable_tvos(monkeypatch):
@@ -320,7 +337,7 @@ def test_is_tvos_queries_exact_condition_string(nsud, monkeypatch):
 def test_tvos_keeps_posix_when_readback_mismatch(nsud, tmp_path, monkeypatch):
     # write() reports success, but the durable store does NOT hold the bytes on read-back
     # (models the tvOS storage budget silently evicting/truncating a key). The POSIX copy
-    # must be kept — deleting it would lose the only good copy.
+    # must be kept - deleting it would lose the only good copy.
     _enable_tvos(monkeypatch)
     _write(tmp_path, "guisettings.xml", b"<settings/>")
     nsud.state["evict_on_readback"] = {"special://home/userdata/guisettings.xml"}
@@ -341,6 +358,170 @@ def test_mixed_success_and_failure_drops_only_confirmed(nsud, tmp_path, monkeypa
 
     assert not (tmp_path / "guisettings.xml").exists()  # confirmed vector -> dropped
     assert (tmp_path / "sources.xml").read_bytes() == b"<b/>"  # failed write -> kept
+
+
+# --------------------------------------------------------------------------- #
+# persist_one: the SINGLE-FILE tvOS-safe persist primitive.
+#
+# Every caller of this primitive (boxsetup._add_sources, boxsetup's weather settings write,
+# wiz's boot-skin guisettings write) reaches it AFTER a plain POSIX write, so it is the last
+# thing standing between a dual-layered file and a coherent one. It was stubbed at every
+# reference and had zero coverage of its body; this block mirrors the drop/keep/skip matrix
+# already pinned above for rewrite_userdata_xml.
+# --------------------------------------------------------------------------- #
+def test_persist_one_vectors_and_reports_true(nsud, tmp_path):
+    # Off tvOS: the bytes go through the VFS (a no-op rewrite there) and the POSIX file - the
+    # SAME file as the special:// path on Fire TV/desktop - must survive untouched.
+    _write(tmp_path, "sources.xml", b"<sources/>")
+
+    assert nsud.mod.persist_one("sources.xml") is True
+    assert nsud.store["special://home/userdata/sources.xml"] == b"<sources/>"
+    assert (tmp_path / "sources.xml").read_bytes() == b"<sources/>"
+
+
+def test_persist_one_single_write_never_chunks(nsud, tmp_path):
+    # The anti-chunking invariant applies to the single-file path too: CTVOSFile::Write
+    # REPLACES the whole key, so two writes would leave only the tail fragment.
+    big = b"<sources>" + b"x" * 100_000 + b"</sources>"
+    _write(tmp_path, "sources.xml", big)
+
+    nsud.mod.persist_one("sources.xml")
+
+    special = "special://home/userdata/sources.xml"
+    assert len([w for w in nsud.writes if w[0] == special]) == 1
+    assert nsud.store[special] == big
+
+
+def test_persist_one_tvos_drops_posix_after_confirmed_vector(
+    nsud, tmp_path, monkeypatch
+):
+    _enable_tvos(monkeypatch)
+    _write(tmp_path, "sources.xml", b"<sources/>")
+
+    assert nsud.mod.persist_one("sources.xml") is True
+    assert nsud.store["special://home/userdata/sources.xml"] == b"<sources/>"
+    assert not (tmp_path / "sources.xml").exists(), (
+        "a confirmed vector must drop the redundant POSIX copy on tvOS"
+    )
+
+
+def test_persist_one_private_addon_data_left_on_disk(nsud, tmp_path):
+    # addon_data/<id>/<not settings.xml> is an add-on's PRIVATE data, read with plain open().
+    # persist_one must NOT vector it (a key would shadow it and the drop would orphan it) and
+    # must report success - the file is exactly where its owner expects it.
+    rel = "addon_data/script.skinshortcuts/script.skinshortcuts.mainmenu.DATA.xml"
+    _write(tmp_path, rel, b"<menu/>")
+
+    assert nsud.mod.persist_one(rel) is True
+    assert nsud.store == {}, "private add-on data must never be vectored"
+    assert (tmp_path / rel).read_bytes() == b"<menu/>"
+
+
+def test_persist_one_private_addon_data_kept_on_tvos_too(nsud, tmp_path, monkeypatch):
+    # The dangerous direction: on tvOS the early return must fire BEFORE any drop logic, or
+    # this is the skinshortcuts main-menu wipe again.
+    _enable_tvos(monkeypatch)
+    rel = "addon_data/script.skinshortcuts/script.skinshortcuts.mainmenu.DATA.xml"
+    _write(tmp_path, rel, b"<menu/>")
+
+    assert nsud.mod.persist_one(rel) is True
+    assert (tmp_path / rel).read_bytes() == b"<menu/>"
+
+
+def test_persist_one_siri_remote_keymap_never_vectored(nsud, tmp_path, monkeypatch):
+    # Kodi's own WantsFile() excludes customcontroller.SiriRemote*, so it is served by
+    # CPosixFile: a read-back would trivially "confirm" without a byte reaching
+    # NSUserDefaults, and a drop would delete the only copy.
+    _enable_tvos(monkeypatch)
+    rel = "keymaps/customcontroller.SiriRemote.xml"
+    _write(tmp_path, rel, b"<keymap/>")
+
+    assert nsud.mod.persist_one(rel) is True
+    assert nsud.store == {}
+    assert (tmp_path / rel).read_bytes() == b"<keymap/>"
+
+
+def test_persist_one_returns_false_when_vector_fails(nsud, tmp_path):
+    _write(tmp_path, "sources.xml", b"<sources/>")
+    nsud.state["fail_writes"] = True
+
+    assert nsud.mod.persist_one("sources.xml") is False
+    assert (tmp_path / "sources.xml").read_bytes() == b"<sources/>"
+
+
+def test_persist_one_returns_false_when_source_missing(nsud, tmp_path):
+    # Nothing on disk to read -> nothing vectored -> must not claim success.
+    assert nsud.mod.persist_one("sources.xml") is False
+    assert nsud.store == {}
+
+
+def test_persist_one_returns_false_when_readback_unconfirmed(
+    nsud, tmp_path, monkeypatch
+):
+    """THE BUG this block was written for.
+
+    write() reports success but the durable store does NOT hold the bytes on read-back
+    (the tvOS ~500 KB budget silently evicting/truncating a key). persist_one correctly
+    declines to os.remove the POSIX copy - no data loss - but it used to fall through to
+    "persisted %s" and return True, so a caller could not tell a confirmed vector from a
+    failed read-back. The docstring promised "True on a confirmed vector"; the code did not
+    deliver it. That is the silent-incompleteness class this project has been burned by, and
+    it is exactly what the _vfs_rewrite_once failure branch one step earlier gets right.
+    """
+    _enable_tvos(monkeypatch)
+    _write(tmp_path, "sources.xml", b"<sources/>")
+    nsud.state["evict_on_readback"] = {"special://home/userdata/sources.xml"}
+
+    result = nsud.mod.persist_one("sources.xml")
+
+    # The POSIX copy is kept either way - that part was never broken.
+    assert (tmp_path / "sources.xml").read_bytes() == b"<sources/>"
+    assert result is False, (
+        "an unconfirmed read-back is NOT a confirmed vector; returning True hides a "
+        "half-done persist from the caller"
+    )
+
+
+def test_persist_one_logs_truthfully_on_unconfirmed_readback(
+    nsud, tmp_path, monkeypatch
+):
+    # The log is the only field diagnostic on Apple TV (no adb), so it must not say
+    # "persisted" for a file that was not confirmed in the durable store.
+    _enable_tvos(monkeypatch)
+    _write(tmp_path, "sources.xml", b"<sources/>")
+    nsud.state["evict_on_readback"] = {"special://home/userdata/sources.xml"}
+    lines = []
+
+    nsud.mod.persist_one("sources.xml", log=lines.append)
+
+    assert lines, "the failure path must say something"
+    assert not any("persisted" in ln for ln in lines), (
+        "must not report a persist that was never confirmed: %r" % lines
+    )
+
+
+def test_persist_one_normalizes_backslashes(nsud, tmp_path):
+    _write(tmp_path, "addon_data/weather.multi/settings.xml", b"<settings/>")
+
+    assert nsud.mod.persist_one("addon_data\\weather.multi\\settings.xml") is True
+    assert (
+        nsud.store["special://home/userdata/addon_data/weather.multi/settings.xml"]
+        == b"<settings/>"
+    )
+
+
+def test_persist_one_never_raises(nsud, tmp_path, monkeypatch):
+    # Guarded by contract: every caller invokes it for effect mid-flow and a raise would
+    # abort a restore/box setup.
+    _enable_tvos(monkeypatch)
+    _write(tmp_path, "sources.xml", b"<sources/>")
+    monkeypatch.setattr(
+        nsud.mod,
+        "_vector_confirmed",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    assert nsud.mod.persist_one("sources.xml") is False
 
 
 # --------------------------------------------------------------------------- #

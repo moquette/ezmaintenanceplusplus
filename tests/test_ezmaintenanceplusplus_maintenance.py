@@ -603,6 +603,104 @@ def _make_pvr_db(path, last_watched_values):
     con.close()
 
 
+# ------------------------------------------------- _pvr_databases selection
+#
+# Kodi migrates the PVR DB across versions as TV<N>.db / Radio<N>.db and reads only the
+# HIGHEST-numbered one; the older files are stale leftovers. Picking a stale DB would make
+# every clear silently no-op against a database Kodi does not read. Existing coverage only
+# ever laid down a single TV46.db, so neither the selection nor the Radio half was pinned.
+
+
+def test_pvr_databases_picks_highest_schema(maint, tmp_path, monkeypatch):
+    dbdir = tmp_path / "db"
+    dbdir.mkdir()
+    for name in ("TV45.db", "TV46.db"):
+        (dbdir / name).write_bytes(b"x")
+    monkeypatch.setattr(maint, "databasePath", str(dbdir))
+
+    assert [Path(p).name for p in maint._pvr_databases()] == ["TV46.db"]
+
+
+def test_pvr_databases_sorts_numerically_not_lexically(maint, tmp_path, monkeypatch):
+    # The trap the `key=_num` exists for: a plain string sort puts "TV5.db" AFTER "TV46.db",
+    # so a lexical sort would hand back the OLD schema.
+    dbdir = tmp_path / "db"
+    dbdir.mkdir()
+    for name in ("TV5.db", "TV46.db"):
+        (dbdir / name).write_bytes(b"x")
+    monkeypatch.setattr(maint, "databasePath", str(dbdir))
+
+    assert [Path(p).name for p in maint._pvr_databases()] == ["TV46.db"]
+
+
+def test_pvr_databases_includes_radio_and_tv(maint, tmp_path, monkeypatch):
+    dbdir = tmp_path / "db"
+    dbdir.mkdir()
+    for name in ("TV45.db", "TV46.db", "Radio45.db", "Radio46.db"):
+        (dbdir / name).write_bytes(b"x")
+    monkeypatch.setattr(maint, "databasePath", str(dbdir))
+
+    assert sorted(Path(p).name for p in maint._pvr_databases()) == [
+        "Radio46.db",
+        "TV46.db",
+    ]
+
+
+def test_pvr_databases_radio_only(maint, tmp_path, monkeypatch):
+    # TV absent must not suppress Radio (the two prefixes are independent).
+    dbdir = tmp_path / "db"
+    dbdir.mkdir()
+    (dbdir / "Radio46.db").write_bytes(b"x")
+    monkeypatch.setattr(maint, "databasePath", str(dbdir))
+
+    assert [Path(p).name for p in maint._pvr_databases()] == ["Radio46.db"]
+
+
+def test_pvr_databases_no_candidates(maint, tmp_path, monkeypatch):
+    # No PVR ever configured, and unrelated databases must not be mistaken for PVR ones.
+    dbdir = tmp_path / "db"
+    dbdir.mkdir()
+    (dbdir / "MyVideos131.db").write_bytes(b"x")
+    (dbdir / "Textures13.db").write_bytes(b"x")
+    monkeypatch.setattr(maint, "databasePath", str(dbdir))
+
+    assert maint._pvr_databases() == []
+
+
+def test_pvr_databases_missing_directory(maint, tmp_path, monkeypatch):
+    # A box with no Database dir at all: glob returns nothing, must not raise.
+    monkeypatch.setattr(maint, "databasePath", str(tmp_path / "nope"))
+
+    assert maint._pvr_databases() == []
+
+
+def test_clear_recent_channels_uses_only_current_schema(maint, tmp_path, monkeypatch):
+    # End to end: a stale TV45.db holding recent channels must be left ALONE, and the
+    # count/clear must come from TV46.db only.
+    dbdir = tmp_path / "db"
+    dbdir.mkdir()
+    _make_pvr_db(dbdir / "TV45.db", [1700000000, 1700000001])  # stale, must not change
+    _make_pvr_db(dbdir / "TV46.db", [1700000000])  # current, 1 recent
+    monkeypatch.setattr(maint, "databasePath", str(dbdir))
+    monkeypatch.setattr(
+        maint,
+        "_jsonrpc",
+        lambda m, p: (
+            {"result": {"value": True}} if m == "Settings.GetSettingValue" else {}
+        ),
+    )
+    monkeypatch.setattr(maint.xbmc, "sleep", lambda ms: None)
+
+    assert maint.clearRecentChannels(mode="silent") == 1
+
+    con = sqlite3.connect(str(dbdir / "TV45.db"))
+    stale = con.execute(
+        "SELECT COUNT(*) FROM channels WHERE iLastWatched > 0"
+    ).fetchone()[0]
+    con.close()
+    assert stale == 2, "the stale schema DB must never be touched"
+
+
 def test_clear_recent_channels_resets_only_watched(maint, tmp_path, monkeypatch):
     dbdir = tmp_path / "db"
     dbdir.mkdir()
@@ -735,6 +833,76 @@ def test_determineNextMaintenance_schedules_future_timestamp(maint):
     import time as _time
 
     assert scheduled > _time.time()
+
+
+def test_determineNextMaintenance_unset_hour_does_not_crash(maint):
+    """REGRESSION: days set, hour MISSING - the crash the `is None` guards never caught.
+
+    Kodi's Addon().getSetting NEVER returns None for an absent/blank setting; it returns
+    "". So `if autoCleanHour is None` is dead code and `int("")` raises ValueError. Both
+    test fakes model the real "" correctly, but every existing test set both keys, so
+    nothing exercised it. Reachability is narrow (settings.xml ships defaults 0/4, so a
+    clean install reads "0"/"4") - it needs a degraded profile: a renamed/removed setting
+    id or a corrupt profile settings.xml. But the callers are service.py:29,33,459, i.e.
+    service STARTUP, so an uncaught ValueError takes down the whole scheduler thread for
+    the session. Same failure mode the author already fixed 30 lines below in
+    getNextMaintenance with `except (TypeError, ValueError)`.
+    """
+    maint._rec.settings.clear()
+    maint._rec.settings["autoCleanDays"] = "1"  # no autoCleanHour at all
+
+    maint.determineNextMaintenance()  # must not raise
+
+    import time as _time
+
+    scheduled = maint.getNextMaintenance()
+    assert scheduled > _time.time(), (
+        "a missing hour must fall back to a usable schedule, not abort the service"
+    )
+    # The fallback hour is NOT arbitrary: settings.xml declares <default>4</default> and
+    # Kodi's settings UI shows that default for an absent setting. Falling back to
+    # midnight would run maintenance at an hour the user was never shown, plausibly
+    # while they are still watching.
+    assert _time.localtime(scheduled).tm_hour == maint.DEFAULT_AUTOCLEAN_HOUR == 4, (
+        "an unset hour must use the hour settings.xml declares, not midnight"
+    )
+
+
+def test_determineNextMaintenance_unset_days_means_no_schedule(maint):
+    # Nothing configured at all -> int("") on the FIRST read. Must degrade to "no
+    # schedule" (0), which is what the `is None` branch was trying to express.
+    maint._rec.settings.clear()
+
+    maint.determineNextMaintenance()  # must not raise
+
+    assert maint.getNextMaintenance() == 0
+
+
+def test_determineNextMaintenance_garbage_settings_do_not_crash(maint):
+    # A corrupt profile settings.xml can hold non-numeric junk, not just "".
+    maint._rec.settings.clear()
+    maint._rec.settings.update({"autoCleanDays": "banana", "autoCleanHour": "elephant"})
+
+    maint.determineNextMaintenance()  # must not raise
+
+    assert maint.getNextMaintenance() == 0
+
+
+def test_determineNextMaintenance_garbage_hour_still_schedules(maint):
+    # Days is valid, hour is junk: the schedule must still be set (hour degrades to the
+    # declared default) rather than losing the whole schedule to one bad field.
+    maint._rec.settings.clear()
+    maint._rec.settings.update({"autoCleanDays": "2", "autoCleanHour": "!!"})
+
+    maint.determineNextMaintenance()
+
+    import time as _time
+
+    scheduled = maint.getNextMaintenance()
+    assert scheduled > _time.time()
+    assert _time.localtime(scheduled).tm_hour == maint.DEFAULT_AUTOCLEAN_HOUR == 4, (
+        "a junk hour must degrade to the declared default, not midnight"
+    )
 
 
 def test_service_monitor_sets_schedule_on_init_and_settings_change(service):

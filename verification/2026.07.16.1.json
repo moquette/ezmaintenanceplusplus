@@ -5,7 +5,6 @@
       "class": "tvos",
       "clean_single_layer": true,
       "friendly_name": "atv2",
-      "host": "192.168.7.183",
       "kodi_build": "21.3 (21.3.0) Git:20251031-a3a448d26b",
       "restore_contract": {
         "duplicate_listing": {

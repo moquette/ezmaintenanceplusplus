@@ -5,7 +5,6 @@
       "class": "tvos",
       "clean_single_layer": false,
       "friendly_name": "atv2",
-      "host": "192.168.7.183",
       "kodi_build": "21.3 (21.3.0) Git:20251031-a3a448d26b",
       "restore_contract": {
         "duplicate_listing": {
@@ -119,7 +118,7 @@
       "skinshortcuts_vfs_entries": 50
     },
     "android": {
-      "waived": "This release changes ONLY nsud.sweep_iptv_instances's tvOS key-layer verification (the NSUserDefaults listdir dup-count). NSUserDefaults does not exist on Fire OS; the sweep's key branch never executes on android (xbmcvfs.delete is the POSIX delete there, unchanged). No android-observable behavior changed. The fleet's only instrumented android bench (192.168.7.162) is owner-designated hands-off."
+      "waived": "This release changes ONLY nsud.sweep_iptv_instances's tvOS key-layer verification (the NSUserDefaults listdir dup-count). NSUserDefaults does not exist on Fire OS; the sweep's key branch never executes on android (xbmcvfs.delete is the POSIX delete there, unchanged). No android-observable behavior changed. The fleet's only instrumented android bench (the office Fire TV) is owner-designated hands-off."
     }
   },
   "storage_fingerprint": "7afb9dc5a8af1ca2997cb2c8c92ba0be1ea8c5616287d9a267a4f571083e38b2",

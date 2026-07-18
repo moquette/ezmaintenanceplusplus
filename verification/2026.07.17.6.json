@@ -5,7 +5,6 @@
       "class": "tvos",
       "clean_single_layer": false,
       "friendly_name": "atv2",
-      "host": "192.168.7.183",
       "kodi_build": "21.3 (21.3.0) Git:20251031-a3a448d26b",
       "restore_contract": {
         "duplicate_listing": {
@@ -119,7 +118,7 @@
       "skinshortcuts_vfs_entries": 50
     },
     "android": {
-      "waived": "The storage-contract change in this release is exclusively inside the tvOS-gated stale-key purge path (service.py returns before purge_stale_keys off tvOS; NSUserDefaults does not exist on Fire OS) plus non-storage log-viewer decode fixes. Android never executes the changed storage code. The fleet's only instrumented android bench (192.168.7.162) is owner-designated hands-off."
+      "waived": "The storage-contract change in this release is exclusively inside the tvOS-gated stale-key purge path (service.py returns before purge_stale_keys off tvOS; NSUserDefaults does not exist on Fire OS) plus non-storage log-viewer decode fixes. Android never executes the changed storage code. The fleet's only instrumented android bench (the office Fire TV) is owner-designated hands-off."
     }
   },
   "storage_fingerprint": "df8b7658729a47b8b924514139e44afe56f687200c0ce7e9d6b6f5fd5a7e6353",

@@ -26,12 +26,33 @@ tool uses JSON-RPC because it works identically on Fire TV and Apple TV.
 
 USAGE
 -----
-    python3 tools/verify_device.py --host 192.168.7.183 --class tvos
-    python3 tools/verify_device.py --host 192.168.7.162 --class android
+    export KODI_JSONRPC_USER=<the box's JSON-RPC user>
+    export KODI_JSONRPC_PASSWORD=<the box's JSON-RPC password>
+
+    python3 tools/verify_device.py --host <apple-tv-ip> --class tvos
+    python3 tools/verify_device.py --host <fire-tv-ip>  --class android
     python3 tools/verify_device.py --diff before.json after.json
 
 Writes/updates verification/<addon-version>.json with one entry per device class. Run it
 once per class (both are required by the gate for a storage change to ship).
+
+CONFIGURATION (no credential, and no box address, is baked into this file)
+--------------------------------------------------------------------------
+This tool used to carry a hardcoded `kodi:kodi` Basic-auth header and example box IPs
+in this docstring. This repository is PUBLIC, so a credential in source is a published
+credential regardless of how weak it looks. Everything device-specific now comes from
+the environment:
+
+    KODI_JSONRPC_USER      required for any device pull. No default.
+    KODI_JSONRPC_PASSWORD  required for any device pull. No default.
+    KODI_JSONRPC_HOST      optional default for --host (an explicit --host wins).
+    KODI_JSONRPC_PORT      optional, defaults to 8080.
+
+There is deliberately NO fallback credential: an unset user/password is a hard, named
+error, never a silent retry against a stock default. Only the device-contacting paths
+require them - `--diff` reads two local JSON files and needs no configuration at all.
+The password is read from the environment rather than a CLI flag so it never lands in
+shell history or a process listing.
 
 RESTORE CONTRACT (added after 10 restore data-loss regressions passed "verification")
 -------------------------------------------------------------------------------------
@@ -62,11 +83,15 @@ pull, which is a visible, reviewable act - not filling in a template.
 """
 
 import argparse
+import base64
 import hashlib
 import json
+import os
 import pathlib
+import re
 import sys
 import urllib.request
+from collections import Counter
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ADDON_XML = ROOT / "script.ezmaintenanceplusplus/addon.xml"
@@ -105,29 +130,100 @@ def storage_fingerprint():
 
 
 def addon_version():
-    import re
-
+    xml = ADDON_XML.read_text()
     m = re.search(
         r'id="script\.ezmaintenanceplusplus"\s+name="[^"]*"\s+version="([^"]+)"',
-        ADDON_XML.read_text(),
+        xml,
     )
     if not m:
-        m = re.search(r'version="([0-9][^"]+)"', ADDON_XML.read_text())
+        m = re.search(r'version="([0-9][^"]+)"', xml)
+    if not m:
+        raise SystemExit(
+            "could not read a version out of %s.\n"
+            '  Expected an <addon ... version="..."> attribute; the file has neither\n'
+            '  the id/name/version form nor any version="<digit>..." attribute.\n'
+            "  Fix addon.xml (or this tool's pattern) before verifying a device."
+            % ADDON_XML
+        )
     return m.group(1)
 
 
-def rpc(host, method, params=None, timeout=8):
+# --------------------------------------------------------------------------- #
+# JSON-RPC configuration - environment only, no baked-in credential or address.
+# See the CONFIGURATION block in the module docstring.
+# --------------------------------------------------------------------------- #
+ENV_USER = "KODI_JSONRPC_USER"
+ENV_PASSWORD = "KODI_JSONRPC_PASSWORD"
+ENV_HOST = "KODI_JSONRPC_HOST"
+ENV_PORT = "KODI_JSONRPC_PORT"
+DEFAULT_PORT = 8080
+
+
+def jsonrpc_credentials(env=None):
+    """(user, password) for the box's JSON-RPC endpoint, read from the environment.
+
+    There is NO fallback: a missing value raises SystemExit naming the exact
+    variables to set. Falling back to Kodi's stock defaults is precisely the
+    behavior this function exists to remove - a silent default would keep every
+    checkout of this PUBLIC repo pointed at a live, guessable credential."""
+    env = os.environ if env is None else env
+    user = (env.get(ENV_USER) or "").strip()
+    password = env.get(ENV_PASSWORD) or ""
+    missing = [
+        name
+        for name, value in ((ENV_USER, user), (ENV_PASSWORD, password))
+        if not value
+    ]
+    if missing:
+        raise SystemExit(
+            "REFUSING to contact a device: %s not set.\n"
+            "  This tool takes the box's JSON-RPC credential from the environment and\n"
+            "  has no default (a hardcoded one in this public repo was the bug).\n"
+            "  Set them for this shell, then re-run:\n"
+            "      export %s=<the box's JSON-RPC user>\n"
+            "      export %s=<the box's JSON-RPC password>\n"
+            "  Kodi exposes these under Settings > Services > Control.\n"
+            "  (--diff needs neither: it only reads two local JSON files.)"
+            % (" and ".join(missing), ENV_USER, ENV_PASSWORD)
+        )
+    return user, password
+
+
+def auth_header(user, password):
+    """The Basic-auth Authorization value for `user`/`password`."""
+    raw = ("%s:%s" % (user, password)).encode("utf-8")
+    return "Basic " + base64.b64encode(raw).decode("ascii")
+
+
+def jsonrpc_port(env=None):
+    """The box's JSON-RPC port: KODI_JSONRPC_PORT if set, else Kodi's default 8080."""
+    env = os.environ if env is None else env
+    raw = (env.get(ENV_PORT) or "").strip()
+    if not raw:
+        return DEFAULT_PORT
+    try:
+        return int(raw)
+    except ValueError:
+        raise SystemExit("%s must be a port number, got %r" % (ENV_PORT, raw)) from None
+
+
+def rpc(host, method, params=None, timeout=8, auth=None, port=None):
+    """One JSON-RPC call. `auth` is a prebuilt Authorization value; when omitted it is
+    resolved from the environment, so a caller making many calls (pull()) resolves the
+    credential once and passes it in rather than re-reading the environment per call."""
+    if auth is None:
+        auth = auth_header(*jsonrpc_credentials())
+    if port is None:
+        port = jsonrpc_port()
     payload = json.dumps(
         {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}
     ).encode()
     req = urllib.request.Request(
-        "http://%s:8080/jsonrpc" % host,
+        "http://%s:%d/jsonrpc" % (host, port),
         data=payload,
         headers={"Content-Type": "application/json"},
     )
-    import base64
-
-    req.add_header("Authorization", "Basic " + base64.b64encode(b"kodi:kodi").decode())
+    req.add_header("Authorization", auth)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         d = json.loads(r.read().decode())
     if "error" in d:
@@ -162,9 +258,30 @@ DUPLICATE_SCAN_DIRS = (ADDON_DATA_DIR, IPTV_DIR, SKINSHORTCUTS_DIR)
 
 def find_duplicates(names):
     """Names appearing more than once in a single VFS listing = a key/disk split."""
-    from collections import Counter
-
     return sorted(n for n, k in Counter(names).items() if k > 1)
+
+
+def labelled_names(files):
+    """(names, unlabelled_count) for a VFS listing.
+
+    Entries with no usable label are EXCLUDED, never defaulted to "": two
+    label-less entries both defaulting to the same "" register as a repeated
+    name, and a repeated name in this tool MEANS a key/disk split. That would
+    manufacture a PHANTOM duplicate and flip `clean_single_layer` false - a
+    fabricated warning about the exact damage this tool exists to report
+    truthfully, on a field the release gate consumes.
+
+    They are COUNTED rather than silently dropped, so a malformed listing is
+    still visible in the artifact instead of quietly shrinking the evidence."""
+    names = []
+    unlabelled = 0
+    for f in files:
+        label = f.get("label") or ""
+        if label:
+            names.append(label)
+        else:
+            unlabelled += 1
+    return names, unlabelled
 
 
 def _error_string(exc):
@@ -265,12 +382,18 @@ def check_shadow_probe(iptv_files, details_by_name):
     }
 
 
-def collect_restore_contract(call):
+def collect_restore_contract(call, cache=None):
     """Run every restore-contract check through `call`, degrading per-check: any
     failing pull records an error string in the section instead of aborting the
     whole device run. Successful listings are cached so shared directories are
-    pulled once."""
-    cache = {}
+    pulled once.
+
+    `cache` may be supplied by the caller (keyed `(directory, with_sizes)`) so a
+    listing this function already pulled can be reused instead of re-requested.
+    pull() does exactly that for the skinshortcuts directory, which both the
+    top-level evidence and the duplicate scan need - it used to be pulled twice
+    per device run."""
+    cache = {} if cache is None else cache
 
     def listing(directory, with_sizes=False):
         key = (directory, with_sizes)
@@ -286,9 +409,7 @@ def collect_restore_contract(call):
         contract["iptv_config"] = {"error": _error_string(e)}
 
     try:
-        contract["profile_inventory"] = check_profile_inventory(
-            listing(ADDON_DATA_DIR)
-        )
+        contract["profile_inventory"] = check_profile_inventory(listing(ADDON_DATA_DIR))
     except Exception as e:
         contract["profile_inventory"] = {"error": _error_string(e)}
 
@@ -296,9 +417,11 @@ def collect_restore_contract(call):
     for directory in DUPLICATE_SCAN_DIRS:
         try:
             with_sizes = directory == IPTV_DIR  # reuse cached pulls
-            listings_by_dir[directory] = [
-                f.get("label", "") for f in listing(directory, with_sizes=with_sizes)
-            ]
+            # labelled_names, not a "" default: see its docstring. This site had
+            # the same phantom-duplicate flaw as the skinshortcuts scan in pull().
+            listings_by_dir[directory] = labelled_names(
+                listing(directory, with_sizes=with_sizes)
+            )[0]
         except Exception as e:
             listings_by_dir[directory] = e
     contract["duplicate_listing"] = check_duplicate_listing(listings_by_dir)
@@ -308,9 +431,7 @@ def collect_restore_contract(call):
         details_by_name = {}
         for f in iptv_files:
             name = f.get("label", "")
-            if not (
-                name.startswith("instance-settings-") and name.endswith(".xml")
-            ):
+            if not (name.startswith("instance-settings-") and name.endswith(".xml")):
                 continue
             try:
                 details = call(
@@ -334,29 +455,26 @@ def collect_restore_contract(call):
 
 
 def pull(host, device_class):
-    build = rpc(
-        host,
+    # Resolve the credential and port ONCE for the whole run: a missing credential
+    # fails here, before any request, with the named-variable error - never as a
+    # 401 halfway through a device pull.
+    auth = auth_header(*jsonrpc_credentials())
+    port = jsonrpc_port()
+
+    def call(method, params=None):
+        return rpc(host, method, params, auth=auth, port=port)
+
+    build = call(
         "XBMC.GetInfoLabels",
         {"labels": ["System.BuildVersion", "System.FriendlyName"]},
     )
-    addon = rpc(
-        host,
+    addon = call(
         "Addons.GetAddonDetails",
         {"addonid": "script.ezmaintenanceplusplus", "properties": ["version"]},
     )["addon"]
-    listing = rpc(
-        host,
-        "Files.GetDirectory",
-        {
-            "directory": "special://profile/addon_data/script.skinshortcuts/",
-            "media": "files",
-        },
-    )
-    names = [f["label"] for f in listing.get("files", [])]
-    from collections import Counter
 
-    dupes = sorted(n for n, k in Counter(names).items() if k > 1)
-
+    # Version check BEFORE the (much larger) contract pull: if the box is running
+    # the wrong build, nothing collected after this would be written anyway.
     on_box = addon["version"]
     expected = addon_version()
     if on_box != expected:
@@ -366,19 +484,44 @@ def pull(host, device_class):
             "  Deploy the version you are verifying to the box, then re-run."
             % (expected, on_box)
         )
-    return {
+
+    # One shared listing cache: the skinshortcuts directory below is the SAME
+    # listing the duplicate scan needs, and used to be pulled twice per run.
+    cache = {}
+    contract = collect_restore_contract(call, cache=cache)
+    try:
+        files = cache[(SKINSHORTCUTS_DIR, False)]
+    except KeyError:
+        # collect_restore_contract degrades a failed listing into a recorded error
+        # and caches nothing. These two fields are gate-consumed, so a silent []
+        # here would report "clean_single_layer" for a directory nobody read.
+        # Pull it directly so a genuine failure is loud, exactly as it was before.
+        files = list_directory(call, SKINSHORTCUTS_DIR)
+    names, unlabelled = labelled_names(files)
+    dupes = find_duplicates(names)
+
+    evidence = {
         "class": device_class,
-        "host": host,
+        # NOTE: the box's ADDRESS is deliberately not recorded. It is the only
+        # field this artifact ever carried that the box did not report - it was
+        # echoed straight back from --host - so it was never evidence, nothing
+        # consumes it (not the gate, not --diff), and this repo is public, so
+        # writing it here published the fleet's addressing on every run. The
+        # box identifies itself below via friendly_name/kodi_build, which ARE
+        # device-reported. Hashing the address was considered and rejected: an
+        # IPv4 address has far too little entropy for a digest to redact it.
         "friendly_name": build["System.FriendlyName"],
         "kodi_build": build["System.BuildVersion"],
         "addon_version_on_box": on_box,
         "skinshortcuts_vfs_entries": len(names),
         "skinshortcuts_duplicates": dupes,  # non-empty = a live key/disk split on the box
         "clean_single_layer": not dupes,
-        "restore_contract": collect_restore_contract(
-            lambda method, params=None: rpc(host, method, params)
-        ),
+        "restore_contract": contract,
     }
+    if unlabelled:
+        # Recorded, never silently dropped - see labelled_names().
+        evidence["skinshortcuts_unlabelled_entries"] = unlabelled
+    return evidence
 
 
 # --------------------------------------------------------------------------- #
@@ -404,7 +547,14 @@ def _diff_names(label, before_names, after_names, lines):
 
 
 def _check_errors(label, before, after, lines):
-    """Returns (skip, changed). A side that recorded an error cannot be diffed."""
+    """True if this section cannot be diffed (a side recorded an error or is absent),
+    having appended the reason to `lines`.
+
+    This used to return the same value twice as `(skip, changed)`, which read as if
+    the two could differ. They cannot, and the reason is worth stating: when a
+    section is undiffable the explanation has already been appended, so the caller
+    reports "changed" for exactly the same condition that made it skip. One value,
+    one meaning."""
     b_err = isinstance(before, dict) and before.get("error")
     a_err = isinstance(after, dict) and after.get("error")
     if b_err:
@@ -415,14 +565,12 @@ def _check_errors(label, before, after, lines):
         lines.append("  [%s] missing from before artifact" % label)
     if after is None:
         lines.append("  [%s] missing from after artifact" % label)
-    skip = bool(b_err or a_err or before is None or after is None)
-    return skip, skip
+    return bool(b_err or a_err or before is None or after is None)
 
 
 def _diff_iptv(before, after, lines):
-    skip, changed = _check_errors("iptv_config", before, after, lines)
-    if skip:
-        return changed
+    if _check_errors("iptv_config", before, after, lines):
+        return True  # the recorded reason is itself the finding
     b_sizes = {e["name"]: e.get("size") for e in before.get("instance_settings", [])}
     a_sizes = {e["name"]: e.get("size") for e in after.get("instance_settings", [])}
     changed = _diff_names("iptv_config", b_sizes, a_sizes, lines)
@@ -445,9 +593,8 @@ def _diff_iptv(before, after, lines):
 
 
 def _diff_inventory(before, after, lines):
-    skip, changed = _check_errors("profile_inventory", before, after, lines)
-    if skip:
-        return changed
+    if _check_errors("profile_inventory", before, after, lines):
+        return True  # the recorded reason is itself the finding
     changed = _diff_names(
         "addon_data",
         before.get("addon_data_entries", []),
@@ -465,9 +612,9 @@ def _diff_inventory(before, after, lines):
 
 
 def _diff_duplicates(before, after, lines):
-    skip, changed = _check_errors("duplicate_listing", before, after, lines)
-    if skip:
-        return changed
+    if _check_errors("duplicate_listing", before, after, lines):
+        return True  # the recorded reason is itself the finding
+    changed = False
     b_dupes = before.get("duplicates", {})
     a_dupes = after.get("duplicates", {})
     for directory in sorted(set(b_dupes) | set(a_dupes)):
@@ -488,9 +635,9 @@ def _diff_duplicates(before, after, lines):
 
 
 def _diff_shadow(before, after, lines):
-    skip, changed = _check_errors("shadow_probe", before, after, lines)
-    if skip:
-        return changed
+    if _check_errors("shadow_probe", before, after, lines):
+        return True  # the recorded reason is itself the finding
+    changed = False
     b_probes = {p.get("file"): p for p in before.get("probed", [])}
     a_probes = {p.get("file"): p for p in after.get("probed", [])}
     for f in sorted(set(b_probes) | set(a_probes)):
@@ -554,8 +701,18 @@ def diff_restore_contract(before_doc, after_doc):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--host")
+    ap = argparse.ArgumentParser(
+        description=(
+            "Pull live device evidence over Kodi JSON-RPC. Set %s and %s in the "
+            "environment first (there is no default credential); %s and %s are "
+            "optional." % (ENV_USER, ENV_PASSWORD, ENV_HOST, ENV_PORT)
+        )
+    )
+    ap.add_argument(
+        "--host",
+        default=os.environ.get(ENV_HOST) or None,
+        help="box address (defaults to $%s)" % ENV_HOST,
+    )
     ap.add_argument("--class", dest="device_class", choices=["tvos", "android"])
     ap.add_argument(
         "--diff",

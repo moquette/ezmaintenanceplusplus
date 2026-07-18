@@ -46,7 +46,7 @@ Everything is in `resources/lib/modules/wiz.py`:
 | `CreateZip`     | Stage the zip in `special://temp` when the destination is a VFS path (`://`), then `xbmcvfs.copy()` to the destination and remove the temp. |
 | `backup`        | Cancel cleanup uses `xbmcvfs.delete(backup_zip)` (VFS-safe).                                                                                |
 | `restoreFolder` | List the restore folder with `xbmcvfs.listdir()` instead of `os.listdir()`.                                                                 |
-| `restore`       | Copy a remote (`://`) zip to `special://temp` before `ExtractZip`, then drop the temp.                                                      |
+| `restore`       | Copy a remote (`://`) zip to `special://temp` before `ExtractWithProgress`, then drop the temp.                                             |
 
 The add-on id was changed to `script.ezmaintenanceplusplus` so it installs alongside the
 original without conflict. No behavior changes for local-path backups.
@@ -95,6 +95,49 @@ again:
     `onetap.py` were audited and do no raw userdata writes - the chokepoint lint above
     already covers them) - see the rationale and tracked follow-up in that tool's own
     `CONTRACT_FILES` comment.
+
+### Running a device verification
+
+`tools/verify_device.py` takes the box's JSON-RPC credential and address from the
+environment. This repo is public, so a credential or address committed here is a
+published one: no credential and no box address is baked into the tool's source, and
+the artifacts it writes no longer record the box's address either.
+
+> **Known gap (accepted, 2026-07-18):** git history before 2026-07-18 contains LAN
+> device addresses - in the `host` field of committed verification artifacts, in three
+> waiver rationales, and in an earlier revision of `RESUME.md`. All of it is redacted
+> at HEAD and the writer no longer emits `host` at all, but `git show` on an older
+> commit still reveals it. That history is deliberately NOT being rewritten: these are
+> non-routable private addresses (`192.168.7.x`) usable only from the LAN or tailnet,
+> and rewriting an evidence log is disproportionate to topology disclosure of that
+> kind. Going forward,
+> `tests/test_verify_device_checks.py::test_committed_verification_artifacts_carry_no_device_address`
+> scans the whole artifact, waiver prose included, and is deliberately not narrowed to
+> machine fields - a future waiver that types an IP into its justification fails the
+> suite.
+
+| Variable                | Required               | Meaning                                         |
+| ----------------------- | ---------------------- | ----------------------------------------------- |
+| `KODI_JSONRPC_USER`     | yes, for a device pull | JSON-RPC user (Settings > Services > Control)   |
+| `KODI_JSONRPC_PASSWORD` | yes, for a device pull | JSON-RPC password                               |
+| `KODI_JSONRPC_HOST`     | no                     | default for `--host`; an explicit `--host` wins |
+| `KODI_JSONRPC_PORT`     | no                     | defaults to Kodi's `8080`                       |
+
+```sh
+export KODI_JSONRPC_USER=<the box's JSON-RPC user>
+export KODI_JSONRPC_PASSWORD=<the box's JSON-RPC password>
+
+python3 tools/verify_device.py --host <firetv-ip>  --class android
+python3 tools/verify_device.py --host <appletv-ip> --class tvos
+
+# Offline: diff two artifacts (needs no credential and contacts nothing)
+python3 tools/verify_device.py --diff before.json after.json
+```
+
+There is **no fallback credential**. An unset user or password is a hard error naming
+the variables to set, never a silent retry against Kodi's stock defaults - a regression
+guarded by `tests/test_verify_device_checks.py`, which asserts on the source itself so
+re-introducing a default fails the suite even with a working environment.
 
 ## Repo, build, and tests
 

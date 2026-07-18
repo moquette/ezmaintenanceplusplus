@@ -2,6 +2,25 @@
 
 This file provides guidance to Claude Code when working in this repository.
 
+## MANDATORY: markdown house style
+
+Before writing or editing ANY `.md` file in this tree, follow the
+**`markdown-house-style`** skill at
+`~/Code/moquette/kodi/.claude/skills/markdown-house-style/SKILL.md`. It is the
+single standard for all five checkouts and every agent, with no exceptions.
+
+Non-negotiable summary:
+
+- No em dash, en dash, horizontal bar, robot emoji, or AI attribution anywhere.
+  The plain hyphen `-` is always fine.
+- Never begin a wrapped line with `+`, `-`, or `*`. CommonMark turns it into a
+  list item and splits your paragraph.
+- Never let an inline code span cross a line break. It strips the
+  list-continuation indent and leaves the next agent editing a stale copy.
+- Markdown is deliberately NOT auto-formatted here (removed from
+  `~/.claude/hooks/auto-format` on 2026-07-18, because prettier's markdown
+  printer relocates content between block containers). Do not add it back.
+
 ## READ FIRST: start at `TASKS.md`
 
 **`TASKS.md` is this project's task index.** It lists every open item and points

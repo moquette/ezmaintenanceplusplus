@@ -1,3 +1,12 @@
+v2026.07.19.6
+- Finishes the message change 2026.07.19.5 started. That release updated the
+  start-up message but left the restore dialog still saying "this box needs
+  attention - open EZ Maintenance++", which pointed at a repair that had just
+  been removed from the Tools menu. Both messages now say the same thing:
+  restore again, or restart the box. Each of those re-runs the repair by itself.
+- No behaviour changed. The same condition is detected, at the same moment, and
+  reported to the same place; only the wording of the one stale message moved.
+
 v2026.07.19.5
 - Apple TV: a restore no longer ends with "this box needs attention" when the box
   is fine. The check was counting the skin's own menu-protection copies as a

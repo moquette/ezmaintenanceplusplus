@@ -1587,8 +1587,39 @@ def test_locked_vocabulary_is_pinned(wiz):
         "the way it did before."
     )
     assert wiz.MSG_NEEDS_ATTENTION == (
-        "Restore Problem\nThis box needs attention - open EZ Maintenance++."
+        "Restore Problem\n"
+        "Your restore finished, but one setting may not have applied. "
+        "Restore again, or restart the box."
     )
+
+
+def test_attention_wording_matches_the_boot_check_toast():
+    """wiz's restore dialog and service.py's boot toast fire on the SAME condition,
+    so they must say the same thing.
+
+    They drifted once: 2026.07.19.5 rewrote the toast to name a real action but left
+    MSG_NEEDS_ATTENTION pointing at "open EZ Maintenance++" - a menu whose only
+    relevant entry that release had just deleted. One owner, one condition, two
+    different instructions, one of them dead. This pins them together so the next
+    reword cannot land in only one place.
+    """
+    import pathlib
+
+    from resources.lib.modules import wiz as wiz_mod
+
+    service_src = (pathlib.Path(wiz_mod.__file__).parents[3] / "service.py").read_text(
+        encoding="utf-8"
+    )
+
+    action = "Restore again, or restart the box."
+    assert action in wiz_mod.MSG_NEEDS_ATTENTION
+    assert action in service_src, (
+        "service.py's boot toast no longer carries the shared action sentence - "
+        "the two restore-attention messages have drifted apart again"
+    )
+    # Neither may route the owner back into a menu that has no repair on it.
+    assert "open EZ Maintenance++" not in wiz_mod.MSG_NEEDS_ATTENTION
+    assert "open EZ Maintenance++" not in service_src
 
 
 def test_attention_only_findings_auto_fix_silently(wiz, monkeypatch, tmp_path):

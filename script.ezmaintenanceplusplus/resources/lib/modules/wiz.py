@@ -793,8 +793,16 @@ MSG_PROBLEM = (
     "Some of your backup couldn't be restored, so this box may not work "
     "the way it did before."
 )
+# Names actions the owner can actually take. The old text ("open EZ
+# Maintenance++") pointed at a menu whose only relevant entry was "Purge stale
+# tvOS keys", removed in 2026.07.19.5 - so it sent her to a screen that no
+# longer had the fix on it. This is the SAME sentence service.py's boot check
+# already shows for the same condition; both named actions re-run the purge on
+# their own. Replaced, not added: the vocabulary is still four strings.
 MSG_NEEDS_ATTENTION = (
-    "Restore Problem\nThis box needs attention - open EZ Maintenance++."
+    "Restore Problem\n"
+    "Your restore finished, but one setting may not have applied. "
+    "Restore again, or restart the box."
 )
 
 

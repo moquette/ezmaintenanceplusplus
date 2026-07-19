@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.19.5" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.19.6" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,7 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+        v2026.07.19.6: Finishes the message change 2026.07.19.5 started. One restore message was still telling you to open EZ Maintenance++ and look for a repair that no longer appears in the menu. It now says the same thing the start-up message already says: restore again, or restart the box. Both of those re-run the repair on their own. Nothing else changed.
         v2026.07.19.5: After a restore on Apple TV, the box no longer says "this box needs attention" when nothing is wrong. It was misreading the skin's own menu-protection files as a fault. If a restore ever does leave something unapplied, the message now tells you what to do about it. The "Purge stale tvOS keys" item has been removed from the Tools menu: that repair already runs by itself whenever it is needed.
         v2026.07.19.4: A restore now KEEPS this box's name and its video cache buffer instead of taking the backup's and then asking you to fix them. The two questions that used to appear on the first start after a restore are gone. Both settings are still yours to change whenever you like, from Device Name and Video Cache Buffer in the add-on menu.
         v2026.07.19.3: Internal. The add-on clears its own stale compiled-code cache at startup, so the code that runs is always the code that shipped. Nothing user-facing changed.

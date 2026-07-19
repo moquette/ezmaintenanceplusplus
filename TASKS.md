@@ -34,7 +34,26 @@ Project rules + backup/restore contract: `CLAUDE.md`. Repo/build/release notes:
 
 ---
 
-## 🔴 OPEN - Restore defect A: restored skin settings are clobbered
+## 🟢 FIXED IN CODE - Restore defect A: restored skin settings are clobbered
+
+**FIXED 2026-07-18 (`be31322`), awaiting the same device gate as defect B.**
+`_apply_skin_settings` in `wiz.py` re-applies the restored skin settings IN
+MEMORY, one-shot, immediately before the restart, so the shutdown flush
+serializes the archive's values rather than the pre-restore ones. Captured early
+(tvOS vectoring drops the POSIX copy), guarded on the live skin, two-argument
+builtins only. The five false docstrings that armed this defect are corrected.
+Six tests, two mutation-checked.
+
+STILL OPEN in this area: A3, `lookandfeel.skin` itself. `_apply_boot_skin`
+writes it to disk only, which puts it in this same clobber class, so it is
+probably defeated whenever the restored skin differs from the live one. That
+needs one device run to settle before any code changes: restore an image whose
+skin differs, then read `Window(10000).Property(ezm_boot_skin)` and see which
+skin actually loads.
+
+### Historical record of the defect follows
+
+## 🔴 was OPEN - Restore defect A: restored skin settings are clobbered
 
 **Status: ROOT CAUSE CONFIRMED (empirically reproduced 2026-07-18). NOT FIXED.
 No code changed. Fix plan PROPOSED, not approved.**

@@ -3503,3 +3503,86 @@ def test_keyboard_result_reports_confirmation_honestly(wiz, monkeypatch):
     assert text == "half typed", "unconfirmed text must still be returned, not discarded"
     # legacy wrapper is unchanged for the sentinel callers (wiz backup naming, cache size)
     assert tools._get_keyboard(default="OfficeBox", cancel="-") == "-"
+
+
+# --------------------------------------------------------------------------- #
+# Restore defect B, the half that lost the tune-up permanently.
+#
+# prompt_buffer_after_restore OWNS the marker for the whole post-restore flow.
+# It used to clear it in a blanket finally, so a dialog destroyed by the skin's
+# 15s deferred menu rebuild (reproduced 2026-07-18: ReloadSkin tears down the
+# whole window stack) was read as an answer and the tune-up was gone forever,
+# silently. Only an explicit answer may consume the marker now.
+# See docs/restore-defect-b-reproduced-2026-07-18.md.
+# --------------------------------------------------------------------------- #
+
+
+def test_destroyed_buffer_prompt_does_not_consume_the_marker(wiz, monkeypatch):
+    """A torn-down dialog (-1) must leave the marker so the tune-up returns."""
+    tools = wiz.tools
+    tools.mark_buffer_prompt_pending()
+    monkeypatch.setattr(tools, "_recommended_mb", lambda: 128)
+    monkeypatch.setattr(
+        tools,
+        "_set_cache_mb",
+        lambda mb: (_ for _ in ()).throw(AssertionError("must not set on a non-answer")),
+    )
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: -1)
+
+    assert tools.prompt_buffer_after_restore() is True
+    assert tools.buffer_prompt_pending(), (
+        "a destroyed or cancelled dialog is NOT an answer; the marker must survive "
+        "so the prompt returns next boot"
+    )
+
+
+def test_explicit_keep_consumes_the_marker(wiz, monkeypatch):
+    """'Leave it as it is' IS an answer and must end the flow for good."""
+    tools = wiz.tools
+    tools.mark_buffer_prompt_pending()
+    monkeypatch.setattr(tools, "_recommended_mb", lambda: 128)
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 2)
+
+    assert tools.prompt_buffer_after_restore() is True
+    assert not tools.buffer_prompt_pending(), "an explicit answer must consume the marker"
+
+
+def test_unanswered_prompt_gives_up_after_bounded_boots(wiz, monkeypatch):
+    """The marker must not nag forever on a box nobody answers."""
+    tools = wiz.tools
+    tools.mark_buffer_prompt_pending()
+    monkeypatch.setattr(tools, "_recommended_mb", lambda: 128)
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: -1)
+
+    boots = 0
+    while tools.buffer_prompt_pending() and boots < 20:
+        tools.prompt_buffer_after_restore()
+        boots += 1
+
+    assert boots == tools._PROMPT_MAX_BOOTS, (
+        "must give up after exactly _PROMPT_MAX_BOOTS unanswered boots, got %d" % boots
+    )
+    assert not tools.buffer_prompt_pending()
+
+
+def test_legacy_marker_counts_as_zero_attempts(wiz, monkeypatch):
+    """A marker written before the attempt counter existed contains "1" and must
+    read as 0 attempts, not 1, so an upgraded box gets its full budget."""
+    tools = wiz.tools
+    tools.mark_buffer_prompt_pending()
+    with open(tools.BUFFER_PROMPT_MARKER) as f:
+        assert f.read().strip() == "1", "legacy format guard"
+    assert tools._prompt_attempts() == 0
+
+
+def test_crash_mid_prompt_is_not_an_answer(wiz, monkeypatch):
+    """If the dialog itself raises, that is not consent to drop the tune-up."""
+    tools = wiz.tools
+    tools.mark_buffer_prompt_pending()
+    monkeypatch.setattr(tools, "_recommended_mb", lambda: 128)
+    monkeypatch.setattr(
+        tools.dialog, "select", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+
+    assert tools.prompt_buffer_after_restore() is True
+    assert tools.buffer_prompt_pending(), "a crash must not consume the marker"

@@ -218,11 +218,20 @@ BUFFER_PROMPT_MARKER = translatePath(
     "special://home/userdata/addon_data/script.ezmaintenanceplusplus/.ezm_buffer_prompt"
 )
 
-# How many times a post-restore prompt is re-presented after a NON-ANSWER (cancelled or
-# destroyed - the two are indistinguishable through Kodi's Python API). Bounded so an
-# unattended box that keeps losing its dialogs cannot spin forever; an explicit answer
-# always exits on the first pass. See docs/restore-defect-b-reproduced-2026-07-18.md.
+# How many times a post-restore prompt is re-presented WITHIN one boot after a
+# NON-ANSWER (cancelled or destroyed - the two are indistinguishable through Kodi's
+# Python API). See docs/restore-defect-b-reproduced-2026-07-18.md.
 _PROMPT_MAX_ATTEMPTS = 5
+
+# How many BOOTS the prompt may go unanswered before the marker is cleared anyway.
+#
+# The marker used to be cleared unconditionally in a finally, so a dialog destroyed
+# by the skin's reload was read as an answer and the tune-up was lost permanently
+# and silently. Surviving a non-answer fixes that, but an unbounded marker would
+# nag on every boot forever on a box nobody answers. Three boots is the compromise:
+# a real teardown costs one wasted boot, a user who keeps dismissing it is left
+# alone after three, and either way the box keeps the values the restore gave it.
+_PROMPT_MAX_BOOTS = 3
 
 # First-ever-run flag: written the first time the boot service looks for it, making that
 # check exactly-once for the lifetime of this install (a rebuilt box has no addon_data,
@@ -251,6 +260,49 @@ def buffer_prompt_pending():
         return os.path.exists(BUFFER_PROMPT_MARKER)
     except Exception:
         return False
+
+
+def _prompt_attempts():
+    """How many boots have already shown this prompt without getting an answer.
+
+    Stored in the marker file itself, so there is no second piece of state to
+    strand. A legacy marker contains "1" and reads as 0 attempts, which is the
+    correct starting point for a marker written before this counter existed."""
+    try:
+        with open(BUFFER_PROMPT_MARKER) as f:
+            raw = (f.read() or "").strip()
+    except Exception:
+        return 0
+    try:
+        # legacy format: the literal "1" written by mark_buffer_prompt_pending
+        return 0 if raw in ("", "1") else int(raw.split(":", 1)[1])
+    except Exception:
+        return 0
+
+
+def _record_prompt_attempt():
+    """Note that the prompt was shown and NOT answered. Never raises.
+
+    Returns True if the marker survives (so the prompt returns next boot), False
+    once the attempt budget is spent and the marker has been cleared."""
+    n = _prompt_attempts() + 1
+    if n >= _PROMPT_MAX_BOOTS:
+        clear_buffer_prompt_marker()
+        try:
+            xbmc.log(
+                "%s : post-restore prompt unanswered after %d boots - giving up, "
+                "settings left as restored" % (AddonID, n),
+                xbmc.LOGWARNING,
+            )
+        except Exception:
+            pass
+        return False
+    try:
+        with open(BUFFER_PROMPT_MARKER, "w") as f:
+            f.write("attempts:%d" % n)
+    except Exception:
+        pass
+    return True
 
 
 def clear_buffer_prompt_marker():
@@ -387,14 +439,20 @@ def prompt_buffer_after_restore():
     """If a restore dropped the marker, offer to retune the video cache buffer for THIS
     device (the restore cloned the source box's buffer size). Three choices: set the
     recommended size, choose manually (the existing Buffer Size screen), or keep current.
-    The marker is deleted regardless of choice so it fires EXACTLY once. Fully defensive:
-    any failure is swallowed so the boot service can never be broken by it. Returns True
-    iff a prompt was shown (no marker => False, no prompt)."""
+
+    The marker is deleted on an EXPLICIT ANSWER only. A non-answer (Back, or the dialog
+    destroyed under us, which Kodi's API cannot distinguish) leaves the marker in place
+    so the tune-up returns on the next boot, bounded by _PROMPT_MAX_BOOTS. This step
+    owns the marker for the whole flow, so getting it wrong loses the tune-up entirely.
+
+    Fully defensive: any failure is swallowed so the boot service can never be broken by
+    it. Returns True iff a prompt was shown (no marker => False, no prompt)."""
     try:
         if not buffer_prompt_pending():
             return False
     except Exception:
         return False
+    answered = False
     try:
         rec = _recommended_mb()
         idx = dialog.select(
@@ -416,11 +474,25 @@ def prompt_buffer_after_restore():
                     pass
         elif idx == 1:
             advancedSettings()
-        # idx == 2 (Keep current) or -1 (cancel/back): do nothing.
+        # idx == 2 is an explicit "Leave it as it is": a real answer.
+        if idx in (0, 1, 2):
+            answered = True
     except Exception:
+        # A crash mid-prompt is not an answer either. The marker survives so the
+        # tune-up returns, bounded by _PROMPT_MAX_BOOTS.
         pass
     finally:
-        clear_buffer_prompt_marker()
+        # ONLY an explicit answer consumes the marker. idx == -1 means the user
+        # pressed Back OR the dialog was destroyed under us, and Kodi's Python API
+        # cannot tell those apart. The old code cleared the marker unconditionally
+        # here, so a teardown was read as an answer and the whole post-restore
+        # tune-up was lost permanently and silently. Reproduced 2026-07-18: the
+        # skin's 15s deferred menu rebuild ends in ReloadSkin(), which destroyed
+        # this very dialog. See docs/restore-defect-b-reproduced-2026-07-18.md.
+        if answered:
+            clear_buffer_prompt_marker()
+        else:
+            _record_prompt_attempt()
     return True
 
 
@@ -442,6 +514,12 @@ def prompt_devicename_after_restore():
         # never advance the flow; it must be re-presented, prefilled, a bounded number of
         # times. Explicit choices (Keep, or a confirmed keyboard) still exit immediately.
         # See docs/restore-defect-b-reproduced-2026-07-18.md.
+        # Bounded re-present WITHIN this boot. A tight loop cannot outlive a skin
+        # reload (the whole window stack is gone for ~0.3s, so every re-presented
+        # dialog returns -1 instantly and the budget burns in microseconds), which
+        # is why the real protection is the surviving marker in the buffer step:
+        # a teardown costs one wasted boot, not the tune-up. This loop only helps
+        # the case where the user dismissed by accident and is still sitting there.
         prefill = cur
         for _attempt in range(_PROMPT_MAX_ATTEMPTS):
             idx = dialog.select(

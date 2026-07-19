@@ -1,3 +1,11 @@
+v2026.07.18.2
+- Backing up to a location inside Kodi's own storage now warns first. On Apple
+  TV everything Kodi owns lives in an area the system may clear to free space,
+  and a wipe or reinstall removes it, so a backup saved there can be gone at the
+  moment it is needed. The browse dialog offers that location as its starting
+  point, which made it the easiest one to pick by accident. USB, network and
+  Dropbox destinations are unaffected and are not warned about.
+
 v2026.07.18.1
 - Restoring a skin setting whose value contains a comma no longer corrupts it.
   Values are passed to Kodi's Skin.SetString builtin, and Kodi splits builtin

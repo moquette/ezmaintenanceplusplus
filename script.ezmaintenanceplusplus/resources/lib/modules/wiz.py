@@ -357,6 +357,8 @@ def backup(mode="full"):
     ):
         return
     backup_zip = translatePath(os.path.join(backupdir, name))
+    if not _confirm_destination_survives_a_purge(backup_zip):
+        return
     exclude_database = [".pyo", ".log"]
 
     try:
@@ -550,6 +552,69 @@ def _keep_n():
         return int(control.setting("backup.keep") or "0")
     except:
         return 0
+
+
+def _purgeable_destination(backup_zip):
+    """True when this backup would be written inside tvOS's purgeable Caches tree.
+
+    On tvOS everything Kodi owns lives under
+    ``<container>/Library/Caches/Kodi`` (verified on hardware 2026-07-18). iOS and
+    tvOS may evict Library/Caches under storage pressure, and Apple excludes it
+    from iCloud and Finder backups - which is precisely the event a backup exists
+    to survive. A backup stored there is destroyed by the same purge that destroys
+    what it was protecting, and no platform backup covers it either.
+
+    This is a real hazard rather than a theoretical one because the destination is
+    browsed: `download.path` defaults to empty, and on tvOS the browse dialog's
+    home IS special://home, i.e. inside Caches. Picking the offered default is the
+    easiest thing a user can do.
+
+    Path-based and deliberately not tvOS-gated: any destination under the Kodi
+    home is self-defeating on every platform (a wipe or reinstall takes it), and
+    on tvOS it is additionally purgeable. Network and Dropbox destinations do not
+    resolve here and are unaffected."""
+    try:
+        dest = os.path.normpath(str(backup_zip or "")).replace("\\", "/")
+    except Exception:
+        return False
+    if not dest or "://" in dest:
+        return False  # unresolved VFS path (nfs://, smb://) - not a local file
+    lower = dest.lower()
+    if "/library/caches/" in lower:
+        return True
+    try:
+        home = os.path.normpath(translatePath("special://home/")).replace("\\", "/")
+    except Exception:
+        return False
+    if not home or home in (".", "/"):
+        return False
+    return lower.startswith(home.rstrip("/").lower() + "/")
+
+
+def _confirm_destination_survives_a_purge(backup_zip):
+    """Warn before writing a backup somewhere it cannot survive. True = proceed.
+
+    Warns rather than refuses: a deliberate scratch backup before a risky change is
+    legitimate, and this add-on's contract is truthful reporting, not paternalism.
+    But it must never be SILENT - the failure mode is discovering at restore time
+    that the backup is gone, which is exactly when it cannot be re-made."""
+    try:
+        if not _purgeable_destination(backup_zip):
+            return True
+        return bool(
+            ui.confirm(
+                "This backup would be saved inside Kodi's own storage.\n\n"
+                "Apple TV can clear that area to free space, and a wipe or "
+                "reinstall removes it - so this backup may not be there when you "
+                "need it. A USB or network location, or Dropbox, is safer.\n\n"
+                "Save it here anyway?",
+                heading=AddonTitle,
+                yeslabel="Save anyway",
+                nolabel="Pick another",
+            )
+        )
+    except Exception:
+        return True  # never block a backup on a guard failure
 
 
 def _rotate_vfs(backupdir, protect=None):

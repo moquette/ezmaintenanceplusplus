@@ -3876,3 +3876,80 @@ def test_recommendation_still_respects_the_ceiling(wiz, monkeypatch):
     tools = wiz.tools
     monkeypatch.setattr(tools, "_total_ram_mb", lambda: 65536)
     assert tools._recommended_mb() <= 200
+
+
+def test_purgeable_destination_flags_the_tvos_caches_tree(wiz, monkeypatch):
+    """A backup inside Library/Caches is destroyed by the purge it insures against.
+
+    On tvOS Kodi's whole tree lives under <container>/Library/Caches/Kodi, tvOS may
+    evict that under storage pressure, and Apple excludes it from iCloud and Finder
+    backups. Storing a backup there means losing it in the same event that makes it
+    necessary - and the browse dialog offers exactly that location as its home."""
+    monkeypatch.setattr(wiz, "translatePath", lambda p: "/var/mobile/Containers/Data/"
+                        "Application/ABC/Library/Caches/Kodi/", raising=False)
+    caches = ("/var/mobile/Containers/Data/Application/ABC/Library/Caches/Kodi/"
+              "backups/my_backup.zip")
+    assert wiz._purgeable_destination(caches) is True
+
+
+def test_purgeable_destination_allows_safe_locations(wiz, monkeypatch):
+    """USB, network and Dropbox destinations must NOT be warned about.
+
+    A guard that cries wolf on a correct choice trains the user to dismiss it, which
+    costs more than it saves."""
+    monkeypatch.setattr(wiz, "translatePath", lambda p: "/var/mobile/Containers/Data/"
+                        "Application/ABC/Library/Caches/Kodi/", raising=False)
+    for safe in (
+        "/private/var/mobile/Media/backups/my_backup.zip",
+        "nfs://192.168.7.10/vol/backups/my_backup.zip",
+        "smb://nas/backups/my_backup.zip",
+        "/Users/someone/Backups/my_backup.zip",
+        "",
+    ):
+        assert wiz._purgeable_destination(safe) is False, safe
+
+
+def test_backup_warns_but_still_lets_the_user_proceed(wiz, monkeypatch):
+    """Warn, do not refuse - and never block a backup because the guard itself failed."""
+    monkeypatch.setattr(wiz, "_purgeable_destination", lambda p: True)
+    monkeypatch.setattr(wiz.ui, "confirm", lambda *a, **k: True, raising=False)
+    assert wiz._confirm_destination_survives_a_purge("/x/Library/Caches/Kodi/b.zip") is True
+    monkeypatch.setattr(wiz.ui, "confirm", lambda *a, **k: False, raising=False)
+    assert wiz._confirm_destination_survives_a_purge("/x/Library/Caches/Kodi/b.zip") is False
+
+    def boom(*a, **k):
+        raise RuntimeError("guard broke")
+
+    monkeypatch.setattr(wiz, "_purgeable_destination", boom)
+    assert wiz._confirm_destination_survives_a_purge("/anything.zip") is True
+
+
+def test_backup_consults_the_purge_guard_before_building_the_zip(wiz, monkeypatch, tmp_path):
+    """backup() must CALL the guard and honour 'Pick another'.
+
+    Testing _confirm_destination_survives_a_purge directly does not cover the call
+    site: deleting the call from backup() leaves those unit tests green, and the only
+    thing that then fails is the storage-fingerprint gate - which fires on ANY edit to
+    wiz.py, including correct ones, so it is not evidence about this behaviour. A
+    guard nobody calls is worth nothing, and this pins the wiring."""
+    _stub_backup_env(wiz, monkeypatch, tmp_path)
+    seen = {"asked": False, "zip": False}
+
+    def _guard(dest):
+        seen["asked"] = True
+        return False  # user chose "Pick another"
+
+    def _no_zip(*a, **k):
+        seen["zip"] = True
+        return False
+
+    monkeypatch.setattr(wiz, "_confirm_destination_survives_a_purge", _guard)
+    monkeypatch.setattr(wiz, "CreateZip", _no_zip)
+    monkeypatch.setattr(wiz.ui, "confirm", lambda *a, **k: True)
+    wiz.backup(mode="full")
+
+    assert seen["asked"] is True, "backup() must consult the purge guard"
+    assert seen["zip"] is False, (
+        "declining the destination must abort BEFORE any zip is built - otherwise the "
+        "warning is cosmetic and the backup still lands somewhere it cannot survive"
+    )

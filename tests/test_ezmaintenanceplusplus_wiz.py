@@ -1175,7 +1175,11 @@ def test_post_restore_step_numbers_match_the_order_they_run_in():
     ), "device name runs first"
 
     assert '"Finish setup (1 of 2): Device name"' in src
-    assert '"Finish setup (2 of 2): Video quality"' in src
+    # Renamed 2026-07-18. "Video quality" was actively wrong: the setting is the
+    # cache buffer, which affects stall resistance, not picture quality. A user
+    # told otherwise reasonably expects a sharper image, does not get one, and
+    # concludes the feature is broken. One name is now used everywhere.
+    assert '"Finish setup (2 of 2): Video cache buffer"' in src
 
 
 # --------------------------------------------------------------------------- #
@@ -3712,3 +3716,47 @@ def test_no_test_probes_skin_settings_via_the_mutating_api(wiz):
         if any(n in t for n in needles):
             hits.append(p.name)
     assert not hits, "mutating skin-setting probe used in: %s" % sorted(set(hits))
+
+
+# --------------------------------------------------------------------------- #
+# Video cache buffer: the recommendation must be a size Kodi actually OFFERS.
+#
+# A value outside Kodi's list is honored at runtime (CSettingInt::CheckValidity
+# skips validation when a dynamic filler is present), but merely opening that
+# screen in Kodi's own GUI can snap it to a listed value. The fleet ran 200 on
+# Apple TV and 165/166 on Fire TV, none of them listed, so every box carried
+# that hazard silently.
+# --------------------------------------------------------------------------- #
+
+
+def test_recommendation_is_always_a_size_kodi_offers(wiz, monkeypatch):
+    tools = wiz.tools
+    for total in (0, 512, 1024, 1655, 2048, 3072, 4096, 8192, 16384):
+        monkeypatch.setattr(tools, "_total_ram_mb", lambda t=total: t)
+        rec = tools._recommended_mb()
+        assert rec in tools._KODI_CACHE_SIZES, (
+            "total=%s produced %s, which Kodi's GUI does not offer and may snap"
+            % (total, rec)
+        )
+
+
+def test_snap_rounds_down_never_up(wiz):
+    """Down, not nearest. Too large costs resident memory the OS cannot reclaim,
+    and on tvOS an allocation failure is an uncatchable kill; too small only
+    shortens a buffer on a workload that already has more depth than it needs."""
+    tools = wiz.tools
+    for raw, expect in ((200, 192), (165, 128), (100, 96), (128, 128), (16, 16)):
+        assert tools._snap_to_kodi_size(raw) == expect, raw
+
+
+def test_snap_never_returns_below_the_smallest_offered(wiz):
+    tools = wiz.tools
+    assert tools._snap_to_kodi_size(0) == min(tools._KODI_CACHE_SIZES)
+    assert tools._snap_to_kodi_size(-5) == min(tools._KODI_CACHE_SIZES)
+
+
+def test_recommendation_still_respects_the_ceiling(wiz, monkeypatch):
+    """A huge-RAM box must not be recommended an unbounded buffer."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_total_ram_mb", lambda: 65536)
+    assert tools._recommended_mb() <= 200

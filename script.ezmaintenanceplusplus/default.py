@@ -89,7 +89,7 @@ def CATEGORIES():
         isFolder=True,
     )
     CreateDir(
-        "Advanced Settings (Buffer Size)",
+        "Video Cache Buffer",
         "ur",
         "adv_settings",
         ADDON_ICON,

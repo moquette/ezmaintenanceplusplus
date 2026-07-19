@@ -128,13 +128,50 @@ def _total_ram_mb():
         return 0
 
 
+# Kodi's OFFERED cache sizes (ServicesSettings.cpp). A value outside this list is
+# honored at runtime, because CSettingInt::CheckValidity skips validation when a
+# dynamic filler is present, BUT merely opening that screen in Kodi's own GUI can
+# snap it to a listed value. The fleet ran 200 (Apple TV) and 165/166 (Fire TV),
+# none of which are listed, so every box carried that hazard silently.
+_KODI_CACHE_SIZES = (16, 20, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024)
+
+
+def _snap_to_kodi_size(mb):
+    """Largest OFFERED size not exceeding mb (never below the smallest offered).
+
+    Rounding DOWN, not to nearest: the failure mode of too large is resident memory
+    the OS cannot reclaim, and on tvOS an allocation failure is an uncatchable kill,
+    while the failure mode of too small is a shorter buffer on a workload that
+    already has far more depth than it needs."""
+    below = [s for s in _KODI_CACHE_SIZES if s <= mb]
+    return below[-1] if below else _KODI_CACHE_SIZES[0]
+
+
 def _recommended_mb():
-    """A STABLE recommendation off TOTAL RAM (a constant) - never the drifting free memory.
-    The buffer is ~1x RAM per stream on Omega, so ~10% of total is safe; clamp to 50-200 MB."""
+    """Recommend a cache buffer for THIS device, snapped to a size Kodi actually offers.
+
+    Sized off TOTAL RAM deliberately: it is a constant, so the recommendation does not
+    drift between boots the way free memory does.
+
+    Known limits of this heuristic, recorded rather than pretended away:
+      * On tvOS `System.Memory(total)` is `sysctl HW_MEMSIZE`, the DEVICE's physical
+        RAM, which has no relationship to the per-app jetsam budget. Both Apple TV
+        tiers compute above the ceiling and therefore land on it, so this is
+        effectively a constant there, not a device-aware value.
+      * The 10 percent factor and the 50/200 bounds were asserted when written, never
+        derived from a measurement or a Kodi source citation.
+      * Measured 2026-07-18 from a real jetsam report: Kodi's LIFETIME peak footprint
+        on an Apple TV is about 69 MB, so a 200 MB buffer had never actually been
+        allocated. Live IPTV never fills it either (a realtime stream is consumed as
+        fast as it arrives); only debrid/HTTP VOD does.
+
+    The snap is the part that matters and is safe to ship on its own: it removes the
+    GUI hazard above without changing the sizing policy. Changing the 10 percent
+    factor or the ceiling is an owner decision and is NOT made here."""
     total = _total_ram_mb()
     if total <= 0:
-        return 100
-    return max(50, min(200, int(total * 0.10)))
+        return _snap_to_kodi_size(100)
+    return _snap_to_kodi_size(max(50, min(200, int(total * 0.10))))
 
 
 def _clean_stale_advancedsettings():
@@ -457,9 +494,9 @@ def prompt_buffer_after_restore():
     try:
         rec = _recommended_mb()
         idx = dialog.select(
-            "Finish setup (2 of 2): Video quality",
+            "Finish setup (2 of 2): Video cache buffer",
             [
-                "Use the recommended video buffer - %d MB (best for this device)" % rec,
+                "Use the recommended cache buffer - %d MB (best for this device)" % rec,
                 "Pick a different amount myself...",
                 "Leave it as it is",
             ],

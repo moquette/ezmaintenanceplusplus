@@ -516,116 +516,6 @@ def test_order_userdata_first_puts_settings_before_addons(wiz):
 # --------------------------------------------------------------------------- #
 # Post-restore, per-device video-cache-buffer retune.
 # --------------------------------------------------------------------------- #
-def test_restore_writes_buffer_prompt_marker(wiz, monkeypatch, tmp_path):
-    """(a) a successful restore drops the persistent buffer-prompt marker (AFTER the
-    extract, before the restart) so the boot service knows to retune the buffer."""
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setattr(wiz.control, "HOME", str(home))
-    monkeypatch.setattr(wiz, "ExtractWithProgress", lambda *a, **k: False)
-    monkeypatch.setattr(wiz.ui, "ask_restart", lambda *a, **k: None)
-
-    tools = wiz.tools
-    # Ensure a clean slate.
-    tools.clear_buffer_prompt_marker()
-    assert not tools.buffer_prompt_pending()
-
-    src = tmp_path / "backup.zip"
-    _make_valid_zip(src, [("userdata/guisettings.xml", "<settings />")])
-
-    wiz.restore(str(src), confirm=False, wipe=False)
-
-    assert tools.buffer_prompt_pending(), "restore must drop the buffer-prompt marker"
-
-
-def test_prompt_buffer_sets_recommended_and_clears(wiz, monkeypatch):
-    """(b) with the marker present, choosing 'Set' calls _set_cache_mb(_recommended_mb())
-    and deletes the marker (so it fires exactly once)."""
-    tools = wiz.tools
-    tools.mark_buffer_prompt_pending()
-    assert tools.buffer_prompt_pending()
-
-    monkeypatch.setattr(tools, "_recommended_mb", lambda: 128)
-    sets = []
-    monkeypatch.setattr(tools, "_set_cache_mb", lambda mb: sets.append(mb) or True)
-    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)
-
-    shown = tools.prompt_buffer_after_restore()
-
-    assert shown is True
-    assert sets == [128], "must set the device-recommended size"
-    assert not tools.buffer_prompt_pending(), "marker must be cleared after prompting"
-
-
-def test_prompt_buffer_no_marker_no_prompt(wiz, monkeypatch):
-    """(c) no marker => no prompt: the dialog is never shown and nothing is set."""
-    tools = wiz.tools
-    tools.clear_buffer_prompt_marker()
-    assert not tools.buffer_prompt_pending()
-
-    calls = []
-    monkeypatch.setattr(
-        tools.dialog, "select", lambda *a, **k: calls.append("select") or -1
-    )
-    monkeypatch.setattr(tools, "_set_cache_mb", lambda mb: calls.append("set") or True)
-
-    shown = tools.prompt_buffer_after_restore()
-
-    assert shown is False
-    assert calls == [], "no marker must mean no dialog and no cache change"
-
-
-def test_prompt_buffer_let_me_choose_opens_screen_and_clears(wiz, monkeypatch):
-    """'Let me choose' routes to the existing Buffer Size screen and still clears the
-    marker (so a manual choice also disarms the one-time prompt)."""
-    tools = wiz.tools
-    tools.mark_buffer_prompt_pending()
-
-    opened = []
-    monkeypatch.setattr(tools, "advancedSettings", lambda: opened.append(True))
-    monkeypatch.setattr(
-        tools,
-        "_set_cache_mb",
-        lambda mb: (_ for _ in ()).throw(
-            AssertionError("must not auto-set on 'Let me choose'")
-        ),
-    )
-    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 1)
-
-    shown = tools.prompt_buffer_after_restore()
-
-    assert shown is True
-    assert opened == [True]
-    assert not tools.buffer_prompt_pending()
-
-
-def test_prompt_buffer_keep_current_changes_nothing_but_clears(wiz, monkeypatch):
-    """'Keep current' (or cancel) changes nothing yet still clears the marker."""
-    tools = wiz.tools
-    tools.mark_buffer_prompt_pending()
-
-    monkeypatch.setattr(
-        tools,
-        "_set_cache_mb",
-        lambda mb: (_ for _ in ()).throw(
-            AssertionError("must not set the cache on 'Keep current'")
-        ),
-    )
-    monkeypatch.setattr(
-        tools,
-        "advancedSettings",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("must not open the screen on 'Keep current'")
-        ),
-    )
-    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 2)
-
-    shown = tools.prompt_buffer_after_restore()
-
-    assert shown is True
-    assert not tools.buffer_prompt_pending()
-
-
 def test_restore_no_wipe_still_overlays(wiz, monkeypatch, tmp_path):
     """(f) the normal (wipe=False) path is unchanged: it never wipes, it extracts, and it
     reaches the restart prompt."""
@@ -704,141 +594,6 @@ def test_set_devicename_failure_does_not_touch_file(wiz, monkeypatch):
         ),
     )
     assert tools._set_devicename("NewName") is False
-
-
-def test_prompt_devicename_rename_sets_notifies_and_prefills(wiz, monkeypatch):
-    """'Rename' -> keyboard PREFILLED with the current name -> _set_devicename(entered),
-    a confirmation notification, returns True."""
-    tools = wiz.tools
-    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
-    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)  # Rename
-
-    kb = {}
-
-    def fake_kb(default="", heading="", hidden=False):
-        kb["default"] = default
-        return True, "Living Room"
-
-    monkeypatch.setattr(tools, "_keyboard_result", fake_kb)
-    sets = []
-    monkeypatch.setattr(tools, "_set_devicename", lambda n: sets.append(n) or True)
-    notes = []
-    monkeypatch.setattr(tools.dialog, "notification", lambda *a, **k: notes.append(a))
-
-    assert tools.prompt_devicename_after_restore() is True
-    assert sets == ["Living Room"]
-    assert kb["default"] == "OfficeBox", (
-        "keyboard must be prefilled with the current name"
-    )
-    assert notes, "a confirmation notification must be shown"
-
-
-@pytest.mark.parametrize(
-    "select_ret, kb_ret, why",
-    [
-        (1, "Living Room", "Keep"),
-        (-1, "Living Room", "cancel/back on the first select"),
-        (0, "", "empty entry"),
-        (0, "   ", "whitespace-only entry"),
-        (0, "OfficeBox", "name unchanged"),
-    ],
-)
-def test_prompt_devicename_no_change_paths(wiz, monkeypatch, select_ret, kb_ret, why):
-    """Every non-rename path leaves the device name untouched (no _set_devicename call).
-
-    Note -1 now RE-PRESENTS rather than advancing (defect B), so that case exhausts
-    _PROMPT_MAX_ATTEMPTS and still ends up changing nothing, which is the property here."""
-    tools = wiz.tools
-    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
-    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: select_ret)
-    monkeypatch.setattr(tools, "_keyboard_result", lambda **k: (True, kb_ret))
-    monkeypatch.setattr(
-        tools,
-        "_set_devicename",
-        lambda n: (_ for _ in ()).throw(AssertionError("must not set on: " + why)),
-    )
-    assert tools.prompt_devicename_after_restore() is False, why
-
-
-def test_prompt_devicename_set_fails_shows_error_no_notification(wiz, monkeypatch):
-    """A rejected name (live set returns False) surfaces an error and shows NO success
-    notification (the silent-no-op gap the reviewers flagged)."""
-    tools = wiz.tools
-    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
-    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)
-    monkeypatch.setattr(tools, "_keyboard_result", lambda **k: (True, "Living Room"))
-    monkeypatch.setattr(tools, "_set_devicename", lambda n: False)
-    notes = []
-    monkeypatch.setattr(tools.dialog, "notification", lambda *a, **k: notes.append(a))
-    errs = []
-    monkeypatch.setattr(tools.ui, "error", lambda *a, **k: errs.append(a))
-
-    assert tools.prompt_devicename_after_restore() is False
-    assert notes == [], "no success notification when the set failed"
-    assert errs, "a failure message must be surfaced"
-
-
-def test_prompt_devicename_notification_raise_still_true(wiz, monkeypatch):
-    """If the set succeeds but the notification call raises, the rename still counts (True)."""
-    tools = wiz.tools
-    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
-    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)
-    monkeypatch.setattr(tools, "_keyboard_result", lambda **k: (True, "Living Room"))
-    monkeypatch.setattr(tools, "_set_devicename", lambda n: True)
-
-    def boom(*a, **k):
-        raise RuntimeError("notification backend down")
-
-    monkeypatch.setattr(tools.dialog, "notification", boom)
-    assert tools.prompt_devicename_after_restore() is True
-
-
-def test_prompt_after_restore_runs_devicename_before_buffer(wiz, monkeypatch):
-    """The combined flow runs the device-name step BEFORE the buffer step (identity first)."""
-    tools = wiz.tools
-    tools.mark_buffer_prompt_pending()
-    order = []
-    monkeypatch.setattr(
-        tools, "prompt_devicename_after_restore", lambda: order.append("devicename")
-    )
-    monkeypatch.setattr(
-        tools, "prompt_buffer_after_restore", lambda: order.append("buffer") or True
-    )
-    assert tools.prompt_after_restore() is True
-    assert order == ["devicename", "buffer"], order
-
-
-def test_prompt_after_restore_no_marker_noop(wiz, monkeypatch):
-    """No marker => neither step runs and nothing is prompted."""
-    tools = wiz.tools
-    tools.clear_buffer_prompt_marker()
-    calls = []
-    monkeypatch.setattr(
-        tools, "prompt_devicename_after_restore", lambda: calls.append("d")
-    )
-    monkeypatch.setattr(
-        tools, "prompt_buffer_after_restore", lambda: calls.append("b") or False
-    )
-    assert tools.prompt_after_restore() is False
-    assert calls == []
-
-
-def test_prompt_after_restore_devicename_raise_still_clears_marker(wiz, monkeypatch):
-    """Exactly-once holds even if the device-name step RAISES: the buffer step still runs
-    and clears the marker, so the whole flow never re-fires on the next boot."""
-    tools = wiz.tools
-    tools.mark_buffer_prompt_pending()
-
-    def boom():
-        raise RuntimeError("devicename step blew up")
-
-    monkeypatch.setattr(tools, "prompt_devicename_after_restore", boom)
-    monkeypatch.setattr(
-        tools.dialog, "select", lambda *a, **k: 2
-    )  # buffer: Keep current
-
-    assert tools.prompt_after_restore() is True
-    assert not tools.buffer_prompt_pending(), "marker must be cleared despite the raise"
 
 
 def test_write_guisetting_updates_existing_and_clears_default(wiz, tmp_path):
@@ -1152,34 +907,6 @@ def test_restore_does_not_toggle_any_addon(wiz, monkeypatch, tmp_path):
     assert not any("SetAddonEnabled" in c for c in calls), (
         "a restore must never enable/disable an add-on"
     )
-
-
-def test_post_restore_step_numbers_match_the_order_they_run_in():
-    """`prompt_after_restore` runs the device-name step FIRST, then the buffer step.
-    The headings said the opposite, so the first thing a restored box asked was
-    labelled "2 of 2"."""
-    from pathlib import Path
-
-    src = (
-        Path(__file__).parent.parent
-        / "script.ezmaintenanceplusplus"
-        / "resources"
-        / "lib"
-        / "modules"
-        / "tools.py"
-    ).read_text(encoding="utf-8")
-
-    flow = src[src.index("def prompt_after_restore") :]
-    assert flow.index("prompt_devicename_after_restore()") < flow.index(
-        "prompt_buffer_after_restore()"
-    ), "device name runs first"
-
-    assert '"Finish setup (1 of 2): Device name"' in src
-    # Renamed 2026-07-18. "Video quality" was actively wrong: the setting is the
-    # cache buffer, which affects stall resistance, not picture quality. A user
-    # told otherwise reasonably expects a sharper image, does not get one, and
-    # concludes the feature is broken. One name is now used everywhere.
-    assert '"Finish setup (2 of 2): Video cache buffer"' in src
 
 
 # --------------------------------------------------------------------------- #
@@ -1916,15 +1643,150 @@ def test_attention_surviving_auto_fix_needs_attention(wiz, monkeypatch, tmp_path
     assert "x.xml" not in oks[0], "key paths belong in the log"
 
 
-def test_restore_arms_both_boot_markers(wiz, monkeypatch, tmp_path):
-    """A finished restore arms the tune-up marker AND the new restore self-check
-    marker (final certainty lives after the restart, where settings are live)."""
+# --------------------------------------------------------------------------- #
+# _preserve_device_settings, tested DIRECTLY.
+#
+# These exist because the end-to-end preserve tests cannot see this function's own
+# tvOS vector ordering: _apply_boot_skin runs immediately afterwards and calls
+# nsud.persist_one("guisettings.xml") a SECOND time, which masks a preserve that
+# vectored before its own writes. That masking disappears exactly when the archive
+# records no skin - _apply_boot_skin returns early with "none" and never vectors - so
+# the end-to-end suite is green while an Apple TV silently reopens carrying the SOURCE
+# box's device name. Proven by mutation on 2026-07-19: moving persist_one above the
+# writes was NOT caught by any end-to-end test.
+# --------------------------------------------------------------------------- #
+def _preserve_env(wiz, monkeypatch, tmp_path, archive_name="Golden Image Box"):
+    """A userdata dir holding an ARCHIVE-valued guisettings.xml, plus a persist_one
+    fake that snapshots what the file said AT THE MOMENT it was called."""
+    userdata = tmp_path / "userdata"
+    userdata.mkdir(parents=True, exist_ok=True)
+    gs = userdata / "guisettings.xml"
+    gs.write_text(
+        '<settings version="2">'
+        '<setting id="services.devicename">%s</setting>'
+        '<setting id="filecache.memorysize">200</setting>'
+        "</settings>" % archive_name
+    )
+    monkeypatch.setattr(wiz.control, "USERDATA", str(userdata))
+
+    snapshots = []
+    from resources.lib.modules import nsud
+
+    def _fake_persist_one(rel, log=None, **k):
+        try:
+            snapshots.append((rel, _setting_value(gs, "services.devicename")))
+        except Exception:
+            snapshots.append((rel, None))
+        return True
+
+    monkeypatch.setattr(nsud, "persist_one", _fake_persist_one)
+    return gs, snapshots
+
+
+def _setting_value(path, sid):
+    import xml.etree.ElementTree as ET
+
+    for n in ET.parse(str(path)).getroot().iter("setting"):
+        if n.get("id") == sid:
+            return (n.text or "").strip()
+    return None
+
+
+def test_preserve_vectors_only_after_its_own_writes(wiz, monkeypatch, tmp_path):
+    """The tvOS vector must carry THIS box's values, not the archive's.
+
+    On tvOS the NSUserDefaults key SHADOWS guisettings.xml and Kodi never copies a key
+    back to disk, so whatever persist_one captured is what the box boots with. A vector
+    taken before the write-back publishes the archive's device name permanently. This
+    asserts against _preserve_device_settings alone, so no later persist_one can
+    launder the ordering."""
+    gs, snapshots = _preserve_env(wiz, monkeypatch, tmp_path)
+
+    wiz._preserve_device_settings(
+        lambda m: None,
+        {"services.devicename": "Living Room", "filecache.memorysize": 96},
+    )
+
+    assert snapshots, "the preserved file must be vectored into NSUserDefaults"
+    assert [s for _rel, s in snapshots] == ["Living Room"], (
+        "every vector must see this box's preserved name; a snapshot of %r means "
+        "persist_one ran before the write-back and published the ARCHIVE's value"
+        % [s for _rel, s in snapshots]
+    )
+    assert _setting_value(gs, "services.devicename") == "Living Room"
+    assert _setting_value(gs, "filecache.memorysize") == "96"
+
+
+def test_preserve_vectors_after_writing_every_value_not_just_the_first(
+    wiz, monkeypatch, tmp_path
+):
+    """Both preserved values must be in the file before the vector, not just one.
+
+    The ids are written in a loop; a vector inside that loop would carry the first
+    value and the archive's second. Asserted on the BUFFER, which sorts after the
+    device name, so it is the one an early vector would miss."""
+    gs, snapshots = _preserve_env(wiz, monkeypatch, tmp_path)
+    seen_buffer = []
+    from resources.lib.modules import nsud
+
+    def _snap(rel, log=None, **k):
+        seen_buffer.append(_setting_value(gs, "filecache.memorysize"))
+        return True
+
+    monkeypatch.setattr(nsud, "persist_one", _snap)
+
+    wiz._preserve_device_settings(
+        lambda m: None,
+        {"services.devicename": "Living Room", "filecache.memorysize": 96},
+    )
+
+    assert seen_buffer == ["96"], (
+        "the vector must run after EVERY preserved value is written; saw %r"
+        % seen_buffer
+    )
+
+
+def test_preserve_with_nothing_captured_writes_nothing(wiz, monkeypatch, tmp_path):
+    """An empty capture leaves the archive's values alone rather than writing a guess.
+
+    A default here would invent a device name nobody chose and publish it to the
+    network, which is worse than keeping the value the restore brought."""
+    gs, snapshots = _preserve_env(wiz, monkeypatch, tmp_path)
+
+    assert wiz._preserve_device_settings(lambda m: None, {}) == "none"
+
+    assert _setting_value(gs, "services.devicename") == "Golden Image Box"
+    assert snapshots == [], "nothing to preserve means nothing to vector"
+
+
+def test_preserve_never_raises_into_the_restore(wiz, monkeypatch, tmp_path):
+    """A preserve failure must be reported, never thrown: it runs inside the restore
+    pass, and a raise there would abort a restore over a cosmetic setting."""
+    _prep_gs, _snap = _preserve_env(wiz, monkeypatch, tmp_path)
+    from resources.lib.modules import _kodisettings
+
+    def _boom(*a, **k):
+        raise RuntimeError("disk gone")
+
+    monkeypatch.setattr(_kodisettings, "write_guisetting", _boom)
+
+    status = wiz._preserve_device_settings(
+        lambda m: None, {"services.devicename": "Living Room"}
+    )
+    assert status.startswith("failed:"), status
+
+
+def test_restore_arms_the_check_marker_and_arms_no_prompt(wiz, monkeypatch, tmp_path):
+    """A finished restore arms the restore self-check marker and NOTHING else.
+
+    The self-check marker stays: final certainty lives after the restart, where the
+    restored settings are actually live, and it is SILENT on a clean pass. The
+    tune-up marker that used to be armed beside it is gone - it existed only to make
+    the boot service open a modal asking the user to repair the device name and cache
+    buffer, both of which the restore now preserves."""
     _prep_restore(wiz, monkeypatch, tmp_path)
     _record_restore_report(wiz, monkeypatch)
     armed = []
-    monkeypatch.setattr(
-        wiz.tools, "mark_buffer_prompt_pending", lambda: armed.append("buffer")
-    )
     monkeypatch.setattr(
         wiz.tools, "mark_restore_check_pending", lambda *a, **k: armed.append("check")
     )
@@ -1933,7 +1795,16 @@ def test_restore_arms_both_boot_markers(wiz, monkeypatch, tmp_path):
     _make_valid_zip(src, [("guisettings.xml", "<s/>")])
     wiz.restore(str(src), confirm=False)
 
-    assert armed == ["buffer", "check"]
+    assert armed == ["check"]
+    # And the prompt marker cannot be re-armed from anywhere in wiz: the module must
+    # not even reference it. Without this, a re-added call would only be caught by a
+    # test that happens to stub the right name.
+    src_text = (ADDON_ROOT / "resources" / "lib" / "modules" / "wiz.py").read_text(
+        encoding="utf-8"
+    )
+    assert "buffer_prompt" not in src_text, (
+        "wiz.py must not arm any post-restore prompt marker"
+    )
 
 
 def _record_window_props(wiz, monkeypatch):
@@ -2443,9 +2314,6 @@ def test_merge_cancel_after_completed_pass_still_arms(wiz, monkeypatch, tmp_path
 
     armed = []
     monkeypatch.setattr(
-        wiz.tools, "mark_buffer_prompt_pending", lambda: armed.append("buffer")
-    )
-    monkeypatch.setattr(
         wiz.tools, "mark_restore_check_pending", lambda *a, **k: armed.append("check")
     )
     skinned = []
@@ -2458,8 +2326,8 @@ def test_merge_cancel_after_completed_pass_still_arms(wiz, monkeypatch, tmp_path
     result = wiz.restore(str(src), confirm=False)  # merge (no wipe/post_wipe)
 
     assert calls["n"] == 2, "the auto-fix retry ran"
-    assert armed == ["buffer", "check"], (
-        "a restored box arms its markers even on a canceled retry"
+    assert armed == ["check"], (
+        "a restored box arms its restore-check marker even on a canceled retry"
     )
     assert skinned == [True], "the boot skin still applies"
     assert not any(s == wiz.MSG_COMPLETE for s in statuses), (
@@ -3413,92 +3281,6 @@ def test_dead_extractors_are_gone_and_stay_gone(wiz):
 # very prompt 15.27s in while the marker was then consumed as if answered.
 # See docs/restore-defect-b-reproduced-2026-07-18.md.
 # --------------------------------------------------------------------------- #
-
-
-def test_prompt_devicename_destroyed_select_does_not_advance(wiz, monkeypatch):
-    """A torn-down select (-1) must be RE-PRESENTED, not treated as 'Keep'.
-
-    This is the exact reproduced failure: the select dialog died before the keyboard
-    ever opened, and the old code returned False and let the flow consume the marker."""
-    tools = wiz.tools
-    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
-    seen = []
-
-    def flaky_select(*a, **k):
-        seen.append(1)
-        return -1 if len(seen) == 1 else 0  # destroyed once, then user picks Rename
-
-    monkeypatch.setattr(tools.dialog, "select", flaky_select)
-    monkeypatch.setattr(tools, "_keyboard_result", lambda **k: (True, "Living Room"))
-    sets = []
-    monkeypatch.setattr(tools, "_set_devicename", lambda n: sets.append(n) or True)
-    monkeypatch.setattr(tools.dialog, "notification", lambda *a, **k: None)
-
-    assert tools.prompt_devicename_after_restore() is True
-    assert sets == ["Living Room"], (
-        "the rename must still land after a destroyed select"
-    )
-    assert len(seen) == 2, "the destroyed select must be re-presented exactly once"
-
-
-def test_prompt_devicename_destroyed_keyboard_preserves_typed_text(wiz, monkeypatch):
-    """A torn-down keyboard must re-present PREFILLED with what was already typed.
-
-    The user typing 'Living Ro' when the skin reload fires must not lose those keystrokes."""
-    tools = wiz.tools
-    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
-    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)
-    calls = []
-
-    def flaky_kb(default="", heading="", hidden=False):
-        calls.append(default)
-        if len(calls) == 1:
-            return False, "Living Ro"  # destroyed mid-typing
-        return True, "Living Room"
-
-    monkeypatch.setattr(tools, "_keyboard_result", flaky_kb)
-    sets = []
-    monkeypatch.setattr(tools, "_set_devicename", lambda n: sets.append(n) or True)
-    monkeypatch.setattr(tools.dialog, "notification", lambda *a, **k: None)
-
-    assert tools.prompt_devicename_after_restore() is True
-    assert sets == ["Living Room"]
-    assert calls[0] == "OfficeBox", "first keyboard is prefilled with the current name"
-    assert calls[1] == "Living Ro", (
-        "the re-presented keyboard must carry the half-typed text, not reset to the old name"
-    )
-
-
-def test_prompt_devicename_all_attempts_destroyed_changes_nothing(wiz, monkeypatch):
-    """If every attempt is a non-answer, bail out bounded and leave the name alone."""
-    tools = wiz.tools
-    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
-    n = []
-    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: n.append(1) or -1)
-    monkeypatch.setattr(
-        tools,
-        "_set_devicename",
-        lambda x: (_ for _ in ()).throw(AssertionError("must not set on a non-answer")),
-    )
-    assert tools.prompt_devicename_after_restore() is False
-    assert len(n) == tools._PROMPT_MAX_ATTEMPTS, "must be bounded, not infinite"
-
-
-def test_prompt_devicename_explicit_keep_exits_immediately(wiz, monkeypatch):
-    """An explicit 'Keep' is a real answer and must NOT be retried."""
-    tools = wiz.tools
-    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
-    n = []
-    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: n.append(1) or 1)
-    monkeypatch.setattr(
-        tools,
-        "_set_devicename",
-        lambda x: (_ for _ in ()).throw(AssertionError("must not set on Keep")),
-    )
-    assert tools.prompt_devicename_after_restore() is False
-    assert len(n) == 1, "an explicit answer must not be re-presented"
-
-
 def test_keyboard_result_reports_confirmation_honestly(wiz, monkeypatch):
     """_keyboard_result must return the text even when unconfirmed, so callers can
     re-present prefilled. _get_keyboard keeps its legacy cancel-sentinel contract."""
@@ -3537,85 +3319,6 @@ def test_keyboard_result_reports_confirmation_honestly(wiz, monkeypatch):
 # silently. Only an explicit answer may consume the marker now.
 # See docs/restore-defect-b-reproduced-2026-07-18.md.
 # --------------------------------------------------------------------------- #
-
-
-def test_destroyed_buffer_prompt_does_not_consume_the_marker(wiz, monkeypatch):
-    """A torn-down dialog (-1) must leave the marker so the tune-up returns."""
-    tools = wiz.tools
-    tools.mark_buffer_prompt_pending()
-    monkeypatch.setattr(tools, "_recommended_mb", lambda: 128)
-    monkeypatch.setattr(
-        tools,
-        "_set_cache_mb",
-        lambda mb: (_ for _ in ()).throw(
-            AssertionError("must not set on a non-answer")
-        ),
-    )
-    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: -1)
-
-    assert tools.prompt_buffer_after_restore() is True
-    assert tools.buffer_prompt_pending(), (
-        "a destroyed or cancelled dialog is NOT an answer; the marker must survive "
-        "so the prompt returns next boot"
-    )
-
-
-def test_explicit_keep_consumes_the_marker(wiz, monkeypatch):
-    """'Leave it as it is' IS an answer and must end the flow for good."""
-    tools = wiz.tools
-    tools.mark_buffer_prompt_pending()
-    monkeypatch.setattr(tools, "_recommended_mb", lambda: 128)
-    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 2)
-
-    assert tools.prompt_buffer_after_restore() is True
-    assert not tools.buffer_prompt_pending(), (
-        "an explicit answer must consume the marker"
-    )
-
-
-def test_unanswered_prompt_gives_up_after_bounded_boots(wiz, monkeypatch):
-    """The marker must not nag forever on a box nobody answers."""
-    tools = wiz.tools
-    tools.mark_buffer_prompt_pending()
-    monkeypatch.setattr(tools, "_recommended_mb", lambda: 128)
-    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: -1)
-
-    boots = 0
-    while tools.buffer_prompt_pending() and boots < 20:
-        tools.prompt_buffer_after_restore()
-        boots += 1
-
-    assert boots == tools._PROMPT_MAX_BOOTS, (
-        "must give up after exactly _PROMPT_MAX_BOOTS unanswered boots, got %d" % boots
-    )
-    assert not tools.buffer_prompt_pending()
-
-
-def test_legacy_marker_counts_as_zero_attempts(wiz, monkeypatch):
-    """A marker written before the attempt counter existed contains "1" and must
-    read as 0 attempts, not 1, so an upgraded box gets its full budget."""
-    tools = wiz.tools
-    tools.mark_buffer_prompt_pending()
-    with open(tools.BUFFER_PROMPT_MARKER) as f:
-        assert f.read().strip() == "1", "legacy format guard"
-    assert tools._prompt_attempts() == 0
-
-
-def test_crash_mid_prompt_is_not_an_answer(wiz, monkeypatch):
-    """If the dialog itself raises, that is not consent to drop the tune-up."""
-    tools = wiz.tools
-    tools.mark_buffer_prompt_pending()
-    monkeypatch.setattr(tools, "_recommended_mb", lambda: 128)
-    monkeypatch.setattr(
-        tools.dialog,
-        "select",
-        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
-    )
-
-    assert tools.prompt_buffer_after_restore() is True
-    assert tools.buffer_prompt_pending(), "a crash must not consume the marker"
-
-
 # --------------------------------------------------------------------------- #
 # Restore defect A: restored skin settings are clobbered on the way out.
 #
@@ -4022,7 +3725,6 @@ def test_restore_records_the_archives_skin_in_the_check_marker(
     _prep_restore(wiz, monkeypatch, tmp_path)
     _record_restore_report(wiz, monkeypatch)
     got = {}
-    monkeypatch.setattr(wiz.tools, "mark_buffer_prompt_pending", lambda *a, **k: None)
     monkeypatch.setattr(
         wiz.tools,
         "mark_restore_check_pending",
@@ -4041,7 +3743,9 @@ def test_restore_records_the_archives_skin_in_the_check_marker(
     )
 
 
-def test_kodi_home_is_flagged_on_a_platform_whose_home_is_not_in_caches(wiz, monkeypatch):
+def test_kodi_home_is_flagged_on_a_platform_whose_home_is_not_in_caches(
+    wiz, monkeypatch
+):
     """The special://home fallback must stand on its own, on Android.
 
     Every other purge test lets translatePath resolve INSIDE Library/Caches, so the

@@ -10,18 +10,22 @@ still true and is not recorded anywhere else.
 **The backup/restore contract lives in `CLAUDE.md`.** It is the single copy.
 Do not restate it here.
 
-## PICK UP HERE (2026-07-18)
+## PICK UP HERE (2026-07-19)
 
 **Start at `TASKS.md`** - the project task index (created 2026-07-18; it did not
 exist before, which is how doctrine got missed).
 
-Two OPEN restore defects, diagnosed but NOT fixed, no code changed, no build cut:
-**`docs/restore-defects-2026-07-18.md`**. Defect A (restore loses skin settings
-to Kodi's clean-shutdown flush) has a confirmed, empirically reproduced root
-cause. Defect B (post-restore device-name prompt discards typed input) has a
-proven mechanism but an unidentified trigger. The fix plan in that document is
-PROPOSED and still needs QA + architect approval before any code is written.
-`CLAUDE.md` carries the short version at the top.
+Both 2026-07-18 restore defects are now FIXED IN CODE and builds have been cut
+through `2026.07.19.3`. Defect A (restore lost skin settings to Kodi's
+clean-shutdown flush) was fixed in `be31322`; defect B (post-restore device-name
+prompt discarded typed input) was fixed after its trigger was reproduced on the
+local bench. What remains is A3, `lookandfeel.skin` itself, which is OPEN BY
+DESIGN rather than unfinished: 2026.07.19.0 ships detect-and-report, and the
+accepted next-cycle design is to terminate instead of `Quit`.
+
+**`docs/restore-defects-2026-07-18.md` is the diagnosis record, not the status.**
+It was written before the fixes and still reads "NOT fixed". `TASKS.md` is the
+status; `CLAUDE.md` carries the short version at the top.
 
 ## Repo / build / test
 

@@ -1079,6 +1079,81 @@ def _apply_boot_skin(rlog, target):
     return prop
 
 
+def _preserve_device_settings(rlog, preserved):
+    """Write THIS box's own identity settings back over the archive's, on disk.
+
+    The other half of `_kodisettings._BOOT_STATE_ONLY`. Skipping the live-apply keeps
+    the archive's device name and cache buffer out of Kodi's running memory; this keeps
+    them out of the FILE. Without both, the archive's values sit in the restored
+    guisettings.xml and win at the next boot - the box silently answers to the source
+    box's name again, one restart after the restore reported success.
+
+    `preserved` is {setting_id: value}, captured LIVE before the extract
+    (tools.capture_device_identity). A value that could not be read is absent, and an
+    absent value writes nothing: the archive's value is a worse answer than this box's
+    own, but it beats a guess.
+
+    Runs immediately before _apply_boot_skin, for the same reasons that function runs
+    last: after apply_guisettings, the stale-key purge and the tvOS re-vector, so
+    nothing re-saves over it. Same tvOS dance too - the re-vector drops the POSIX copy,
+    so the file is re-materialized from the VFS (never a stub, which would wipe every
+    other setting) before editing, and persist_one vectors the result back into
+    NSUserDefaults, where a stale key would otherwise SHADOW the disk file.
+
+    Publishes Window(10000) property "ezm_preserved" (a comma-joined id:value list, or
+    "none" / "failed:<Error>") so a hardware verification can read the outcome over
+    JSON-RPC rather than infer it. Returns that same string. Fully guarded: any failure
+    is logged and NEVER breaks the restore."""
+    prop = "none"
+    try:
+        if not preserved:
+            rlog("preserve: nothing was captured from this box; archive values stand")
+            return prop
+        from resources.lib.modules import _kodisettings, nsud
+
+        guisettings_path = os.path.join(control.USERDATA, "guisettings.xml")
+        if not os.path.exists(guisettings_path):
+            try:
+                f = xbmcvfs.File("special://home/userdata/guisettings.xml")
+                try:
+                    data = f.readBytes()
+                finally:
+                    f.close()
+                data = bytes(data) if data else b""
+                if data:
+                    with open(guisettings_path, "wb") as fh:
+                        fh.write(data)
+                    rlog("preserve: re-materialized guisettings.xml from the VFS")
+            except Exception as e:  # noqa: BLE001 - fall through; the writes report
+                rlog("preserve: could not re-materialize guisettings.xml (%s)" % e)
+        written = []
+        failed = []
+        for sid in sorted(preserved):
+            value = preserved[sid]
+            if _kodisettings.write_guisetting(guisettings_path, sid, value):
+                written.append("%s:%s" % (sid, value))
+            else:
+                failed.append(sid)
+        # Vector guisettings.xml into NSUserDefaults on tvOS (the durable store there);
+        # a harmless no-op rewrite of identical bytes on Fire TV / Android / desktop.
+        nsud.persist_one("guisettings.xml", log=rlog)
+        if failed:
+            prop = "failed:write_guisetting"
+            rlog("preserve: could not write %s" % ", ".join(failed))
+        elif written:
+            prop = ",".join(written)
+            rlog("preserve: kept this box's own %s" % ", ".join(written))
+    except Exception as e:
+        prop = "failed:%s" % type(e).__name__
+        rlog("preserve: failed (%s: %s); restore stands" % (type(e).__name__, e))
+    finally:
+        try:
+            xbmcgui.Window(10000).setProperty("ezm_preserved", prop)
+        except Exception:
+            pass
+    return prop
+
+
 def restore(
     zipFile,
     confirm=True,
@@ -1106,6 +1181,20 @@ def restore(
     bad zip). The wipe reuses the PROVEN One-Tap wipe (onetap._wipe / _wipe_excludes),
     which preserves this add-on, its runtime deps, and special://temp (the staged zip).
     """
+    # Capture THIS box's own identity settings FIRST, before anything can overwrite
+    # them: the device name it answers to on the network and the cache buffer sized for
+    # its own RAM. A restore clones the SOURCE box's guisettings, so without this the box
+    # comes back wearing another box's name. Read from Kodi's LIVE settings, which is why
+    # it is still correct on the One-Tap path where the CALLER already wiped the box
+    # before calling us - a wipe removes files, not the running process's memory. This is
+    # the first statement in the function so no later edit can slip a wipe or an extract
+    # in front of it. Written back by _preserve_device_settings after the extract.
+    preserved = {}
+    try:
+        preserved = tools.capture_device_identity()
+    except Exception:
+        preserved = {}
+
     if confirm and not post_wipe:
         if not ui.confirm(
             "This will overwrite all your current settings ... Are you sure?",
@@ -1571,6 +1660,11 @@ def restore(
         _apply_skin_settings(
             _rlog, _boot_skin.get("target"), _boot_skin.get("settings") or []
         )
+        # Put this box's OWN device name and cache buffer back over the archive's, in
+        # the file, now that nothing further will re-save guisettings.xml. Runs inside
+        # the pass so it gets the same auto-fix retry every other step gets, and before
+        # the boot-skin write so the skin remains the restore's last userdata write.
+        _preserve_device_settings(_rlog, preserved)
         boot_skin = _apply_boot_skin(_rlog, _boot_skin.get("target"))
         if str(boot_skin or "").startswith("unconfirmed:"):
             attention.append(
@@ -1680,15 +1774,16 @@ def restore(
     # "Restore Canceled" dialog from the aborted retry already spoke, so we do not add
     # a Complete/Problem message on top - fall through to arm + the restart prompt.
 
-    # A restore clones the SOURCE box's guisettings, so this box now carries the wrong
-    # device name (services.devicename) AND a buffer (filecache.memorysize) sized for the
-    # wrong RAM. Drop a persistent marker so the boot service runs the post-restore tune-up
-    # on the next boot. Written HERE - after the final pass - deliberately: the wipe runs
-    # earlier and would remove it, and the extract itself would overwrite it. Guarded: a
-    # marker-write failure must never break the restore. The restore-check marker makes
-    # the boot service re-verify the restored state on the next start (silent on pass).
+    # A restore used to leave this box carrying the SOURCE box's device name and cache
+    # buffer, and drop a marker so the boot service could ask the user to repair both on
+    # the next start. Both questions are gone: the values are captured before the extract
+    # and written back by _preserve_device_settings, so there is nothing to ask and no
+    # marker to arm. The restore-check marker below is unrelated and stays - it makes the
+    # boot service re-verify the restored state on the next start (silent on a pass).
+    # Written HERE, after the final pass, deliberately: the wipe runs earlier and would
+    # remove it, and the extract itself would overwrite it. Guarded: a marker-write
+    # failure must never break the restore.
     try:
-        tools.mark_buffer_prompt_pending()
         # Record the skin the ARCHIVE carries, so the boot check can tell whether the
         # box actually reopened on it (defect A3 - the shutdown flush can overwrite
         # the boot-skin write from live memory). None/"" records no expectation and

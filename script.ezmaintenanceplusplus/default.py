@@ -97,6 +97,14 @@ def CATEGORIES():
         "",
     )
     CreateDir(
+        "Device Name",
+        "ur",
+        "device_name",
+        ADDON_ICON,
+        ADDON_FANART,
+        "",
+    )
+    CreateDir(
         "Log Viewer/Uploader",
         "ur",
         "log_tools",
@@ -177,15 +185,14 @@ def BOX_SETUP():
 
 
 def TOOLS():
-    CreateDir(
-        "Purge stale tvOS keys",
-        "url",
-        "purge_stale_tvos_keys",
-        ADDON_ICON,
-        ADDON_FANART,
-        "Apple TV only: write key-only userdata files back to disk, then purge "
-        "stale NSUserDefaults keys.",
-    )
+    # "Purge stale tvOS keys" was REMOVED (2026.07.19.5). Three clearers already
+    # run the same nsud.purge_stale_keys automatically - inside every restore
+    # (wiz.py, both the wipe and merge paths), once per add-on version at boot
+    # (service.py), and the two-layer wipe's own key pass (onetap.py) - so the
+    # menu item covered no case the box does not already handle. What it did do
+    # was ask a non-technical owner to know she had restored a 2026.07.08-13 era
+    # archive onto an Apple TV, which nobody knows about themselves. The purge
+    # itself is untouched; only this manual entry point is gone.
     CreateDir(
         "Verify backup archive",
         "url",
@@ -199,85 +206,6 @@ def TOOLS():
 
 # ###########################################################################################
 # ##################################### OWNER TOOLS #########################################
-
-
-def _is_tvos():
-    """Apple TV detection via Kodi's own platform condition (the same condition
-    nsud uses). Defaults to False (the safe answer) on any error."""
-    try:
-        return bool(xbmc.getCondVisibility("System.Platform.TVOS"))
-    except Exception:
-        return False
-
-
-# The four counters nsud.purge_stale_keys reports, in its result order.
-PURGE_COUNT_LABELS = ("materialized", "purged", "kept", "failed")
-
-
-def summarize_purge_result(result):
-    """Render nsud.purge_stale_keys()'s (materialized, purged, kept, failed) result
-    as dialog lines. Each field may be an int or a list of names (its len() is the
-    count); a dict carrying the same four keys is accepted too. Returns None when the
-    shape is unrecognized so the caller can fall back to showing the raw value."""
-    values = None
-    if isinstance(result, dict):
-        if all(k in result for k in PURGE_COUNT_LABELS):
-            values = [result[k] for k in PURGE_COUNT_LABELS]
-    elif isinstance(result, (tuple, list)) and len(result) == len(PURGE_COUNT_LABELS):
-        values = list(result)
-    if values is None:
-        return None
-    counts = []
-    for value in values:
-        if isinstance(value, bool):
-            return None
-        try:
-            counts.append(int(value))
-        except (TypeError, ValueError):
-            try:
-                counts.append(len(value))
-            except TypeError:
-                return None
-    return "Materialized: %d\nPurged: %d\nKept: %d\nFailed: %d" % tuple(counts)
-
-
-def PURGE_STALE_TVOS_KEYS():
-    """Owner tool (tvOS only): have nsud write any key-only userdata file back to
-    disk, then purge the stale NSUserDefaults keys, and report the counts."""
-    if not _is_tvos():
-        ui.done(
-            "Purge stale tvOS keys applies to Apple TV (tvOS) only.\n"
-            "This device keeps its userdata files on disk with no NSUserDefaults "
-            "shadow, so there is nothing to purge here."
-        )
-        return
-    from resources.lib.modules import nsud
-
-    # The purge may land in a later build than this menu item; degrade gracefully
-    # instead of raising AttributeError on a live box.
-    if not hasattr(nsud, "purge_stale_keys"):
-        ui.error(
-            "Purge stale tvOS keys is not available in this build.\n"
-            "Update EZ Maintenance++ to a build that ships nsud.purge_stale_keys."
-        )
-        return
-    if not ui.confirm(
-        "Scan NSUserDefaults for stale userdata keys?\n"
-        "Any key-only file is written back to disk first; the purge never "
-        "destroys the only copy of anything.",
-        yeslabel="Purge",
-        nolabel="Cancel",
-    ):
-        return
-    try:
-        result = nsud.purge_stale_keys(control.USERDATA)
-    except Exception as e:
-        ui.error("Purge failed: %s: %s" % (type(e).__name__, e))
-        return
-    summary = summarize_purge_result(result)
-    if summary is None:
-        summary = "Result: %r" % (result,)
-    ui.done("Stale tvOS key purge finished.\n%s" % summary)
 
 
 # The manifest wiz.backup embeds ({"created","source_os","entries","failed":[...]}).
@@ -648,6 +576,11 @@ elif action == "adv_settings":
 
     tools.advancedSettings()
 
+elif action == "device_name":
+    from resources.lib.modules import tools
+
+    tools.deviceName()
+
 elif action == "clear_all":
     from resources.lib.modules import maintenance
 
@@ -717,7 +650,12 @@ elif action == "tools":
     TOOLS()
 
 elif action == "purge_stale_tvos_keys":
-    PURGE_STALE_TVOS_KEYS()
+    # RETIRED in 2026.07.19.5 (the purge runs automatically in restore, at boot
+    # once per version, and in the two-layer wipe). Kept as an explicit no-op so a
+    # stale favourite, widget or bookmark pointing at the old action lands here
+    # instead of falling through to the unknown-action path. Deliberately silent:
+    # nothing failed, and there is nothing the user needs to do.
+    pass
 
 elif action == "verify_backup_archive":
     VERIFY_BACKUP_ARCHIVE()

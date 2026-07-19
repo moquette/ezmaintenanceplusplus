@@ -85,6 +85,41 @@ def _get_devicename():
         return ""
 
 
+def capture_device_identity():
+    """This box's OWN identity settings, read LIVE before a restore overwrites them.
+
+    A restore clones the SOURCE box's guisettings, which carries two values that
+    describe the TARGET hardware and must not travel with an archive:
+
+      * ``services.devicename`` - what this box is called on the network. A fresh
+        Kodi install is already named "Kodi", so this box always HAS a name; there
+        is no first-run case where the value is absent and something must be asked.
+      * ``filecache.memorysize`` - the video cache buffer, sized per device.
+
+    Returns ``{setting_id: value}`` holding only the values that could actually be
+    read. A value that could not be read is OMITTED rather than defaulted, so the
+    caller writes back nothing instead of writing back a guess. Never raises.
+
+    Read from Kodi's LIVE settings, which is why this survives a wipe: the wipe
+    removes files, not the running process's in-memory settings. Capturing before
+    the extract is still the contract - once the archive's guisettings.xml is on
+    disk, the box's own values exist nowhere else."""
+    out = {}
+    try:
+        name = _get_devicename()
+        if name:
+            out[DEVICENAME_SETTING] = name
+    except Exception:
+        pass
+    try:
+        mb = _get_cache_mb()
+        if mb is not None:
+            out[CACHE_SETTING] = int(mb)
+    except Exception:
+        pass
+    return out
+
+
 def _set_devicename(name):
     """Set the device name durably on EVERY platform, then return True iff the live set took.
 
@@ -234,122 +269,66 @@ def advancedSettings():
         ui.error("Could not change the cache setting. Nothing was changed.")
 
 
+def deviceName():
+    """Rename this device, on demand, from the add-on's own menu.
+
+    The counterpart to advancedSettings() for the OTHER per-box identity setting.
+    A restore now PRESERVES the name this box already had, so nothing renames a
+    box behind the user's back and nothing asks him to; renaming is a deliberate
+    action he takes when he wants it.
+
+    Uses _keyboard_result rather than _get_keyboard so an unconfirmed keyboard is
+    treated as "changed nothing" instead of being collapsed into a sentinel that
+    could be mistaken for a name. Fully guarded: a failure reports and changes
+    nothing."""
+    cur = _get_devicename()
+    confirmed, entered = _keyboard_result(
+        default=cur,
+        heading="Device name (currently '%s')" % (cur or "unknown"),
+    )
+    if not confirmed:
+        return
+    new = (entered or "").strip()
+    if not new or new == cur:
+        return
+    if _set_devicename(new):
+        ui.done(
+            "Device name set to '%s'.\n"
+            "The network name (AirPlay/UPnP) updates after the next restart." % new
+        )
+    else:
+        ui.error("Could not change the device name. Nothing was changed.")
+
+
 # --------------------------------------------------------------------------- #
-# Post-restore, per-device video-cache-buffer retune.
+# There is NO post-restore prompt, and no marker driving one.
 #
-# A restore (especially a cross-device clone from a golden image) brings the SOURCE box's
-# guisettings, so `filecache.memorysize` (the video cache buffer) is now sized for the
-# WRONG device. The buffer is the one performance-critical setting that must differ per
-# device (per its RAM), so on the FIRST boot after a restore we prompt to retune it for
-# THIS device. wiz.restore() drops a persistent MARKER FILE (not a setSetting flag: a full
-# restore's extracted settings.xml + Kodi's in-memory-settings clobber make setSetting
-# unreliable here) that survives the restart; the boot service (service.py) checks it once
-# Kodi is ready and calls prompt_buffer_after_restore(). The file lives in this add-on's
-# own data dir, which the restore wipe preserves and the extract writes AFTER (see wiz.py).
+# A restore used to clone the SOURCE box's `services.devicename` and
+# `filecache.memorysize`, then ask the user, on the first boot afterwards, to
+# repair what it had just broken. Both questions were deleted (owner decision,
+# 2026-07-19) and replaced with PRESERVATION: wiz.restore() captures this box's
+# own two values before the extract and writes them back into the restored
+# guisettings.xml, and `_kodisettings._BOOT_STATE_ONLY` stops the archive's
+# values from being live-applied over them. The box keeps the name and the
+# buffer it already had, so there is nothing left to ask.
 #
-# Since 2026.07.15.1 the SAME marker is also armed on the add-on's first-ever run
-# (owner request 2026-07-15: a brand-new box deserves the same name+buffer offer a
-# restored one gets). See arm_first_run_tuneup(); the prompts and the exactly-once
-# clearing are shared with the restore path unchanged.
+# Why the questions were wrong, recorded so they are not reinvented:
+#   * The buffer question was theatre. _recommended_mb() derives the value from
+#     the box's own RAM, so the user could contribute nothing he knew better.
+#     Both Apple TV tiers land on the ceiling, making it a constant there, and a
+#     real jetsam report put Kodi's LIFETIME peak at about 69 MB, so the 200 MB
+#     it offered had never been allocated. It remains available on demand:
+#     Video Cache Buffer in the add-on's own menu (advancedSettings).
+#   * The device-name question existed only to undo the clone. A fresh Kodi
+#     install is ALREADY named "Kodi", so preserving covers every case including
+#     a first-ever run; there is no first-run gap. Renaming on demand is a menu
+#     item too (deviceName).
+#
+# Deleting the flow also deleted its whole failure surface: a boot-time modal
+# that could be destroyed by anything owning the window stack, an attempt
+# counter, a multi-boot marker, and the first-run arming that fired the same
+# prompt on a brand-new box.
 # --------------------------------------------------------------------------- #
-BUFFER_PROMPT_MARKER = translatePath(
-    "special://home/userdata/addon_data/script.ezmaintenanceplusplus/.ezm_buffer_prompt"
-)
-
-# How many times a post-restore prompt is re-presented WITHIN one boot after a
-# NON-ANSWER (cancelled or destroyed - the two are indistinguishable through Kodi's
-# Python API). See docs/restore-defect-b-reproduced-2026-07-18.md.
-_PROMPT_MAX_ATTEMPTS = 5
-
-# How many BOOTS the prompt may go unanswered before the marker is cleared anyway.
-#
-# The marker used to be cleared unconditionally in a finally, so a dialog destroyed
-# by the skin's reload was read as an answer and the tune-up was lost permanently
-# and silently. Surviving a non-answer fixes that, but an unbounded marker would
-# nag on every boot forever on a box nobody answers. Three boots is the compromise:
-# a real teardown costs one wasted boot, a user who keeps dismissing it is left
-# alone after three, and either way the box keeps the values the restore gave it.
-_PROMPT_MAX_BOOTS = 3
-
-# First-ever-run flag: written the first time the boot service looks for it, making that
-# check exactly-once for the lifetime of this install (a rebuilt box has no addon_data,
-# so it legitimately counts as a first run again).
-FIRST_RUN_FLAG = translatePath(
-    "special://home/userdata/addon_data/script.ezmaintenanceplusplus/.ezm_first_run"
-)
-
-
-def mark_buffer_prompt_pending():
-    """Drop the post-restore buffer-prompt marker. Best-effort; never raises."""
-    try:
-        d = os.path.dirname(BUFFER_PROMPT_MARKER)
-        if not os.path.isdir(d):
-            os.makedirs(d)
-        with open(BUFFER_PROMPT_MARKER, "w") as f:
-            f.write("1")
-        return True
-    except Exception:
-        return False
-
-
-def buffer_prompt_pending():
-    """True iff a restore asked for a post-restart buffer prompt. Never raises."""
-    try:
-        return os.path.exists(BUFFER_PROMPT_MARKER)
-    except Exception:
-        return False
-
-
-def _prompt_attempts():
-    """How many boots have already shown this prompt without getting an answer.
-
-    Stored in the marker file itself, so there is no second piece of state to
-    strand. A legacy marker contains "1" and reads as 0 attempts, which is the
-    correct starting point for a marker written before this counter existed."""
-    try:
-        with open(BUFFER_PROMPT_MARKER) as f:
-            raw = (f.read() or "").strip()
-    except Exception:
-        return 0
-    try:
-        # legacy format: the literal "1" written by mark_buffer_prompt_pending
-        return 0 if raw in ("", "1") else int(raw.split(":", 1)[1])
-    except Exception:
-        return 0
-
-
-def _record_prompt_attempt():
-    """Note that the prompt was shown and NOT answered. Never raises.
-
-    Returns True if the marker survives (so the prompt returns next boot), False
-    once the attempt budget is spent and the marker has been cleared."""
-    n = _prompt_attempts() + 1
-    if n >= _PROMPT_MAX_BOOTS:
-        clear_buffer_prompt_marker()
-        try:
-            xbmc.log(
-                "%s : post-restore prompt unanswered after %d boots - giving up, "
-                "settings left as restored" % (AddonID, n),
-                xbmc.LOGWARNING,
-            )
-        except Exception:
-            pass
-        return False
-    try:
-        with open(BUFFER_PROMPT_MARKER, "w") as f:
-            f.write("attempts:%d" % n)
-    except Exception:
-        pass
-    return True
-
-
-def clear_buffer_prompt_marker():
-    """Remove the marker so the prompt fires exactly once. Never raises."""
-    try:
-        if os.path.exists(BUFFER_PROMPT_MARKER):
-            os.remove(BUFFER_PROMPT_MARKER)
-    except Exception:
-        pass
 
 
 # --------------------------------------------------------------------------- #
@@ -476,205 +455,29 @@ def clear_pvr_pause_marker():
         pass
 
 
-def arm_first_run_tuneup():
-    """On the add-on's FIRST-EVER run, arm the same tune-up the restore path uses (name
-    the device, size the buffer), so a brand-new box gets the offer too. Exactly-once
-    via FIRST_RUN_FLAG, which is written on the first check REGARDLESS of outcome. An
-    UPGRADED box (this add-on's settings.xml already exists when the flag is first
-    checked, i.e. EZM++ ran before this feature) gets the flag but NOT the prompt, so
-    shipping this does not re-prompt the whole fleet. Never raises; returns True iff
-    the tune-up was armed."""
-    try:
-        if os.path.exists(FIRST_RUN_FLAG):
-            return False
-        d = os.path.dirname(FIRST_RUN_FLAG)
-        if not os.path.isdir(d):
-            os.makedirs(d)
-        established = os.path.exists(os.path.join(d, "settings.xml"))
-        with open(FIRST_RUN_FLAG, "w") as f:
-            f.write("1")
-        if established:
-            return False
-        return mark_buffer_prompt_pending()
-    except Exception:
-        return False
-
-
 # NOTE: EZ Maintenance++ has NO IPTV behavior. The former post-restore IPTV auto-enable
 # intent flag and the unattended boot gate that turned the IPTV client back on were REMOVED
 # (they auto-enabled a client that crashed natively on a real box). A restore never touches,
 # enables, disables, or stages the IPTV client; the user turns IPTV on deliberately.
 
 
-def prompt_buffer_after_restore():
-    """If a restore dropped the marker, offer to retune the video cache buffer for THIS
-    device (the restore cloned the source box's buffer size). Three choices: set the
-    recommended size, choose manually (the existing Buffer Size screen), or keep current.
-
-    The marker is deleted on an EXPLICIT ANSWER only. A non-answer (Back, or the dialog
-    destroyed under us, which Kodi's API cannot distinguish) leaves the marker in place
-    so the tune-up returns on the next boot, bounded by _PROMPT_MAX_BOOTS. This step
-    owns the marker for the whole flow, so getting it wrong loses the tune-up entirely.
-
-    Fully defensive: any failure is swallowed so the boot service can never be broken by
-    it. Returns True iff a prompt was shown (no marker => False, no prompt)."""
-    try:
-        if not buffer_prompt_pending():
-            return False
-    except Exception:
-        return False
-    answered = False
-    try:
-        rec = _recommended_mb()
-        idx = dialog.select(
-            "Finish setup (2 of 2): Video cache buffer",
-            [
-                "Use the recommended cache buffer - %d MB (best for this device)" % rec,
-                "Pick a different amount myself...",
-                "Leave it as it is",
-            ],
-        )
-        if idx == 0:
-            if _set_cache_mb(rec):
-                try:
-                    dialog.notification(
-                        AddonTitle,
-                        "Video cache buffer set to %d MB for this device." % rec,
-                    )
-                except Exception:
-                    pass
-        elif idx == 1:
-            advancedSettings()
-        # idx == 2 is an explicit "Leave it as it is": a real answer.
-        if idx in (0, 1, 2):
-            answered = True
-    except Exception:
-        # A crash mid-prompt is not an answer either. The marker survives so the
-        # tune-up returns, bounded by _PROMPT_MAX_BOOTS.
-        pass
-    finally:
-        # ONLY an explicit answer consumes the marker. idx == -1 means the user
-        # pressed Back OR the dialog was destroyed under us, and Kodi's Python API
-        # cannot tell those apart. The old code cleared the marker unconditionally
-        # here, so a teardown was read as an answer and the whole post-restore
-        # tune-up was lost permanently and silently. Reproduced 2026-07-18: the
-        # skin's 15s deferred menu rebuild ends in ReloadSkin(), which destroyed
-        # this very dialog. See docs/restore-defect-b-reproduced-2026-07-18.md.
-        if answered:
-            clear_buffer_prompt_marker()
-        else:
-            _record_prompt_attempt()
-    return True
-
-
-def prompt_devicename_after_restore():
-    """Offer to rename THIS device after a restore cloned the SOURCE box's name (Settings >
-    Services > General). Unlike the buffer there is no derivable "right" value, so this is
-    text-entry: the keyboard is prefilled with the current name for the user to edit. Does NOT
-    touch the post-restore marker (the buffer step owns clearing it, so the combined flow fires
-    exactly once). Fully defensive. Returns True iff a new name was applied; False on
-    keep / cancel / unchanged / empty / failure."""
-    try:
-        cur = _get_devicename()
-        # A destroyed dialog is INDISTINGUISHABLE from a deliberate answer: dialog.select
-        # returns -1 for both "user pressed Back" and "the window stack was torn down",
-        # exactly as isConfirmed() False covers both for the keyboard. Reproduced
-        # 2026-07-18: skin.estuary7 arms a 15s AlarmClock on first Home load whose
-        # skinshortcuts rebuild ends in ReloadSkin(), and it killed THIS select dialog
-        # 15.27s in, with the marker then consumed as if answered. So a non-answer must
-        # never advance the flow; it must be re-presented, prefilled, a bounded number of
-        # times. Explicit choices (Keep, or a confirmed keyboard) still exit immediately.
-        # See docs/restore-defect-b-reproduced-2026-07-18.md.
-        # Bounded re-present WITHIN this boot. A tight loop cannot outlive a skin
-        # reload (the whole window stack is gone for ~0.3s, so every re-presented
-        # dialog returns -1 instantly and the budget burns in microseconds), which
-        # is why the real protection is the surviving marker in the buffer step:
-        # a teardown costs one wasted boot, not the tune-up. This loop only helps
-        # the case where the user dismissed by accident and is still sitting there.
-        prefill = cur
-        for _attempt in range(_PROMPT_MAX_ATTEMPTS):
-            idx = dialog.select(
-                "Finish setup (1 of 2): Device name",
-                [
-                    "Rename this device (currently '%s')" % (cur or "unknown"),
-                    "Keep the name '%s'" % (cur or "unknown"),
-                ],
-            )
-            if idx == 1:
-                return False  # explicit Keep
-            if idx != 0:
-                continue  # -1: cancelled OR destroyed. Do not advance; re-present.
-            confirmed, entered = _keyboard_result(
-                default=prefill, heading="Device name (Cancel to keep current)"
-            )
-            if not confirmed:
-                # Carry the half-typed text forward so nothing the user typed is lost.
-                prefill = entered or prefill
-                continue
-            new = (entered or "").strip()
-            if not new or new == cur:
-                return False
-            break
-        else:
-            # Every attempt was a non-answer. Leave the name alone rather than guess, and
-            # say so in the log: on a torn-down boot this is the visible symptom.
-            xbmc.log(
-                "%s : device-name prompt got no answer in %s attempts - name unchanged"
-                % (AddonID, _PROMPT_MAX_ATTEMPTS),
-                xbmc.LOGWARNING,
-            )
-            return False
-        if _set_devicename(new):
-            try:
-                dialog.notification(
-                    AddonTitle,
-                    "Device name set to '%s'. The network name (AirPlay/UPnP) updates "
-                    "after the next restart." % new,
-                )
-            except Exception:
-                pass
-            return True
-        try:
-            ui.error("Could not change the device name. Nothing was changed.")
-        except Exception:
-            pass
-    except Exception:
-        pass
-    return False
-
-
-def prompt_after_restore():
-    """Single post-restore tune-up, gated ONCE by the (buffer-named) marker: run the device-name
-    step FIRST, then the buffer step. ONLY the buffer step clears the marker, and it always runs
-    after the wrapped device-name step, so the whole flow is exactly-once and a device-name-step
-    failure can never strand the marker. Returns True iff the flow ran (the marker was present)."""
-    try:
-        if not buffer_prompt_pending():
-            return False
-    except Exception:
-        return False
-    try:
-        prompt_devicename_after_restore()  # never clears the marker
-    except Exception:
-        pass
-    prompt_buffer_after_restore()  # clears the marker in its finally
-    return True
-
-
 def _keyboard_result(default="", heading="", hidden=False):
     """Show a keyboard and return (confirmed, text) WITHOUT collapsing a non-answer.
 
     Kodi's Python API cannot distinguish "user pressed Back" from "the dialog was
-    destroyed under us" - both give isConfirmed() False with the typed text still in
-    getText(). Do not claim to detect teardown; callers must instead refuse to treat a
-    non-answer as an answer (see prompt_devicename_after_restore). Returning the text
-    even when unconfirmed lets a caller re-present the dialog PREFILLED with whatever
-    the user had already typed, so nothing is silently discarded.
+    destroyed under us": the two are INDISTINGUISHABLE, because both give isConfirmed()
+    False with the typed text still in getText(). This is generic Kodi behaviour, not a
+    property of any one skin or window - any Kodi
+    component that owns the window stack can destroy a dialog
+    (a skin reload, a window switch, a shutdown), and nothing in the API reports it.
+    Do not claim to detect teardown. Callers must instead refuse to treat a
+    non-answer as an answer: make "unconfirmed" mean "change nothing".
 
-    Teardown is real and reproduced: skin.estuary7's Home.xml onload arms a 15s
-    AlarmClock that runs a skinshortcuts buildxml; when the menu is stale (exactly what
-    a restore produces) that ends in ReloadSkin(), which destroys the whole window
-    stack. See docs/restore-defect-b-reproduced-2026-07-18.md."""
+    Returning the text even when unconfirmed lets a caller re-present the dialog
+    PREFILLED with whatever the user had already typed, so nothing is silently
+    discarded. This is why the add-on never opens a dialog UNATTENDED at boot: a
+    dialog nobody is watching cannot answer for itself, and an unanswerable
+    question is a defect, not a feature."""
     confirmed = False
     text = ""
     try:

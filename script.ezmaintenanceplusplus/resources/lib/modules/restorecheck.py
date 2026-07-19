@@ -108,10 +108,53 @@ def surviving_shadow_keys(shadow_rels):
     return sorted(r for r in (_norm(x) for x in shadow_rels) if r in live)
 
 
+def _sidecar_predicate():
+    """nsud's ``_is_skin_menu_sidecar``, or None when it cannot be imported.
+
+    IMPORTED, never re-derived: nsud.purge_stale_keys DELIBERATELY KEEPS the
+    skin's dual-layer menu keys, so if this module carried its own copy of that
+    rule the two would drift and the detector would alarm about exactly the keys
+    the purge is designed to preserve - which is the defect this function had
+    (atv2, 23 false hits, verification/2026.07.19.4.json). One definition, one
+    behaviour. Importing it does not modify nsud.py, so the storage-contract
+    fingerprint is unaffected."""
+    try:
+        from resources.lib.modules import nsud
+
+        return nsud._is_skin_menu_sidecar
+    except Exception as e:
+        _log(
+            "sidecar predicate unavailable (%s); reporting every duplicate"
+            % type(e).__name__
+        )
+        return None
+
+
+def _probe_rel(probe_dir, name):
+    """A probe dir + basename -> the userdata-relative path nsud's key naming
+    uses (``addon_data/<id>/<name>``), so the sidecar predicate sees the same
+    shape it sees for an NSUserDefaults key."""
+    return _norm(probe_dir.split("special://profile/", 1)[-1]) + _norm(name)
+
+
 def duplicate_listing_hits(dirs=DUPLICATE_PROBE_DIRS):
     """Names listed more than once in the key-bearing directories - the
     two-layer divergence signature the release gate probes over JSON-RPC.
-    Uses the same VFS layer Kodi itself reads. [] when clean or unreadable."""
+    Uses the same VFS layer Kodi itself reads. [] when clean or unreadable.
+
+    Skin-menu sidecars are NOT hits. skin.estuary7 1.0.66+ deliberately
+    dual-layers every skinshortcuts ``*.DATA.xml`` on tvOS (its syncMenu
+    re-registers a byte-identical key on every Home load, so the owner's custom
+    menu survives a Library/Caches purge), and CTVOSDirectory::GetDirectory does
+    not dedupe - so a healthy Apple TV lists each of them TWICE by design. That
+    is not divergence, it is the durability mechanism working, and treating it
+    as a finding made every tvOS restore end with a "needs attention" toast the
+    user could do nothing about. The exclusion is exactly the ``*.DATA.xml``
+    sidecar pattern, borrowed from nsud so the two modules cannot disagree:
+    ``script.skinshortcuts/settings.xml`` and every non-sidecar duplicate STILL
+    hit, because a genuine stale key shadowing a restored file is the one thing
+    this probe exists to catch."""
+    is_sidecar = _sidecar_predicate()
     hits = []
     for d in dirs:
         try:
@@ -124,6 +167,8 @@ def duplicate_listing_hits(dirs=DUPLICATE_PROBE_DIRS):
                 dup.add(name)
             seen.add(name)
         for name in sorted(dup):
+            if is_sidecar is not None and is_sidecar(_probe_rel(d, name)):
+                continue
             hits.append(d + name)
     return hits
 

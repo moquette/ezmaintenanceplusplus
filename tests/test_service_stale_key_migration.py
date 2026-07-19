@@ -360,13 +360,13 @@ def test_garbage_return_shape_is_contained(env):
 # --------------------------------------------------------------- boot wiring
 
 
-def test_boot_sequence_runs_the_migration_before_first_run_and_restore_steps(env):
-    """The migration runs at boot, and BEFORE the first-run / post-restore steps.
+def test_boot_sequence_runs_the_migration_before_the_restore_check(env):
+    """The migration runs at boot, and BEFORE the post-restore check.
 
-    Those steps may read files a stale NSUserDefaults key would shadow, so the order
-    is load-bearing. This EXECUTES the boot sequence: it used to scan the __main__
-    block as source text because __main__ cannot be run under pytest, which meant it
-    proved only that some call appeared somewhere in that text."""
+    That check reads files a stale NSUserDefaults key would shadow, so the order is
+    load-bearing. This EXECUTES the boot sequence: it used to scan the __main__ block
+    as source text because __main__ cannot be run under pytest, which meant it proved
+    only that some call appeared somewhere in that text."""
     svc = env.load(_nsud_stub(env, result=(0, 0, 0, 0)))
     order = []
     for name in (
@@ -374,8 +374,6 @@ def test_boot_sequence_runs_the_migration_before_first_run_and_restore_steps(env
         "_purge_stale_bytecode",
         "_publish_contract_fingerprint",
         "_maybe_resume_paused_pvr",
-        "_maybe_arm_first_run",
-        "_maybe_prompt_after_restore",
         "_maybe_restore_check",
     ):
         svc_name = name
@@ -385,11 +383,8 @@ def test_boot_sequence_runs_the_migration_before_first_run_and_restore_steps(env
 
     assert "_maybe_purge_stale_nsud_keys" in order, "the migration must run at boot"
     assert order.index("_maybe_purge_stale_nsud_keys") < order.index(
-        "_maybe_arm_first_run"
-    ), "the migration must precede the first-run step"
-    assert order.index("_maybe_arm_first_run") < order.index(
-        "_maybe_prompt_after_restore"
-    )
+        "_maybe_restore_check"
+    ), "the migration must precede the post-restore check"
 
 
 # ------------------------------------------------- PVR pause crash-recovery
@@ -459,8 +454,6 @@ def test_boot_sequence_runs_pvr_recovery(env):
         "_purge_stale_bytecode",
         "_publish_contract_fingerprint",
         "_maybe_resume_paused_pvr",
-        "_maybe_arm_first_run",
-        "_maybe_prompt_after_restore",
         "_maybe_restore_check",
     ):
         setattr(svc, name, (lambda n: lambda *a, **k: order.append(n))(name))

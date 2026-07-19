@@ -34,6 +34,49 @@ Project rules + backup/restore contract: `CLAUDE.md`. Repo/build/release notes:
 
 ---
 
+## 🟢 DONE, NOT RELEASED - post-restore prompt deleted, values preserved
+
+**Owner decision 2026-07-19. Version `2026.07.19.4`. Ready; shipping is the
+owner's call.** Full record: **`docs/devicename-buffer-preserve-2026-07-19.md`**
+
+The two questions the boot service asked after a restore (name this device, size
+the video cache buffer) are DELETED. A restore now PRESERVES this box's own
+`services.devicename` and `filecache.memorysize` instead of cloning the source
+box's and then asking the user to repair them. Both halves are required and both
+shipped: the ids joined `_kodisettings._BOOT_STATE_ONLY` (never live-applied) AND
+`wiz._preserve_device_settings` writes the captured values back into the restored
+`guisettings.xml` and vectors it. Skipping the live-apply alone is insufficient -
+the archive's value still sits in the file and wins at the next boot.
+
+Both settings stay changeable on demand from the add-on menu: **Video Cache
+Buffer** (existing) and **Device Name** (new).
+
+**This removed the LAST dependency between EZM++ and `skin.estuary7`.** The
+25-second `_wait_skin_settled` wait, its timing constant, and its
+skinshortcuts-isrunning polling were deleted rather than renamed. The boot
+service now opens NO dialog and knows nothing about any skin; two tests pin that
+it cannot come back. `nsud.py`'s skinshortcuts KEEP rules are untouched - they
+are correct behaviour with skin-specific prose, and that file was not otherwise
+edited.
+
+**Hardware gate: BOTH CLASSES DONE. The suite is GREEN.**
+`verification/2026.07.19.4.json` carries genuine `tvos` (atv2) and `android`
+(office Fire TV) entries. On both boxes the build was deployed and then READ BACK
+and hash-verified (10 files each, including all five contract files), and each
+box's own published contract fingerprint equals HEAD.
+
+The office Fire TV was authorized by the owner on 2026-07-19 and handled with a
+before/after content-hash baseline: all 26 skinshortcuts files, the active
+includes, the skin version and `addons.updatemode` are byte-identical afterwards.
+Kodi was stopped with a clean `Application.Quit`, not a force-stop. No crash.
+
+**Correction to a documented fleet fact:** `atv-log-pull/SKILL.md` §7 claims
+`devicectl device copy to` silently refuses to overwrite. Tested directly on
+atv2 2026-07-19: **it overwrites fine**, including the same-size 1980-timestamp
+case deterministic builds produce. That false claim is the stated reason an
+earlier session declared tvOS verification blocked. Read-back-and-hash is still
+right; only the impossibility claim is wrong.
+
 ## 🟢 FIXED IN CODE - Restore defect A: restored skin settings are clobbered
 
 **FIXED 2026-07-18 (`be31322`), awaiting the same device gate as defect B.**
@@ -146,28 +189,30 @@ Remaining: the device-verification gate below.
 
 ---
 
-## 🔴 OPEN - device-verification gate for 2026.07.18.0
+## 🟢 CLEARED - device-verification gate for 2026.07.18.0
 
-**This is the ONLY red test. It is correct to be red, and it is now honest.**
+**Closed. Both device runs happened.** `verification/2026.07.18.0.json` carries
+REAL evidence for both classes (`android`, bedroom Fire TV; `tvos`, atv2), as do
+`2026.07.18.1` and `2026.07.18.2`. Nothing is owed on the 18.0 gate. Do not
+re-run it.
 
-The branch had changed `nsud.py` and `wiz.py` (commits `2805f48`, `b162c03`)
-while still declaring the RELEASED version `2026.07.17.7`. That collision was a
-real hole: `tools/verify_device.py` refuses to write an artifact when the box's
-version differs from `addon.xml`, so identical version strings would have let a
-device run certify branch code the box was not running. **Version bumped to
-`2026.07.18.0`** to close it; the gate now correctly demands a fresh artifact.
+The hole this entry was opened to close is also closed and should stay closed:
+the branch had changed `nsud.py` and `wiz.py` (commits `2805f48`, `b162c03`)
+while still declaring the RELEASED version `2026.07.17.7`.
+`tools/verify_device.py` refuses to write an artifact when the box's version
+differs from `addon.xml`, so identical version strings would have let a device
+run certify branch code the box was not running. The version bump closed it, and
+`2026.07.19.2` later added a per-class storage fingerprint so a fresh run of one
+class cannot launder the other.
 
-To clear it (build already made, `dist/script.ezmaintenanceplusplus-2026.07.18.0.zip`):
-
-1. Deploy that zip to a Fire TV, then
-   `python3 tools/verify_device.py --host <firetv-ip> --class android`
-2. Deploy to an Apple TV, then
-   `python3 tools/verify_device.py --host <appletv-ip> --class tvos`
-
-Both are owner-gated: installing an unreleased build on a production box.
-A `{"waived": "<reason>"}` per class is sanctioned for a genuine hotfix, but
-**waiving `tvos` would be wrong here** - the `persist_one` change is
-tvOS-specific storage behaviour, which is precisely what that class covers.
+**The live gate is now on the CURRENT version, not 18.0.** Check
+`addon.xml` against `verification/<version>.json` before assuming anything.
+`verification/2026.07.19.3.json` carries a real `android` run and an owner-signed
+`tvos` WAIVER: `xcrun devicectl` silently refuses to overwrite existing files, so
+atv2 is stuck at `2026.07.19.2` and that release is itself the delivery mechanism
+that unblocks it. **That waiver is explicitly temporary** - once atv2 updates from
+the repository, run the real tvOS verification and REPLACE it with device
+evidence. A waiver left in place after the box can be reached is a lie.
 
 ---
 

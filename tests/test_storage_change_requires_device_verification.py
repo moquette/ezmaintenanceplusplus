@@ -152,6 +152,21 @@ def test_storage_contract_change_has_a_device_run():
     )
 
     doc = json.loads(path.read_text())
+    assert_artifact_covers_head(doc, version, _fingerprint())
+
+
+def assert_artifact_covers_head(doc, version, head_fingerprint):
+    """Every required class must be present and certified against THIS code.
+
+    EXTRACTED so it can be driven directly with synthetic artifacts. While this
+    lived inline in the test above, nothing could exercise it: mutation-testing
+    the suite normally deselects this file (any edit to a CONTRACT_FILE trips the
+    fingerprint gate, so a failure here is not evidence about behaviour), which
+    meant the assertions BELOW were invisible to mutation testing. Verified
+    2026-07-19: making the per-entry fingerprint check or the version check
+    vacuous left the whole suite green. The check that closes the laundering
+    defect was itself unprotected. test_verification_gate_selftest.py now drives
+    this function against synthetic artifacts so that can never be true again."""
     devices = doc.get("devices", {})
     for cls in REQUIRED_CLASSES:
         assert cls in devices, (
@@ -162,7 +177,7 @@ def test_storage_contract_change_has_a_device_run():
         entry = devices[cls]
         if entry.get("waived"):
             continue  # deliberate, recorded bypass
-        assert entry.get("storage_fingerprint") == _fingerprint(), (
+        assert entry.get("storage_fingerprint") == head_fingerprint, (
             "The '%s' entry in verification/%s.json certifies DIFFERENT storage code than is "
             "committed here. Each class carries its OWN fingerprint precisely so that a fresh "
             "run of the other class cannot launder it: this entry was captured against code "
@@ -170,7 +185,7 @@ def test_storage_contract_change_has_a_device_run():
             "THIS build.\n"
             "  entry fingerprint: %s\n"
             "  HEAD fingerprint:  %s"
-            % (cls, version, cls, entry.get("storage_fingerprint"), _fingerprint())
+            % (cls, version, cls, entry.get("storage_fingerprint"), head_fingerprint)
         )
         assert entry.get("addon_version_on_box") == version, (
             "The '%s' verification for %s was captured on a box running %s, not %s. Verify on "

@@ -52,15 +52,29 @@ def _coerce(raw, typ):
     return "" if raw is None else str(raw)  # string / path / addon / etc.
 
 
-# Settings that must arrive as BOOT STATE, never be live-applied. Live-setting
-# lookandfeel.skin makes Kodi switch skins immediately and start its "keep this
-# skin?" countdown - which during a restore is unanswerable (an EZM++ modal or
-# progress dialog owns the screen), so the countdown expires and Kodi REVERTS
-# the skin, overwriting the restored value (hardware-reproduced on atv2,
-# 2026-07-17: the restored box came up in stock Estuary). The restored
-# guisettings.xml already carries the skin; the mandatory post-restore restart
-# boots straight into it with no countdown ever firing.
-_BOOT_STATE_ONLY = frozenset(("lookandfeel.skin",))
+# Settings the archive must NEVER live-apply. Two different reasons, both load-bearing.
+#
+# lookandfeel.skin - live-setting it makes Kodi switch skins immediately and start its
+# "keep this skin?" countdown, which during a restore is unanswerable (an EZM++ modal or
+# progress dialog owns the screen), so the countdown expires and Kodi REVERTS the skin,
+# overwriting the restored value (hardware-reproduced on atv2, 2026-07-17: the restored
+# box came up in stock Estuary). The restored guisettings.xml already carries the skin;
+# the mandatory post-restore restart boots straight into it with no countdown firing.
+#
+# services.devicename and filecache.memorysize - these describe the TARGET HARDWARE, not
+# the backup. They are the two values a restore must PRESERVE rather than clone: the box
+# keeps the name it answers to on the network and the cache buffer sized for its own RAM.
+# Skipping the live-apply is only half the fix and is INSUFFICIENT on its own, because the
+# archive's values still sit in the restored guisettings.xml and win at the next boot.
+# wiz._preserve_device_settings writes this box's captured values back into that file, so
+# both layers - Kodi's live memory and the file it is flushed to - hold this box's values.
+# Same both-halves pattern proven for lookandfeel.skin (wiz._apply_boot_skin).
+#
+# Adding an id here without a matching write-back is a silent regression: the archive's
+# value survives on disk and takes effect one restart later, where nothing is watching.
+_BOOT_STATE_ONLY = frozenset(
+    ("lookandfeel.skin", "services.devicename", "filecache.memorysize")
+)
 
 
 def apply_guisettings(guisettings_path):

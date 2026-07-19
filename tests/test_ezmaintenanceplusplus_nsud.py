@@ -533,8 +533,13 @@ def test_wiz_calls_nsud_after_updatelocaladdons_before_restart():
     i_apply = wiz_src.index("apply_guisettings(")
     i_update = wiz_src.index('executebuiltin("UpdateLocalAddons")')
     i_rewrite = wiz_src.index("nsud.rewrite_userdata_xml(")
-    i_marker = wiz_src.index("mark_buffer_prompt_pending()")
-    assert i_apply < i_update < i_rewrite < i_marker
+    # The last userdata writes of the pass, in order: this box's preserved identity
+    # settings, then the restored boot skin. Both must follow the tvOS re-vector, which
+    # DROPS the POSIX copy of guisettings.xml - a write before it would be discarded.
+    i_preserve = wiz_src.index("_preserve_device_settings(_rlog, preserved)")
+    i_boot_skin = wiz_src.index("_apply_boot_skin(_rlog, _boot_skin.get(")
+    i_marker = wiz_src.index("mark_restore_check_pending(")
+    assert i_apply < i_update < i_rewrite < i_preserve < i_boot_skin < i_marker
 
 
 def test_wiz_restore_has_no_iptv_or_delete_behavior():

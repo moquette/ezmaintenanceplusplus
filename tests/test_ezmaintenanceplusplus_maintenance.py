@@ -545,15 +545,6 @@ def test_wait_kodi_ready_gives_up_after_timeout_without_gui(service, monkeypatch
     assert service._wait_kodi_ready(monitor, timeout=4) is True
 
 
-def test_maybe_prompt_after_restore_no_marker_is_quiet(service):
-    # No pending-restore marker: must return without prompting or waiting.
-    monitor = types.SimpleNamespace(
-        abortRequested=lambda: False, waitForAbort=lambda t: False
-    )
-    service._maybe_prompt_after_restore(monitor)
-    assert service._rec.yesno_calls == []
-
-
 def test_folder_size_and_count_survives_vanishing_file(service, tmp_path, monkeypatch):
     # A file deleted mid-scan (live Kodi does this) must be skipped, not raised.
     root = tmp_path / "pkgs"
@@ -918,26 +909,6 @@ def test_service_monitor_sets_schedule_on_init_and_settings_change(service):
     assert service._rec.window_props["ezmaintenance.nextMaintenanceTime"] == "0"
 
 
-def test_maybe_prompt_after_restore_pending_runs_tuneup(service):
-    # service imports tools lazily inside the function; pre-import it so the
-    # test can stub the two entry points on the same module object.
-    tools_mod = importlib.import_module("resources.lib.modules.tools")
-    ran = []
-    orig_pending = tools_mod.buffer_prompt_pending
-    orig_prompt = tools_mod.prompt_after_restore
-    tools_mod.buffer_prompt_pending = lambda: True
-    tools_mod.prompt_after_restore = lambda: ran.append(True)
-    try:
-        monitor = types.SimpleNamespace(
-            abortRequested=lambda: False, waitForAbort=lambda t: False
-        )
-        service._maybe_prompt_after_restore(monitor)
-    finally:
-        tools_mod.buffer_prompt_pending = orig_pending
-        tools_mod.prompt_after_restore = orig_prompt
-    assert ran == [True]
-
-
 def test_wait_kodi_ready_survives_condvisibility_raising(service, monkeypatch):
     # getCondVisibility blowing up must not kill the wait - it retries until
     # the bound, then lets the service proceed.
@@ -962,11 +933,32 @@ def test_plugin_root_menu_renders(monkeypatch, tmp_path):
     _import_plugin(
         monkeypatch, tmp_path, rec, ["plugin://script.ezmaintenanceplusplus/", "7", ""]
     )
-    # 10 menu rows + the non-clickable version row.
+    # 11 menu rows + the non-clickable version row.
     # (Went 8 -> 9 in 2026.07.13.1 when "Set up this box" was added; 9 -> 10 on
-    # 2026-07-16 when the "Tools" folder landed: stale-key purge + backup verify.)
-    assert len(rec.dir_items) == 11
+    # 2026-07-16 when the "Tools" folder landed: stale-key purge + backup verify;
+    # 10 -> 11 on 2026-07-19 when "Device Name" landed beside "Video Cache Buffer".)
+    assert len(rec.dir_items) == 12
     assert rec.end_dirs == [True]
+    # The two per-box identity settings are reachable ON DEMAND. This is what makes
+    # deleting the post-restore prompt safe: a restore preserves both values, and the
+    # user can still change either whenever he wants. A count alone would pass if the
+    # new row were a duplicate of the old one.
+    # Parse the action out of each url rather than substring-matching it: "device_name"
+    # is a prefix of "device_nameXX", so a substring test passes against a renamed or
+    # misspelled action that routes nowhere. (Caught by mutation, 2026-07-19.)
+    from urllib.parse import parse_qs, urlparse
+
+    actions = set()
+    for url in rec.dir_items:
+        actions.update(parse_qs(urlparse(url).query).get("action", []))
+    assert "device_name" in actions, (
+        "the Device Name menu item is the on-demand replacement for the deleted "
+        "post-restore rename prompt - without it the capability is simply gone"
+    )
+    assert "adv_settings" in actions, (
+        "the Video Cache Buffer menu item is the on-demand replacement for the "
+        "deleted post-restore buffer prompt"
+    )
 
 
 def test_plugin_maintenance_submenu_renders_without_service(monkeypatch, tmp_path):

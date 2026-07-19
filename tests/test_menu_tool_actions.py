@@ -1,9 +1,6 @@
-"""Coverage for the two owner-facing tool actions in default.py.
+"""Coverage for the owner-facing tool actions in default.py.
 
-Tools menu actions added 2026-07-16:
-  * "Purge stale tvOS keys" (action purge_stale_tvos_keys): tvOS-gated, hasattr-guarded
-    call to nsud.purge_stale_keys(control.USERDATA), reporting the
-    (materialized, purged, kept, failed) counts.
+The Tools menu carries exactly ONE action:
   * "Verify backup archive" (action verify_backup_archive): the restore.path picker,
     then a READ-ONLY zip analysis (entry count, backup_manifest.json presence, the
     manifest failed list, IPTV addon_data presence, top-level composition). It never
@@ -241,21 +238,6 @@ def _make_zip(path, members, manifest=None):
     return str(path)
 
 
-def _fake_nsud(result=(0, 0, 0, 0), with_purge=True, exc=None):
-    m = types.ModuleType("resources.lib.modules.nsud")
-    m.calls = []
-    if with_purge:
-
-        def purge_stale_keys(userdata):
-            m.calls.append(userdata)
-            if exc is not None:
-                raise exc
-            return result
-
-        m.purge_stale_keys = purge_stale_keys
-    return m
-
-
 # --------------------------------------------------------------------------- #
 # Menu wiring
 # --------------------------------------------------------------------------- #
@@ -270,93 +252,69 @@ def test_categories_menu_has_tools_folder(dmod):
     assert is_folder is True
 
 
-def test_tools_menu_lists_both_actions(dmod):
+def test_tools_menu_offers_only_verify_backup_archive(dmod):
+    """The Tools menu must NOT expose a manual stale-key purge.
+
+    Removed 2026.07.19.5: three clearers already run nsud.purge_stale_keys
+    automatically (restore, once-per-version at boot, the two-layer wipe), so the
+    item covered no case the box does not handle itself - while asking a
+    non-technical owner to know she had restored a 2026.07.08-13 era archive onto
+    an Apple TV, which is not something anyone knows about themselves. This pins
+    the removal: reintroducing the entry, under ANY label, fails here."""
     dmod.mod.TOOLS()
     urls = [url for url, _name, _folder in dmod.xbmcplugin.items]
-    assert len(urls) == 2
-    assert any("action=purge_stale_tvos_keys" in u for u in urls)
-    assert any("action=verify_backup_archive" in u for u in urls)
     names = [name for _url, name, _folder in dmod.xbmcplugin.items]
-    assert "Purge stale tvOS keys" in names
+    assert len(urls) == 1
+    assert not any("action=purge_stale_tvos_keys" in u for u in urls)
+    assert not any("purge" in n.lower() for n in names)
+    assert any("action=verify_backup_archive" in u for u in urls)
     assert "Verify backup archive" in names
 
 
-# --------------------------------------------------------------------------- #
-# Purge stale tvOS keys
-# --------------------------------------------------------------------------- #
-def test_purge_on_non_tvos_explains_and_never_touches_nsud(dmod):
-    dmod.xbmc._tvos = False
-    nsud = _fake_nsud(result=(9, 9, 9, 9))
-    dmod.set_nsud(nsud)
-    dmod.mod.PURGE_STALE_TVOS_KEYS()
-    assert nsud.calls == []
-    assert len(dmod.ui.done_calls) == 1
-    assert "Apple TV" in dmod.ui.done_calls[0]
-    assert dmod.ui.error_calls == []
-    assert dmod.ui.confirm_calls == []  # not even prompted off-tvOS
-
-
-def test_purge_hasattr_fallback_when_build_lacks_purge(dmod):
-    dmod.xbmc._tvos = True
-    dmod.set_nsud(_fake_nsud(with_purge=False))
-    dmod.mod.PURGE_STALE_TVOS_KEYS()
-    assert len(dmod.ui.error_calls) == 1
-    assert "not available in this build" in dmod.ui.error_calls[0]
-    assert dmod.ui.done_calls == []
-
-
-def test_purge_on_tvos_reports_all_four_counts(dmod):
-    dmod.xbmc._tvos = True
-    nsud = _fake_nsud(result=(3, 2, 1, 0))
-    dmod.set_nsud(nsud)
-    dmod.ui.confirm_result = True
-    dmod.mod.PURGE_STALE_TVOS_KEYS()
-    # called with the userdata root, exactly once
-    assert nsud.calls == [dmod.control.USERDATA]
-    assert len(dmod.ui.done_calls) == 1
-    msg = dmod.ui.done_calls[0]
-    for line in ("Materialized: 3", "Purged: 2", "Kept: 1", "Failed: 0"):
-        assert line in msg
-    assert dmod.ui.error_calls == []
-
-
-def test_purge_declined_confirm_never_calls_nsud(dmod):
-    dmod.xbmc._tvos = True
-    nsud = _fake_nsud(result=(1, 1, 1, 1))
-    dmod.set_nsud(nsud)
-    dmod.ui.confirm_result = False
-    dmod.mod.PURGE_STALE_TVOS_KEYS()
-    assert nsud.calls == []
-    assert dmod.ui.done_calls == []
-    assert dmod.ui.error_calls == []
-
-
-def test_purge_exception_reports_error_not_crash(dmod):
-    dmod.xbmc._tvos = True
-    dmod.set_nsud(_fake_nsud(exc=RuntimeError("plist unavailable")))
-    dmod.mod.PURGE_STALE_TVOS_KEYS()
-    assert len(dmod.ui.error_calls) == 1
-    assert "plist unavailable" in dmod.ui.error_calls[0]
-    assert dmod.ui.done_calls == []
-
-
-def test_summarize_purge_result_shapes(dmod):
-    f = dmod.mod.summarize_purge_result
-    assert f((3, 2, 1, 0)) == "Materialized: 3\nPurged: 2\nKept: 1\nFailed: 0"
-    # lists count by len(); mixed int/list accepted
-    assert f((["a", "b"], ["a"], [], 1)) == (
-        "Materialized: 2\nPurged: 1\nKept: 0\nFailed: 1"
+def test_retired_purge_action_is_a_silent_no_op(dmod):
+    """A stale favourite/widget still pointing at action=purge_stale_tvos_keys
+    must land on a benign no-op, never an unknown-action path or a traceback."""
+    assert not hasattr(dmod.mod, "PURGE_STALE_TVOS_KEYS")
+    src = (ADDON_ROOT / "default.py").read_text()
+    assert 'elif action == "purge_stale_tvos_keys":' in src, (
+        "the retired action must still be routed, so an old bookmark cannot fall "
+        "through to the unknown-action path"
     )
-    assert f({"materialized": 4, "purged": 3, "kept": 2, "failed": 1}) == (
-        "Materialized: 4\nPurged: 3\nKept: 2\nFailed: 1"
+
+
+def test_retired_purge_action_executes_without_raising(dmod, monkeypatch):
+    """BEHAVIOURAL proof of the no-op, not a grep of the source.
+
+    The source assertion above pins that a branch exists; it cannot prove that
+    ACTUALLY dispatching the retired action is harmless. default.py routes at
+    IMPORT time off sys.argv[2], so the only honest test is to import it with
+    the retired querystring and assert the module loads clean: no exception, no
+    error dialog, no dialog of any kind. A grandmother's stale home-screen
+    shortcut must do nothing visible, not raise.
+    """
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "plugin://script.ezmaintenanceplusplus/",
+            "1",
+            "?action=purge_stale_tvos_keys",
+        ],
     )
-    # unrecognized shapes -> None (caller shows the raw value)
-    assert f(None) is None
-    assert f((1, 2, 3)) is None
-    assert f("done") is None
-    assert f({"purged": 1}) is None
-    assert f((True, 1, 2, 3)) is None
-    assert f((object(), 1, 2, 3)) is None
+    monkeypatch.delitem(sys.modules, "ezm_retired_action_under_test", raising=False)
+    spec = importlib.util.spec_from_file_location(
+        "ezm_retired_action_under_test", DEFAULT_PY
+    )
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["ezm_retired_action_under_test"] = mod
+
+    spec.loader.exec_module(mod)  # must not raise
+
+    ui = sys.modules["resources.lib.modules.ui"]
+    assert getattr(ui, "error_calls", []) == [], "the retired action must not error"
+    assert getattr(ui, "done_calls", []) == [], (
+        "the retired action must be SILENT - no dialog at all"
+    )
 
 
 # --------------------------------------------------------------------------- #

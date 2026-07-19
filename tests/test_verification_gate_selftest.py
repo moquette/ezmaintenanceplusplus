@@ -177,3 +177,101 @@ def test_generator_stamps_the_fingerprint_it_compared_against_the_box(monkeypatc
         "the device entry must carry the fingerprint that was compared against the "
         "box, got %r" % (evidence.get("storage_fingerprint"),)
     )
+
+
+# --------------------------------------------------------------------------- #
+# The gate's ASSERTION BODY, driven directly.
+#
+# Found 2026-07-19: mutation-testing this suite normally deselects the gate file,
+# because any edit to a CONTRACT_FILE trips the fingerprint check and a failure
+# there says nothing about behaviour. That deselection made the gate's own
+# assertions invisible: making the per-entry fingerprint check vacuous, or the
+# addon_version_on_box check vacuous, left the entire suite GREEN. The assertion
+# that closes the laundering defect was itself unprotected - the same shape as
+# the defect it fixes, a gate that can be walked past.
+#
+# These drive assert_artifact_covers_head against synthetic artifacts, so the
+# protection no longer depends on the real repository's state.
+# --------------------------------------------------------------------------- #
+
+
+def _entry(fp, version="9999.01.01.0", **over):
+    e = {
+        "class": "tvos",
+        "storage_fingerprint": fp,
+        "addon_version_on_box": version,
+        "skinshortcuts_duplicates": [],
+    }
+    e.update(over)
+    return e
+
+
+def _doc(tvos, android, version="9999.01.01.0"):
+    return {"version": version, "devices": {"tvos": tvos, "android": android}}
+
+
+def test_assertion_body_accepts_a_fully_current_artifact(gate):
+    """Baseline: if this fails, every negative case below proves nothing."""
+    gate.assert_artifact_covers_head(
+        _doc(_entry("FP_HEAD"), _entry("FP_HEAD")), "9999.01.01.0", "FP_HEAD"
+    )
+
+
+def test_assertion_body_rejects_a_stale_per_class_fingerprint(gate):
+    """THE laundering defect. One class captured against older code must fail.
+
+    Mutating this assertion to `assert True or ...` previously left the whole
+    suite green."""
+    with pytest.raises(AssertionError) as e:
+        gate.assert_artifact_covers_head(
+            _doc(_entry("FP_HEAD"), _entry("FP_OLD")), "9999.01.01.0", "FP_HEAD"
+        )
+    assert "certifies DIFFERENT storage code" in str(e.value)
+
+
+def test_assertion_body_rejects_a_wrong_version_on_box(gate):
+    """A box running a different build cannot certify this one."""
+    with pytest.raises(AssertionError) as e:
+        gate.assert_artifact_covers_head(
+            _doc(_entry("FP_HEAD"), _entry("FP_HEAD", addon_version_on_box="1111.01.01.0")),
+            "9999.01.01.0",
+            "FP_HEAD",
+        )
+    assert "captured on a box running" in str(e.value)
+
+
+def test_assertion_body_rejects_a_missing_class(gate):
+    """Both classes required: the fix must work where the bug is AND be a no-op elsewhere."""
+    with pytest.raises(AssertionError) as e:
+        gate.assert_artifact_covers_head(
+            {"version": "9999.01.01.0", "devices": {"tvos": _entry("FP_HEAD")}},
+            "9999.01.01.0",
+            "FP_HEAD",
+        )
+    assert "has no 'android' entry" in str(e.value)
+
+
+def test_assertion_body_rejects_a_hand_written_entry(gate):
+    """No skinshortcuts listing means it did not come from a real device pull."""
+    bad = _entry("FP_HEAD")
+    del bad["skinshortcuts_duplicates"]
+    with pytest.raises(AssertionError) as e:
+        gate.assert_artifact_covers_head(
+            _doc(_entry("FP_HEAD"), bad), "9999.01.01.0", "FP_HEAD"
+        )
+    assert "Do not hand-write these" in str(e.value)
+
+
+def test_a_waiver_bypasses_only_its_own_class(gate):
+    """A recorded waiver is a deliberate bypass for THAT class and no other."""
+    gate.assert_artifact_covers_head(
+        _doc({"class": "tvos", "waived": "hardware unreachable"}, _entry("FP_HEAD")),
+        "9999.01.01.0",
+        "FP_HEAD",
+    )
+    with pytest.raises(AssertionError):
+        gate.assert_artifact_covers_head(
+            _doc({"class": "tvos", "waived": "hardware unreachable"}, _entry("FP_OLD")),
+            "9999.01.01.0",
+            "FP_HEAD",
+        )

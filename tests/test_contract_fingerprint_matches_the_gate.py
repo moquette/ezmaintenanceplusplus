@@ -191,7 +191,6 @@ def test_the_box_fingerprint_changes_when_contract_code_changes(monkeypatch, tmp
     ).read_bytes(), "the probe must never touch the real tree"
 
 
-
 def test_service_publishes_the_fingerprint_before_any_wait():
     """It must be published unconditionally at startup.
 
@@ -266,8 +265,9 @@ def test_the_property_name_cannot_drift_between_box_and_tool(monkeypatch):
     )
 
 
-
-def test_stale_bytecode_is_purged_before_the_fingerprint_is_published(monkeypatch, tmp_path):
+def test_stale_bytecode_is_purged_before_the_fingerprint_is_published(
+    monkeypatch, tmp_path
+):
     """A .pyc the source no longer describes must not survive into the next start.
 
     CPython invalidates bytecode on the source's mtime AND size, not its content.
@@ -313,8 +313,6 @@ def test_the_purge_runs_before_the_publish(monkeypatch):
         svc, "_publish_contract_fingerprint", lambda: order.append("publish")
     )
     monkeypatch.setattr(svc, "_maybe_resume_paused_pvr", lambda *a, **k: None)
-    monkeypatch.setattr(svc, "_maybe_arm_first_run", lambda *a, **k: None)
-    monkeypatch.setattr(svc, "_maybe_prompt_after_restore", lambda *a, **k: None)
     monkeypatch.setattr(svc, "_maybe_restore_check", lambda *a, **k: None)
     monkeypatch.setattr(svc, "_wait_kodi_ready", lambda *a, **k: False)
 
@@ -323,7 +321,6 @@ def test_the_purge_runs_before_the_publish(monkeypatch):
     assert order == ["purge", "publish"], (
         "the bytecode purge must RUN, and run before the publish, got %r" % (order,)
     )
-
 
 
 def test_the_purge_never_breaks_startup(monkeypatch):
@@ -366,8 +363,7 @@ def test_the_tree_is_hashed_only_where_it_is_compared():
     enclosing = [
         fn.name
         for fn in ast.walk(tree)
-        if isinstance(fn, ast.FunctionDef)
-        and any(c is calls[0] for c in ast.walk(fn))
+        if isinstance(fn, ast.FunctionDef) and any(c is calls[0] for c in ast.walk(fn))
     ]
     assert "pull" in enclosing, (
         "the single call must live in pull(), where the value is compared against the "

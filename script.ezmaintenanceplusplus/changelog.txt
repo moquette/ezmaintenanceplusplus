@@ -1,3 +1,28 @@
+v2026.07.19.5
+- Apple TV: a restore no longer ends with "this box needs attention" when the box
+  is fine. The check was counting the skin's own menu-protection copies as a
+  problem. Those copies are deliberate - they are what keeps your custom menu from
+  being lost - so they are no longer reported as a fault. A real problem is still
+  reported, exactly as before.
+- If a restore does leave a setting unapplied, the message now says what to do
+  about it instead of sending you into the add-on.
+- Removed "Purge stale tvOS keys" from the Tools menu. That repair already runs on
+  its own during every restore and after an update, so there was nothing for anyone
+  to decide. Nothing about the repair itself changed.
+
+v2026.07.19.4
+- A restore now keeps this box's own device name and video cache buffer instead of
+  copying the backup's. Those two settings describe the box itself, not the backup:
+  the name is what this device is called on your network, and the buffer is sized
+  for this device's memory. A restore used to overwrite both with the source box's
+  values and then, on the next start, ask you to put them back.
+- Those two questions are gone. Nothing is asked after a restore any more. The
+  settings are simply correct, including on a brand-new box, which Kodi already
+  names "Kodi".
+- Both remain yours to change at any time: Device Name and Video Cache Buffer are
+  items in the add-on's own menu. Device Name is new there; it used to be reachable
+  only by answering the post-restore question.
+
 v2026.07.19.3
 - Internal: the add-on now clears its own stale compiled-code cache at startup.
   Python can keep running an older compiled copy of a file when the new one is

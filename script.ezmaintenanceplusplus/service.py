@@ -33,16 +33,21 @@ class Monitor(xbmc.Monitor):
         maintenance.determineNextMaintenance()
 
 
-# The skin's deferred first-boot menu rebuild. skin.estuary7's Home.xml onload arms
-# AlarmClock(t7bbuild,...,00:15) on the first Home load of every boot; when the menu is
-# stale - exactly what a restore produces - the resulting skinshortcuts buildxml ends in
-# ReloadSkin(), which destroys the entire window stack including any dialog we have open.
-# Reproduced twice on the bench 2026-07-18 at 15.05s and 15.45s after the alarm was
-# armed, killing an EZM++ prompt 15.27s in. Home-visible is the moment that timer STARTS,
-# so prompting there is prompting into a guaranteed-doomed window. Wait past it, plus
-# margin, and also honour skinshortcuts' own in-progress flag.
-# See ezmpp/docs/restore-defect-b-reproduced-2026-07-18.md.
-_SKIN_DEFERRED_BUILD_SECS = 25
+# This service opens NO dialog at boot, and therefore knows nothing about any skin.
+#
+# It used to wait out a specific skin's deferred menu rebuild before showing the
+# post-restore prompt, because that rebuild ended in ReloadSkin() and destroyed the
+# dialog. The prompt is gone (a restore now PRESERVES this box's device name and
+# cache buffer instead of asking the user to repair them), and with it the reason to
+# know anything about the skin's internals. The wait, its timing constant, and its
+# poll of skinshortcuts' in-progress flag were all deleted rather than renamed: an
+# add-on that must time itself against a particular skin's behaviour is coupled to
+# it, whatever the wait is called.
+#
+# Do not reintroduce a boot-time dialog here. A dialog nobody is watching cannot be
+# answered, and Kodi's API cannot tell a destroyed dialog from a cancelled one, so an
+# unattended boot prompt is unanswerable by construction. Boot work here must be
+# silent and complete on its own.
 
 
 # The storage-contract files, in the same order tools/verify_device.py hashes them.
@@ -151,49 +156,19 @@ def _startup_sequence(monitor):
     is running even if a later step blocks or fails - it is a pure hash of installed
     files, so there is nothing to wait for."""
     # Stale-key migration FIRST, so files a "vector everything" era left shadowed in
-    # NSUserDefaults are visible on disk before the first-run / post-restore steps
-    # below read them.
+    # NSUserDefaults are visible on disk before the post-restore check below reads
+    # them.
     _maybe_purge_stale_nsud_keys()
     _purge_stale_bytecode()
     _publish_contract_fingerprint()
     _maybe_resume_paused_pvr()
-    _maybe_arm_first_run()
-    _maybe_prompt_after_restore(monitor)
     _maybe_restore_check(monitor)
 
 
-def _wait_skin_settled(monitor, extra=_SKIN_DEFERRED_BUILD_SECS, timeout=90):
-    """Block (interruptibly) until the skin's deferred build can no longer eat our dialog.
-
-    Two conditions, both cheap: at least ``extra`` seconds past home-visible (covering the
-    skin's 15s alarm with margin), and skinshortcuts not reporting a build in progress.
-    Returns False on abort, True otherwise. Never raises. A skin without the alarm simply
-    costs this wait once per restored boot, which is invisible next to a restore."""
-    if monitor.waitForAbort(extra):
-        return False
-    waited = extra
-    while waited < timeout:
-        try:
-            if xbmc.getCondVisibility(
-                "String.IsEqual(Window(10000).Property(skinshortcuts-isrunning),True)"
-            ):
-                if monitor.waitForAbort(2):
-                    return False
-                waited += 2
-                continue
-        except Exception:
-            pass
-        return True
-    return True
-
-
 def _wait_kodi_ready(monitor, timeout=120):
-    """Block (interruptibly) until Kodi's GUI is actually up, so we never prompt on a black
-    boot screen. Returns False on abort; True once the home window is visible OR the bound
-    is reached (well past any black-screen phase). Never raises.
-
-    NOTE: home-visible is NOT boot-settled. Callers that open a dialog must additionally
-    call _wait_skin_settled - see its comment for the teardown this avoids."""
+    """Block (interruptibly) until Kodi's GUI is actually up, so boot work never runs
+    against a black boot screen. Returns False on abort; True once the home window is
+    visible OR the bound is reached (well past any black-screen phase). Never raises."""
     waited = 0
     while waited < timeout:
         if monitor.abortRequested():
@@ -302,47 +277,6 @@ def _startup_checks():
         maintenance.clearCache()
 
 
-def _maybe_arm_first_run():
-    """On the add-on's first-ever run, arm the SAME tune-up marker the restore path
-    drops (rename this device / retune the buffer), so a brand-new box gets the offer
-    a restored one does. Exactly-once per install via tools.FIRST_RUN_FLAG; a box that
-    already ran an older EZM++ (its settings.xml exists) is flagged without prompting.
-    Fully guarded: nothing here may block or crash the boot service."""
-    try:
-        from resources.lib.modules import tools
-
-        tools.arm_first_run_tuneup()
-    except Exception:
-        pass
-
-
-def _maybe_prompt_after_restore(monitor):
-    """On the FIRST boot after a restore, run the post-restore tune-up: offer to rename THIS
-    device and to retune the video cache buffer for it (a restore cloned the source box's name
-    and buffer size). Fully guarded: nothing here may block or crash the boot service. The marker
-    check happens BEFORE _wait_kodi_ready, so a normal boot (no marker) returns immediately and
-    never delays the maintenance loop; only a genuinely pending restore waits for the GUI."""
-    try:
-        from resources.lib.modules import tools
-    except Exception:
-        return
-    try:
-        if not tools.buffer_prompt_pending():
-            return
-    except Exception:
-        return
-    try:
-        if not _wait_kodi_ready(monitor):
-            return
-        # Home-visible starts the skin's 15s deferred-build timer; opening a dialog now
-        # gets it destroyed. Wait past that before prompting.
-        if not _wait_skin_settled(monitor):
-            return
-        tools.prompt_after_restore()
-    except Exception:
-        pass
-
-
 def _maybe_restore_check(monitor):
     """On the FIRST boot after a restore, re-verify the restored state now that it is
     actually LIVE (restorecheck's two-layer probes). SILENT on a clean pass - the box
@@ -400,9 +334,16 @@ def _maybe_restore_check(monitor):
                     "%s : boot restore-check ATTENTION: %s" % (AddonID, line),
                     level=xbmc.LOGWARNING,
                 )
+            # Names an action the owner can actually take. The old text ("open EZ
+            # Maintenance++") sent her to a menu whose only relevant entry was
+            # "Purge stale tvOS keys" - jargon she could not be expected to
+            # recognize, removed in 2026.07.19.5. Both actions named here re-run
+            # the stale-key purge on their own, so the fix is reachable without
+            # her ever knowing the word NSUserDefaults.
             xbmcgui.Dialog().notification(
                 "EZ Maintenance++",
-                "Something from the restore needs attention - open EZ Maintenance++.",
+                "Your restore finished, but one setting may not have applied. "
+                "Restore again, or restart the box.",
                 time=8000,
             )
         else:
@@ -430,11 +371,12 @@ def _maybe_restore_check(monitor):
 # invisible to Kodi forever. nsud.purge_stale_keys() materializes key-only files
 # back to disk before purging the out-of-scope keys.
 #
-# The run-once marker is a FILE in this add-on's own addon_data (the same
-# pattern as tools.BUFFER_PROMPT_MARKER, and for the same reason: a restore's
-# extracted settings.xml plus Kodi's in-memory-settings clobber make setSetting
-# unreliable for boot-time state). It holds the add-on version the purge last
-# ran for, so each upgrade gets exactly one purge and a normal boot is a single
+# The run-once marker is a FILE in this add-on's own addon_data, not a setSetting
+# flag: a restore's extracted settings.xml plus Kodi's in-memory-settings clobber
+# make setSetting unreliable for boot-time state. (The deleted post-restore prompt
+# marker used the same pattern for the same reason; this and tools.RESTORE_CHECK_MARKER
+# and tools.PVR_PAUSE_MARKER are the survivors.) It holds the add-on version the purge
+# last ran for, so each upgrade gets exactly one purge and a normal boot is a single
 # os-stat no-op.
 # --------------------------------------------------------------------------- #
 STALE_KEY_PURGE_MARKER = translatePath(
@@ -597,9 +539,9 @@ if __name__ == "__main__":
     # were REMOVED after 2026.07.08.4. The sweep deleted files at boot and the gate turned the
     # IPTV client back on by itself - both proved unsafe on a real box. Nothing at boot deletes
     # files or enables IPTV; the user turns IPTV on deliberately. The extract-root fix (a
-    # restore puts files in the right folder) stands, and the only boot action is the optional
-    # tune-up prompt below (rename device / video cache buffer), armed by a restore or by
-    # the add-on's first-ever run.
+    # restore puts files in the right folder) stands. The post-restore tune-up PROMPT that
+    # used to run here was deleted on 2026-07-19: a restore now preserves this box's device
+    # name and cache buffer, so nothing is asked at boot and nothing is asked at all.
 
     # PVR pause crash-recovery: if a restore disabled pvr.iptvsimple for its extract
     # window and was interrupted before re-enabling it (PROVEN possible on a real

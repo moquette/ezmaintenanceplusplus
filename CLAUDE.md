@@ -24,39 +24,45 @@ Non-negotiable summary:
 ## READ FIRST: start at `TASKS.md`
 
 **`TASKS.md` is this project's task index.** It lists every open item and points
-at the detail docs. Two OPEN restore defects (2026-07-18) are summarized below.
+at the detail docs. Both 2026-07-18 restore defects are now FIXED IN CODE; what
+survives them is summarized below.
 
-### The two open restore defects
+### The two restore defects - both FIXED, one residue OPEN BY DESIGN
 
-**`docs/restore-defects-2026-07-18.md` - diagnosed, NOT fixed, no code changed.**
+**`docs/restore-defects-2026-07-18.md` is the diagnosis record. It was written
+before the fixes and still reads "NOT fixed"; treat it as history, not status.
+`TASKS.md` is the status.**
 
-Read it before touching `wiz.py`, `tools.py`, `ui.py`, `_kodisettings.py`, or
+Read this before touching `wiz.py`, `tools.py`, `ui.py`, `_kodisettings.py`, or
 `service.py`. Short version:
 
-- **Defect A (root cause CONFIRMED, empirically reproduced):** restore correctly
-  writes `addon_data/<skin>/settings.xml`, then `ui.restart()` -> `Quit` ->
-  `CApplication::Stop()` -> `g_SkinInfo->SaveSettings()` serializes the
-  PRE-RESTORE in-memory skin settings back over it. Restored skin settings are
-  destroyed on the way out. NOT tvOS-only: it is silent on Fire TV only because
-  the value there already matched. All seven boxes are latently affected.
-- **The docstring at `wiz.py:753-764` is FALSE.** It claims `Quit` skips Kodi's
-  clean-shutdown flush. It does not. `RestartApp` being desktop-only means `Quit`
-  does not RELAUNCH, not that it skips `CApplication::Stop`.
-  `_kodisettings.py:104-105`, `tools.py:205-210`, and the PVR pause rule below
-  all state the correct behavior. Do not trust that one docstring.
-- **Defect B (mechanism proven, trigger UNKNOWN):** the post-restore device-name
-  keyboard is torn down mid-typing by something external and `_get_keyboard`
-  (`tools.py:482-490`) cannot tell "destroyed" from "cancelled", so the flow
-  silently advances and discards the input. EZM++ sets NO timeout anywhere -
-  do not go hunting for one.
-- **Test trap:** `Skin.HasSetting(<id>)` over JSON-RPC CREATES the setting id in
-  memory (default false) and it persists on flush. `GetInfoBooleans` is not a
-  read-only probe for skin settings. A regression test built on it passes for the
-  wrong reason.
-
-The fix plan and the full task breakdown are in that document. It is PROPOSED and
-has NOT been approved by QA or the architect; that review is required before any
-code is written.
+- **Defect A (skin settings clobbered) is FIXED (`be31322`).** Restore writes
+  `addon_data/<skin>/settings.xml`, and `_apply_skin_settings` (`wiz.py:869`) now
+  re-applies those values IN MEMORY immediately before the restart, so the
+  clean-shutdown flush serializes the archive's values rather than the
+  pre-restore ones. It was never tvOS-only.
+- **The old `wiz.py:753-764` false docstring NO LONGER EXISTS.** Earlier docs
+  told agents to distrust a docstring claiming `Quit` skips Kodi's
+  clean-shutdown flush. That text was corrected and the current comment
+  (`wiz.py:979-981`) states the truth: `RestartApp` being desktop-only means
+  `Quit` does not RELAUNCH, NOT that it skips `CApplication::Stop`. Do not go
+  looking for the false version; do not reintroduce it.
+- **Defect A3 (`lookandfeel.skin` itself) is OPEN BY DESIGN, not unfinished.** A
+  restore that CHANGES the skin reopens on the old one, because Kodi offers no
+  way to set the skin live without arming the 10-second keep-skin countdown and
+  any non-Yes reverts. 2026.07.19.0 ships DETECT AND REPORT, not a fix. See
+  `TASKS.md`; the accepted next-cycle design is to terminate instead of `Quit`.
+- **Defect B (post-restore prompt discarded input) is FIXED.** The trigger was
+  never in EZM++: `skin.estuary7`'s `Home.xml:9` arms an alarm whose
+  skinshortcuts rebuild ends in `ReloadSkin()` and destroys the window stack.
+  `_keyboard_result` no longer collapses a non-answer into an answer,
+  `prompt_devicename_after_restore` re-presents instead of advancing, and
+  `service._wait_skin_settled` waits past the deferred build. EZM++ still sets
+  NO timeout anywhere - do not go hunting for one.
+- **Test trap (still live):** `Skin.HasSetting(<id>)` over JSON-RPC CREATES the
+  setting id in memory (default false) and it persists on flush. `GetInfoBooleans`
+  is not a read-only probe for skin settings. A regression test built on it passes
+  for the wrong reason.
 
 **Defect A is instance number 4 of a class this project already named.** Read
 `repo/docs/playbooks/kodi-settings-clobber.md` (its instance 1 is this exact file
@@ -179,16 +185,35 @@ not a spec):
   for the extract window and ALWAYS re-enables it afterward (cancel path
   included; a re-enable failure is reported loudly). Without the pause, the live
   client flushes stale in-memory instance settings over the restored files at
-  the next clean shutdown (hardware-proven, kodi-settings-clobber.md). There is
-  still ZERO boot-time automation and restore never installs or stages add-ons.
+  the next clean shutdown (hardware-proven, kodi-settings-clobber.md). Boot-time
+  work is limited to SELF-HEALING an interrupted or superseded restore: resuming a
+  restore-paused PVR client, the once-per-version stale-key purge, the stale
+  bytecode purge, and the read-only post-restore check. Boot NEVER installs,
+  stages, or enables an add-on the box did not already have enabled, and restore
+  never installs or stages add-ons.
 - **Two-layer wipe.** A wipe on tvOS (One-Tap clean wipe, Fresh Start) clears BOTH
   layers - the POSIX files AND the NSUserDefaults keys - with the same exclusions.
   A POSIX-only wipe leaves stale keys that shadow the restored files; that bug
   class is closed, do not regress it.
-- **Stale-key purge semantics.** `nsud.purge_stale_keys` (a one-shot service
-  migration plus a manual menu action) clears the vector-everything-era stale
-  keys. It MUST materialize any key-only file to disk first - the purge never
-  destroys the only copy of anything.
+- **Stale-key purge semantics.** `nsud.purge_stale_keys` clears the
+  vector-everything-era stale keys. It MUST materialize any key-only file to disk
+  first - the purge never destroys the only copy of anything. It runs ONLY
+  automatically, from three clearers: inside every restore (`wiz.py`, both the
+  wipe and merge paths), once per add-on version at boot (`service.py`), and the
+  two-layer wipe's own key pass (`onetap.py`). The manual "Purge stale tvOS keys"
+  menu action was REMOVED in 2026.07.19.5 - it covered no case the automatic
+  clearers miss, and it asked a non-technical owner to self-diagnose an invisible
+  symptom. Do not reintroduce a manual entry point.
+- **The purge and the duplicate-listing probe must agree.** `purge_stale_keys`
+  deliberately KEEPS the skin's dual-layer `script.skinshortcuts/*.DATA.xml`
+  sidecars, so `restorecheck.duplicate_listing_hits` must not count them either -
+  it IMPORTS `nsud._is_skin_menu_sidecar` rather than re-deriving the rule. Two
+  copies of that predicate drifting is what made every tvOS restore end in a
+  "needs attention" the owner could do nothing about (atv2, 23 false hits,
+  `verification/2026.07.19.4.json`). The exclusion is the `*.DATA.xml` sidecar
+  pattern ONLY: `script.skinshortcuts/settings.xml` and every non-sidecar
+  duplicate still hit, because a real stale key shadowing a restored file is the
+  one thing that probe exists to catch.
 - **Verification widened, gate unchanged.** `tools/verify_device.py` gains
   restore_contract checks (IPTV inventory, profile fingerprint, duplicate-listing,
   shadow probe) and a `--diff` mode. Hardware verification stays owner-gated and

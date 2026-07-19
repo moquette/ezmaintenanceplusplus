@@ -541,22 +541,36 @@ def ask_int(prompt, current, minimum, maximum, heading=None):
 
 
 # --------------------------------------------------------------------------- #
-# Restart - the ONE mechanism (Quit lets Kodi restart cleanly; LoadProfile lied)
+# Restart - the ONE mechanism. This is a QUIT, not a relaunch (LoadProfile lied).
+# Quit runs CApplication::Stop() in full, which is what takes a restore live; it
+# does NOT bring Kodi back up on any platform. RestartApp is the relaunch builtin
+# and it is desktop-only, so this add-on never calls it. See wiz.py:979-981.
 # --------------------------------------------------------------------------- #
 def restart():
-    """Restart Kodi the only way that actually takes a restore/wipe live."""
+    """Quit Kodi. The clean shutdown is what takes a restore/wipe live.
+
+    This never relaunches. Callers must tell the user to reopen Kodi themselves.
+    """
     xbmc.executebuiltin("Quit")
 
 
 def ask_restart(status="", heading=None):
-    """Offer to finish the restore/wipe. The wording is HONEST per platform:
+    """Offer to finish the restore/wipe.
 
     On Fire TV / Android AND Apple TV / tvOS, Kodi CANNOT restart itself -
     `RestartApp` is desktop-only, so `restart()` can only `Quit`. Promising "Restart
     now?" there is misleading (it just closes). So on those appliances we say "close
-    now, then reopen Kodi"; on desktop, where Quit does relaunch cleanly, we say
-    "restart". tvOS is detected the same way nsud does (System.Platform.TVOS) - it is
-    NOT Android, so the Android-only check used to give it the wrong wording.
+    now, then reopen Kodi". tvOS is detected the same way nsud does
+    (System.Platform.TVOS) - it is NOT Android, so the Android-only check used to
+    give it the wrong wording.
+
+    KNOWN WORDING BUG on the `else` branch (desktop, i.e. the macOS bench): it says
+    "Restart now?" but `restart()` calls `Quit` there too, and Quit does not relaunch
+    on ANY platform - `RestartApp` is the relaunch builtin and this add-on never calls
+    it. An earlier version of this docstring asserted "on desktop Quit does relaunch
+    cleanly"; that was FALSE, the same false belief that armed defect A in wiz.py.
+    The wording is left alone deliberately: no fleet box is desktop, so this only
+    affects the bench, and changing user-facing restore vocabulary is owner-gated.
 
     `status` is an optional line shown above the prompt (e.g. "Restore Complete: ...").
     Returns True and acts (Quit) if the user accepts. Callers on the post-wipe path MUST

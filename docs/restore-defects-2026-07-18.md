@@ -1,6 +1,19 @@
 # Restore defects, findings and fix plan (2026-07-18)
 
-**STATUS: DIAGNOSED, NOT FIXED. NO CODE HAS BEEN CHANGED.**
+> **SUPERSEDED AS STATUS, PRESERVED AS DIAGNOSIS (banner added 2026-07-19).**
+> Everything below was written BEFORE the fixes and states "NOT FIXED". That is
+> no longer true and this document is no longer the status of anything. Both
+> defects are FIXED IN CODE: defect A in `be31322` (`_apply_skin_settings`,
+> `wiz.py:869`), defect B after its trigger was reproduced on the local bench
+> (the trigger was in `skin.estuary7`, not in EZM++). A3, `lookandfeel.skin`
+> itself, remains OPEN BY DESIGN. **`TASKS.md` is the status.** Read on for the
+> evidence and reasoning, which are still accurate and still worth having.
+>
+> Two specific traps if you read further: the `wiz.py:753-764` "false docstring"
+> cited below NO LONGER EXISTS (it was corrected; the current text at
+> `wiz.py:979-981` is true), and defect B's trigger is NOT unknown any more.
+
+**ORIGINAL STATUS LINE (historical): DIAGNOSED, NOT FIXED. NO CODE HAS BEEN CHANGED.**
 **The fix plan below is PROPOSED and has NOT been approved by QA or the architect.**
 
 Two defects were found while investigating why a full restore of the ATV base

@@ -122,56 +122,66 @@ def test_tools_source_has_no_iptv_tokens():
         assert token not in src, "tools.py must not contain %r" % token
 
 
-def test_buffer_prompt_marker_roundtrip(tools):
-    # The surviving, non-IPTV post-restore marker still works end to end.
-    assert tools.mod.buffer_prompt_pending() is False
-    tools.mod.mark_buffer_prompt_pending()
-    assert tools.mod.buffer_prompt_pending() is True
-    tools.mod.clear_buffer_prompt_marker()
-    assert tools.mod.buffer_prompt_pending() is False
+def test_no_post_restore_prompt_machinery_survives(tools):
+    """The deleted popup must stay deleted, in code and not just in behaviour.
+
+    Every name here was load-bearing for a boot-time modal that asked the user to
+    repair values the restore had just cloned. They are gone together with the flow;
+    a partial resurrection (say, re-adding the marker "just to record state") is how
+    an unattended boot dialog comes back."""
+    src = (ADDON_ROOT / "resources" / "lib" / "modules" / "tools.py").read_text(
+        encoding="utf-8"
+    )
+    for token in (
+        "BUFFER_PROMPT_MARKER",
+        "mark_buffer_prompt_pending",
+        "buffer_prompt_pending",
+        "clear_buffer_prompt_marker",
+        "prompt_buffer_after_restore",
+        "prompt_devicename_after_restore",
+        "prompt_after_restore",
+        "arm_first_run_tuneup",
+        "FIRST_RUN_FLAG",
+        "_PROMPT_MAX_ATTEMPTS",
+        "_PROMPT_MAX_BOOTS",
+    ):
+        assert token not in src, (
+            "tools.py must not contain %r - the post-restore prompt was deleted, "
+            "not disabled" % token
+        )
 
 
-def test_first_run_arms_tuneup_on_fresh_install(tools):
-    """A genuinely fresh install (no flag, no settings.xml) arms the tune-up marker
-    and writes the first-run flag, exactly once."""
-    import os
-
-    assert tools.mod.buffer_prompt_pending() is False
-    assert tools.mod.arm_first_run_tuneup() is True
-    assert tools.mod.buffer_prompt_pending() is True
-    assert os.path.exists(tools.mod.FIRST_RUN_FLAG)
-    # Second boot: flag present, no re-arm even after the prompt cleared the marker.
-    tools.mod.clear_buffer_prompt_marker()
-    assert tools.mod.arm_first_run_tuneup() is False
-    assert tools.mod.buffer_prompt_pending() is False
+def test_capture_device_identity_reads_both_live_values(tools, monkeypatch):
+    """The capture reads THIS box's own name and buffer from the live settings."""
+    monkeypatch.setattr(tools.mod, "_get_devicename", lambda: "Living Room")
+    monkeypatch.setattr(tools.mod, "_get_cache_mb", lambda: 96)
+    assert tools.mod.capture_device_identity() == {
+        "services.devicename": "Living Room",
+        "filecache.memorysize": 96,
+    }
 
 
-def test_first_run_suppressed_on_upgraded_box(tools):
-    """A box that ran an older EZM++ (its settings.xml already exists when the flag is
-    first checked) gets the flag written but is NOT prompted: shipping the feature must
-    not re-prompt the whole fleet."""
-    import os
+def test_capture_device_identity_omits_what_it_could_not_read(tools, monkeypatch):
+    """An unreadable value is OMITTED, never defaulted.
 
-    d = os.path.dirname(tools.mod.FIRST_RUN_FLAG)
-    if not os.path.isdir(d):
-        os.makedirs(d)
-    with open(os.path.join(d, "settings.xml"), "w") as f:
-        f.write("<settings/>")
-    assert tools.mod.arm_first_run_tuneup() is False
-    assert tools.mod.buffer_prompt_pending() is False
-    assert os.path.exists(tools.mod.FIRST_RUN_FLAG)
-    # And it stays quiet on every later boot.
-    assert tools.mod.arm_first_run_tuneup() is False
-    assert tools.mod.buffer_prompt_pending() is False
+    A default here would be written back over the archive as though it were this
+    box's own value, which is worse than leaving the archive's: it would invent a
+    name or a buffer size nobody chose."""
+    monkeypatch.setattr(tools.mod, "_get_devicename", lambda: "")
+    monkeypatch.setattr(tools.mod, "_get_cache_mb", lambda: None)
+    assert tools.mod.capture_device_identity() == {}
 
 
-def test_first_run_never_clears_a_pending_restore_marker(tools):
-    """If a restore already armed the tune-up (marker present when the first-run check
-    happens, e.g. first boot after restoring onto a fresh box), the first-run check must
-    leave it pending."""
-    tools.mod.mark_buffer_prompt_pending()
-    tools.mod.arm_first_run_tuneup()
-    assert tools.mod.buffer_prompt_pending() is True
+def test_capture_device_identity_never_raises(tools, monkeypatch):
+    """It runs as the first statement of restore(); a raise there would abort a
+    restore over a cosmetic setting."""
+
+    def boom():
+        raise RuntimeError("json-rpc down")
+
+    monkeypatch.setattr(tools.mod, "_get_devicename", boom)
+    monkeypatch.setattr(tools.mod, "_get_cache_mb", boom)
+    assert tools.mod.capture_device_identity() == {}
 
 
 def test_restore_check_marker_round_trips_the_expected_skin(tools):

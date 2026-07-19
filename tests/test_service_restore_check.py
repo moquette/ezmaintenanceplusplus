@@ -221,9 +221,20 @@ def test_finding_raises_the_notification(env):
     assert len(env.notifications) == 1, "a finding must reach the notification"
     heading, message = env.notifications[0]
     assert "EZ Maintenance++" in heading
-    assert "needs attention" in message
-    # No count/path jargon in the user-facing string.
+    # The toast must name an ACTION the owner can take. It used to say "open EZ
+    # Maintenance++", which routed her to a menu whose only relevant entry was
+    # "Purge stale tvOS keys" - jargon, and removed in 2026.07.19.5. Both actions
+    # named here re-run the stale-key purge on their own.
+    assert "Restore again" in message
+    assert "restart the box" in message
+    assert "open EZ Maintenance++" not in message, (
+        "the toast must not route the owner into the add-on: the manual purge it "
+        "used to point at no longer exists"
+    )
+    # No count/path/platform jargon in the user-facing string.
     assert "instance-settings" not in message
+    for jargon in ("NSUserDefaults", "tvOS", "key", "purge", "shadow"):
+        assert jargon.lower() not in message.lower(), jargon
     assert any("ATTENTION" in m for m in env.log_lines(LOGWARNING))
     assert not env.marker.exists()
 
@@ -253,110 +264,62 @@ def test_probe_exception_does_not_break_boot_and_clears_marker(env, monkeypatch)
 
 
 # --------------------------------------------------------------------------- #
-# Restore defect B3: home-visible is NOT boot-settled.
-# skin.estuary7's Home.xml onload arms AlarmClock(t7bbuild,...,00:15); when the menu
-# is stale (what a restore produces) the skinshortcuts rebuild ends in ReloadSkin(),
-# destroying the window stack. Reproduced on the bench 2026-07-18 at 15.05s and
-# 15.45s, killing an open EZM++ prompt 15.27s in. Prompting at home-visible is
-# prompting into a doomed window, so the service must wait past the deferred build.
-# See docs/restore-defect-b-reproduced-2026-07-18.md.
+# The boot service opens NO dialog, and therefore knows nothing about any skin.
+#
+# It used to wait out one specific skin's deferred menu rebuild (a 15s AlarmClock
+# whose skinshortcuts build ends in ReloadSkin(), destroying the window stack)
+# before showing the post-restore prompt. The prompt was deleted on 2026-07-19 -
+# a restore preserves this box's device name and cache buffer instead of asking
+# the user to repair them - so the wait was deleted with it rather than renamed.
+# These tests pin that the coupling cannot come back by accident.
 # --------------------------------------------------------------------------- #
 
 
-class _RecordingMon:
-    """Monitor that records how long it was asked to wait."""
+def test_service_knows_nothing_about_any_skin():
+    """service.py must not name, poll, or time itself against skin internals.
 
-    def __init__(self, abort_after=None):
-        self.waits = []
-        self.abort_after = abort_after
-
-    def abortRequested(self):
-        return False
-
-    def waitForAbort(self, t):
-        self.waits.append(t)
-        if self.abort_after is not None and len(self.waits) >= self.abort_after:
-            return True  # abort signalled
-        return False
-
-
-def test_wait_skin_settled_waits_past_the_deferred_build(env):
-    """It must wait longer than the skin's 15s alarm before any dialog is opened."""
-    svc = env.load()
-    mon = _RecordingMon()
-    assert svc._wait_skin_settled(mon) is True
-    assert mon.waits, "it must actually wait"
-    assert mon.waits[0] >= 16, (
-        "the first wait must clear the skin's 15s AlarmClock with margin, got %r"
-        % (mon.waits[0],)
+    The test the owner set: this add-on must run correctly under ANY skin with zero
+    knowledge of it. Naming a skin, polling a skin add-on's in-progress property, or
+    hard-coding a delay derived from a skin's alarm all fail that test - renaming the
+    wait would not fix it, so the tokens themselves are banned."""
+    src = SERVICE_PY.read_text(encoding="utf-8")
+    code = "\n".join(
+        line for line in src.splitlines() if not line.lstrip().startswith("#")
     )
-    assert svc._SKIN_DEFERRED_BUILD_SECS >= 16
+    for token in (
+        "skinshortcuts",
+        "estuary7",
+        "t7bbuild",
+        "ReloadSkin",
+        "_wait_skin_settled",
+        "_SKIN_DEFERRED_BUILD_SECS",
+    ):
+        assert token not in code, (
+            "service.py executable code must not reference %r: a boot service that "
+            "times itself against a skin's internals is coupled to that skin" % token
+        )
 
 
-def test_boot_service_settles_the_skin_BEFORE_prompting(env, monkeypatch):
-    """The service must CALL _wait_skin_settled, and call it before the prompt.
-
-    The other tests here call _wait_skin_settled directly, so they all still pass if
-    the call is deleted from _maybe_prompt_after_restore or reordered after the
-    prompt - an adversarial QA pass on 2026-07-18 demonstrated exactly that deletion
-    with the full suite green. That regression is invisible in code review and fatal
-    in behaviour: the prompt goes straight back into the skin's 15s AlarmClock window,
-    which tears down the window stack mid-dialog. This pins the ORDER, which is the
-    entire content of the fix."""
-    svc = env.load()
-    order = []
-    monkeypatch.setattr(
-        svc, "_wait_kodi_ready", lambda *a, **k: order.append("ready") or True
-    )
-    monkeypatch.setattr(
-        svc, "_wait_skin_settled", lambda *a, **k: order.append("settled") or True
-    )
-    # service.py imports tools INSIDE the function, so patch the module object itself.
-    tools = sys.modules["resources.lib.modules.tools"]
-    monkeypatch.setattr(
-        tools,
-        "prompt_after_restore",
-        lambda *a, **k: order.append("prompt"),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        tools, "buffer_prompt_pending", lambda *a, **k: True, raising=False
-    )
-
-    svc._maybe_prompt_after_restore(_RecordingMon())
-
-    assert "prompt" in order, "the prompt must still run"
-    assert "settled" in order, (
-        "the service must CALL _wait_skin_settled - deleting the call leaves every "
-        "other settle test passing while the defect is fully restored"
-    )
-    assert order.index("settled") < order.index("prompt"), (
-        "the skin must settle BEFORE the prompt opens, got %r" % (order,)
-    )
-
-
-def test_wait_skin_settled_aborts_cleanly(env):
-    """A shutdown during the wait must return False, never block the service."""
-    svc = env.load()
-    assert svc._wait_skin_settled(_RecordingMon(abort_after=1)) is False
-
-
-def test_wait_skin_settled_honours_skinshortcuts_isrunning(env, monkeypatch):
-    """While skinshortcuts reports a build in progress, keep waiting."""
-    svc = env.load()
-    calls = []
-
-    def cond(expr):
-        if "skinshortcuts-isrunning" in expr:
-            calls.append(1)
-            return len(calls) <= 3  # busy for three polls, then clear
-        return True
-
-    monkeypatch.setattr(svc.xbmc, "getCondVisibility", cond)
-    mon = _RecordingMon()
-    assert svc._wait_skin_settled(mon) is True
-    assert len(calls) >= 4, "it must poll until the build flag clears"
-    assert len(mon.waits) >= 4, "each busy poll must be an interruptible wait"
+def test_boot_sequence_opens_no_dialog():
+    """No boot step may open a modal. A dialog nobody is watching cannot be answered,
+    and Kodi's API cannot tell a destroyed dialog from a cancelled one, so an
+    unattended boot prompt is unanswerable by construction. The notification in
+    _maybe_restore_check is NOT a dialog: it needs no answer and blocks nothing."""
+    src = SERVICE_PY.read_text(encoding="utf-8")
+    start = src.index("def _startup_sequence(")
+    end = src.index("def _folder_size_and_count(")
+    sequence_region = src[start:end]
+    for token in (
+        "dialog.select",
+        "Dialog().select",
+        "Keyboard(",
+        "doModal",
+        ".yesno(",
+    ):
+        assert token not in sequence_region, (
+            "the boot sequence must not open %r - boot work is silent and completes "
+            "on its own" % token
+        )
 
 
 def test_boot_check_reports_a_wrong_skin(env, monkeypatch):

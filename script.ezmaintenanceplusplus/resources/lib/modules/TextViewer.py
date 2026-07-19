@@ -10,15 +10,6 @@ dialog = xbmcgui.Dialog()
 contents = ""
 path = ""
 
-# get actioncodes from keymap.xml
-ACTION_MOVE_LEFT = 1
-ACTION_MOVE_RIGHT = 2
-ACTION_MOVE_UP = 3
-ACTION_MOVE_DOWN = 4
-ACTION_PAGE_UP = 5
-ACTION_PAGE_DOWN = 6
-ACTION_SELECT_ITEM = 7
-
 
 class Viewer(xbmcgui.WindowXML):
     def __init__(self, strXMLname, strFallbackPath):

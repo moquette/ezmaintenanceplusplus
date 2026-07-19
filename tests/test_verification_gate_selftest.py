@@ -137,13 +137,43 @@ def test_unrelated_versions_artifact_can_still_satisfy_the_gate(gate, monkeypatc
     assert gate._contract_changed_since_last_verification() is False
 
 
-def test_generator_stamps_the_fingerprint_into_each_device_entry(gate):
-    """verify_device.py must write a PER-ENTRY fingerprint.
+def test_generator_stamps_the_fingerprint_it_compared_against_the_box(monkeypatch):
+    """The entry must carry the fingerprint pull() COMPARED against the box.
 
-    Without it every artifact reads as unverified (see the test above), so the gate
-    would demand a device run forever. This pins the generator's side of the contract."""
-    src = (ROOT / "tools" / "verify_device.py").read_text()
-    assert 'evidence["storage_fingerprint"] = fingerprint' in src, (
-        "verify_device.py must stamp the fingerprint into the device entry it just "
-        "captured; a top-level-only stamp is what allowed one class to launder another"
+    Two failures this pins at once. A top-level-only stamp is what let one class
+    launder another (G-1). And re-hashing the tree at WRITE time rather than reusing
+    the compared value reopens the edit-after-evidence window: a contract file edited
+    between the pull and the write would be recorded as verified without any box
+    having been checked against it - the exact shape of the 2026-07-19 incident.
+
+    Driven through the real pull() rather than asserted against source text, so
+    moving the assignment cannot silently satisfy it."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "_vd_stamp_test", ROOT / "tools" / "verify_device.py"
+    )
+    vd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vd)
+
+    monkeypatch.setenv("KODI_JSONRPC_USER", "u")
+    monkeypatch.setenv("KODI_JSONRPC_PASSWORD", "p")
+    monkeypatch.setattr(vd, "storage_fingerprint", lambda: "F" * 64)
+
+    def _rpc(host, method, params=None, **kw):
+        if method == "XBMC.GetInfoLabels":
+            return {
+                "System.BuildVersion": "21.3",
+                "System.FriendlyName": "bench",
+                "Window(10000).Property(ezm_contract_fingerprint)": "F" * 64,
+            }
+        if method == "Addons.GetAddonDetails":
+            return {"addon": {"version": vd.addon_version()}}
+        return {}
+
+    monkeypatch.setattr(vd, "rpc", _rpc)
+    evidence = vd.pull("192.0.2.1", "tvos")
+    assert evidence.get("storage_fingerprint") == "F" * 64, (
+        "the device entry must carry the fingerprint that was compared against the "
+        "box, got %r" % (evidence.get("storage_fingerprint"),)
     )

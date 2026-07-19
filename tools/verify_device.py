@@ -485,6 +485,35 @@ def pull(host, device_class):
             % (expected, on_box)
         )
 
+    # G-2: the version string above is HAND-TYPED and does not move when contract
+    # code changes, so it cannot prove the box runs THIS code. Ask the box to hash
+    # its own installed contract files and refuse anything but an exact match.
+    # Without this, editing a contract file after deploying yields a fully green
+    # artifact certifying code no box ever ran - which happened on 2026-07-19.
+    box_fp = (
+        call(
+            "XBMC.GetInfoLabels",
+            {"labels": ["Window(10000).Property(ezm_contract_fingerprint)"]},
+        )
+        or {}
+    ).get("Window(10000).Property(ezm_contract_fingerprint)", "")
+    local_fp = storage_fingerprint()
+    if box_fp != local_fp:
+        raise SystemExit(
+            "REFUSING to write a verification artifact.\n"
+            "  The box is not running the storage-contract code at HEAD.\n"
+            "    box:  %s\n"
+            "    HEAD: %s\n"
+            "  The add-on hashes its OWN installed contract files at startup, so this\n"
+            "  compares what is RUNNING against what you are about to certify - the\n"
+            "  version string cannot do that, because it does not move when contract\n"
+            "  code changes.\n"
+            "  An empty box value means the property was not published: the service\n"
+            "  may not have started yet, or the installed build predates it. Restart\n"
+            "  Kodi on the box, confirm the deploy landed, then re-run."
+            % (box_fp or "<not published>", local_fp)
+        )
+
     # One shared listing cache: the skinshortcuts directory below is the SAME
     # listing the duplicate scan needs, and used to be pulled twice per run.
     cache = {}
@@ -517,6 +546,11 @@ def pull(host, device_class):
         "skinshortcuts_duplicates": dupes,  # non-empty = a live key/disk split on the box
         "clean_single_layer": not dupes,
         "restore_contract": contract,
+        # The fingerprint that was COMPARED against this box above, not a fresh
+        # recomputation at write time. Editing a contract file between the pull and
+        # the write would otherwise record a value no box was ever checked against -
+        # the same edit-after-evidence shape as the 2026-07-19 incident.
+        "storage_fingerprint": local_fp,
     }
     if unlabelled:
         # Recorded, never silently dropped - see labelled_names().
@@ -741,7 +775,8 @@ def main():
         if path.exists()
         else {
             "version": version,
-            "storage_fingerprint": storage_fingerprint(),
+            # From the pull, never a fresh hash: see the note below.
+            "storage_fingerprint": evidence["storage_fingerprint"],
             "devices": {},
         }
     )
@@ -752,8 +787,13 @@ def main():
     # tvos, and the artifact reads complete-and-current while android is stale.
     # Per-entry, a carried-forward entry keeps its own older fingerprint and the
     # gate can see it.
-    fingerprint = storage_fingerprint()
-    evidence["storage_fingerprint"] = fingerprint
+    # ALWAYS from the pull, never storage_fingerprint() again. pull() compared this
+    # exact value against the box; re-hashing the tree here would record a fingerprint
+    # no box was ever checked against if a contract file changed in between - the
+    # edit-after-evidence shape of the 2026-07-19 incident. storage_fingerprint() is
+    # deliberately called in exactly ONE place in this module (inside pull, beside the
+    # comparison) and test_the_tree_is_hashed_only_where_it_is_compared pins that.
+    fingerprint = evidence["storage_fingerprint"]
     doc["devices"][args.device_class] = evidence
     # Kept only as a human-readable summary of the most recent pull. The gate must
     # NOT trust it; it is not evidence about any particular device.

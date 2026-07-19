@@ -1,3 +1,18 @@
+v2026.07.19.3
+- Internal: the add-on now clears its own stale compiled-code cache at startup.
+  Python can keep running an older compiled copy of a file when the new one is
+  the same size, and because builds here use a fixed timestamp for
+  reproducibility, that check could not tell the two apart. Clearing the cache
+  means the code that runs is the code that shipped. No change to anything you
+  see or use.
+
+v2026.07.19.1
+- Internal: the add-on now reports a fingerprint of its own installed
+  storage-handling code, and the release check compares that against the code
+  being certified. Previously the check trusted the version number, which does
+  not change when that code does, so a box running an older build could be
+  recorded as verified. No change to anything you see or use.
+
 v2026.07.19.0
 - A restore that switches to a different skin now tells you. Kodi only applies a
   skin change when someone confirms it on screen, and that confirmation cannot be

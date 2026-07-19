@@ -634,9 +634,15 @@ def _pull_with_fake_transport(monkeypatch, host="10.0.0.5", files=None, calls=No
     def fake_rpc(host_, method, params=None, timeout=8, auth=None, port=None):
         recorded.append((method, host_, auth, port))
         if method == "XBMC.GetInfoLabels":
+            # The box publishes the hash of ITS OWN installed contract files (G-2).
+            # A fake that omits it is correctly REFUSED, so model a box running the
+            # code under test by echoing the tool's own fingerprint.
             return {
                 "System.BuildVersion": "21.3 (21.3.0) Git:20260101-abcdef",
                 "System.FriendlyName": "Living Room",
+                "Window(10000).Property(ezm_contract_fingerprint)": (
+                    vd.storage_fingerprint()
+                ),
             }
         if method == "Addons.GetAddonDetails":
             return {"addon": {"version": vd.addon_version()}}
@@ -849,3 +855,60 @@ def test_addon_version_reports_a_clear_error_when_the_pattern_misses(
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+@pytest.mark.parametrize("device_class", ["tvos", "android"])
+def test_pull_refuses_a_box_running_different_contract_code(monkeypatch, device_class):
+    """G-2: a box whose installed contract code differs must be REFUSED.
+
+    The version string cannot catch this - it is hand-typed and does not move when
+    contract code changes, so a box on an older build under the same version produced
+    a fully green artifact certifying code it never ran (observed 2026-07-19). This
+    drives the real refusal path rather than asserting on source text."""
+    monkeypatch.setenv("KODI_JSONRPC_USER", "u")
+    monkeypatch.setenv("KODI_JSONRPC_PASSWORD", "p")
+
+    def _rpc(host, method, params=None, **kw):
+        if method == "XBMC.GetInfoLabels":
+            return {
+                "System.BuildVersion": "21.3 (21.3.0) Git:20260101-abcdef",
+                "System.FriendlyName": "Living Room",
+                # A DIFFERENT build: right version string, wrong code.
+                "Window(10000).Property(ezm_contract_fingerprint)": "d" * 64,
+            }
+        if method == "Addons.GetAddonDetails":
+            return {"addon": {"version": vd.addon_version()}}
+        return {}
+
+    monkeypatch.setattr(vd, "rpc", _rpc)
+    with pytest.raises(SystemExit) as e:
+        vd.pull("192.0.2.1", device_class)
+    msg = str(e.value)
+    assert "not running the storage-contract code at HEAD" in msg
+    assert "d" * 64 in msg, "the refusal must show what the BOX reported"
+
+
+@pytest.mark.parametrize("device_class", ["tvos", "android"])
+def test_pull_refuses_a_box_that_publishes_no_fingerprint(monkeypatch, device_class):
+    """An absent property must REFUSE, never pass.
+
+    Empty means "the box could not tell us" - an older build, or a service that has
+    not started. Treating unknown as acceptable is the failure-open direction and
+    would leave G-2 fully open on exactly the boxes most likely to be stale."""
+    monkeypatch.setenv("KODI_JSONRPC_USER", "u")
+    monkeypatch.setenv("KODI_JSONRPC_PASSWORD", "p")
+
+    def _rpc(host, method, params=None, **kw):
+        if method == "XBMC.GetInfoLabels":
+            return {
+                "System.BuildVersion": "21.3 (21.3.0) Git:20260101-abcdef",
+                "System.FriendlyName": "Living Room",
+            }
+        if method == "Addons.GetAddonDetails":
+            return {"addon": {"version": vd.addon_version()}}
+        return {}
+
+    monkeypatch.setattr(vd, "rpc", _rpc)
+    with pytest.raises(SystemExit) as e:
+        vd.pull("192.0.2.1", device_class)
+    assert "<not published>" in str(e.value)

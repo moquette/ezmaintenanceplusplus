@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.19.0" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.19.3" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,8 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+        v2026.07.19.3: Internal. The add-on clears its own stale compiled-code cache at startup, so the code that runs is always the code that shipped. Nothing user-facing changed.
+        v2026.07.19.1: Internal release-checking fix. The add-on now reports a fingerprint of its own installed storage-handling code so a verification can no longer be recorded against a box running an older build. Nothing user-facing changed.
         v2026.07.19.0: A restore that switches skins now tells you. Kodi only applies a skin change when someone confirms it on screen, which cannot be answered safely during a restore, so the box reopens on its current skin. The restored skin and its settings are installed and intact; finish the switch in Settings > Interface > Skin. The next start checks and reports it. Restores that do not change the skin are unaffected.
         v2026.07.18.2: Backups saved inside Kodi's own storage now warn first - on Apple TV that area can be cleared by the system to free space, so a backup kept there may not be present when it is needed. USB, network and Dropbox destinations are unaffected.
         v2026.07.18.1: Restore accuracy - a skin setting containing a comma (a label like "Movies, HD") came back truncated, and the truncated value was then written over the correctly restored file. Values now survive exactly as archived. A setting whose ID contained a parenthesis or quote could also hang a restore behind an unexpected on-screen keyboard; such IDs are now skipped.

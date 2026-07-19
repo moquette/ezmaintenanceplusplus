@@ -190,6 +190,14 @@ def _load_service(monkeypatch, env, nsud_mod):
     return mod
 
 
+class _StubMon:
+    def abortRequested(self):
+        return False
+
+    def waitForAbort(self, t):
+        return False
+
+
 @pytest.fixture
 def env(monkeypatch, tmp_path):
     e = _Env(tmp_path)
@@ -352,19 +360,35 @@ def test_garbage_return_shape_is_contained(env):
 # --------------------------------------------------------------- boot wiring
 
 
-def test_mainline_calls_the_migration_before_first_run_and_restore_steps():
-    """The __main__ block cannot be executed under pytest, so pin the wiring at
-    source level: the migration is called at boot, and BEFORE the first-run /
-    post-restore steps (they may read files a stale key would shadow)."""
-    src = SERVICE_PY.read_text(encoding="utf-8")
-    assert 'if __name__ == "__main__":' in src
-    main_block = src.split('if __name__ == "__main__":', 1)[1]
-    assert "_maybe_purge_stale_nsud_keys()" in main_block
-    assert main_block.index("_maybe_purge_stale_nsud_keys()") < main_block.index(
-        "_maybe_arm_first_run()"
-    )
-    assert main_block.index("_maybe_arm_first_run()") < main_block.index(
-        "_maybe_prompt_after_restore(monitor)"
+def test_boot_sequence_runs_the_migration_before_first_run_and_restore_steps(env):
+    """The migration runs at boot, and BEFORE the first-run / post-restore steps.
+
+    Those steps may read files a stale NSUserDefaults key would shadow, so the order
+    is load-bearing. This EXECUTES the boot sequence: it used to scan the __main__
+    block as source text because __main__ cannot be run under pytest, which meant it
+    proved only that some call appeared somewhere in that text."""
+    svc = env.load(_nsud_stub(env, result=(0, 0, 0, 0)))
+    order = []
+    for name in (
+        "_maybe_purge_stale_nsud_keys",
+        "_purge_stale_bytecode",
+        "_publish_contract_fingerprint",
+        "_maybe_resume_paused_pvr",
+        "_maybe_arm_first_run",
+        "_maybe_prompt_after_restore",
+        "_maybe_restore_check",
+    ):
+        svc_name = name
+        setattr(svc, svc_name, (lambda n: lambda *a, **k: order.append(n))(svc_name))
+
+    svc._startup_sequence(_StubMon())
+
+    assert "_maybe_purge_stale_nsud_keys" in order, "the migration must run at boot"
+    assert order.index("_maybe_purge_stale_nsud_keys") < order.index(
+        "_maybe_arm_first_run"
+    ), "the migration must precede the first-run step"
+    assert order.index("_maybe_arm_first_run") < order.index(
+        "_maybe_prompt_after_restore"
     )
 
 
@@ -425,7 +449,20 @@ def test_resume_paused_pvr_keeps_marker_when_reenable_fails(monkeypatch, tmp_pat
     assert tools_mod._state["cleared"] is False
 
 
-def test_mainline_calls_pvr_recovery_at_boot():
-    src = SERVICE_PY.read_text(encoding="utf-8")
-    main_block = src.split('if __name__ == "__main__":', 1)[1]
-    assert "_maybe_resume_paused_pvr()" in main_block
+def test_boot_sequence_runs_pvr_recovery(env):
+    """A restore interrupted mid-extract can leave pvr.iptvsimple disabled; boot must
+    always re-enable it. Executed, not scanned for in source text."""
+    svc = env.load(_nsud_stub(env, result=(0, 0, 0, 0)))
+    order = []
+    for name in (
+        "_maybe_purge_stale_nsud_keys",
+        "_purge_stale_bytecode",
+        "_publish_contract_fingerprint",
+        "_maybe_resume_paused_pvr",
+        "_maybe_arm_first_run",
+        "_maybe_prompt_after_restore",
+        "_maybe_restore_check",
+    ):
+        setattr(svc, name, (lambda n: lambda *a, **k: order.append(n))(name))
+    svc._startup_sequence(_StubMon())
+    assert "_maybe_resume_paused_pvr" in order

@@ -1,3 +1,24 @@
+v2026.07.18.0
+- Post-restore prompts no longer lose what you typed. A destroyed dialog is
+  indistinguishable from a deliberate answer through Kodi's Python API
+  (dialog.select returns -1 for both "Back" and "torn down"; the keyboard's
+  isConfirmed() is False for both), and the old flow treated a teardown as an
+  answer, cleared the once-only marker and moved on. The device-name step now
+  re-presents a non-answer instead of advancing, carries half-typed text forward
+  into the re-presented keyboard, and only an explicit Keep or a confirmed entry
+  ends it. Bounded to five attempts so an unattended box cannot spin.
+- Fixed the cause, not just the symptom: the boot service prompted as soon as the
+  home window was visible, which is the exact moment skin.estuary7's first-boot
+  menu rebuild arms a 15-second timer. That rebuild ends in ReloadSkin(), which
+  destroys the whole window stack. Reproduced twice on a local Kodi 21.3 bench at
+  15.05s and 15.45s, killing an open prompt 15.27 seconds in. The service now
+  waits past that deferred build, and honours skinshortcuts' own in-progress flag,
+  before opening anything.
+- Version bumped because the storage contract changed. The previous branch state
+  carried modified nsud.py/wiz.py while still claiming to be 2026.07.17.7, which
+  would have let a device-verification run certify code the box was not actually
+  running, since verify_device.py compares version strings.
+
 v1.0
 Initial Release
 

@@ -715,12 +715,11 @@ def test_prompt_devicename_rename_sets_notifies_and_prefills(wiz, monkeypatch):
 
     kb = {}
 
-    def fake_kb(default="", heading="", hidden=False, cancel=""):
+    def fake_kb(default="", heading="", hidden=False):
         kb["default"] = default
-        kb["cancel"] = cancel
-        return "Living Room"
+        return True, "Living Room"
 
-    monkeypatch.setattr(tools, "_get_keyboard", fake_kb)
+    monkeypatch.setattr(tools, "_keyboard_result", fake_kb)
     sets = []
     monkeypatch.setattr(tools, "_set_devicename", lambda n: sets.append(n) or True)
     notes = []
@@ -731,7 +730,6 @@ def test_prompt_devicename_rename_sets_notifies_and_prefills(wiz, monkeypatch):
     assert kb["default"] == "OfficeBox", (
         "keyboard must be prefilled with the current name"
     )
-    assert kb["cancel"] == "OfficeBox", "cancel must fall back to the current name"
     assert notes, "a confirmation notification must be shown"
 
 
@@ -746,11 +744,14 @@ def test_prompt_devicename_rename_sets_notifies_and_prefills(wiz, monkeypatch):
     ],
 )
 def test_prompt_devicename_no_change_paths(wiz, monkeypatch, select_ret, kb_ret, why):
-    """Every non-rename path leaves the device name untouched (no _set_devicename call)."""
+    """Every non-rename path leaves the device name untouched (no _set_devicename call).
+
+    Note -1 now RE-PRESENTS rather than advancing (defect B), so that case exhausts
+    _PROMPT_MAX_ATTEMPTS and still ends up changing nothing, which is the property here."""
     tools = wiz.tools
     monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
     monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: select_ret)
-    monkeypatch.setattr(tools, "_get_keyboard", lambda **k: kb_ret)
+    monkeypatch.setattr(tools, "_keyboard_result", lambda **k: (True, kb_ret))
     monkeypatch.setattr(
         tools,
         "_set_devicename",
@@ -765,7 +766,7 @@ def test_prompt_devicename_set_fails_shows_error_no_notification(wiz, monkeypatc
     tools = wiz.tools
     monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
     monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)
-    monkeypatch.setattr(tools, "_get_keyboard", lambda **k: "Living Room")
+    monkeypatch.setattr(tools, "_keyboard_result", lambda **k: (True, "Living Room"))
     monkeypatch.setattr(tools, "_set_devicename", lambda n: False)
     notes = []
     monkeypatch.setattr(tools.dialog, "notification", lambda *a, **k: notes.append(a))
@@ -782,7 +783,7 @@ def test_prompt_devicename_notification_raise_still_true(wiz, monkeypatch):
     tools = wiz.tools
     monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
     monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)
-    monkeypatch.setattr(tools, "_get_keyboard", lambda **k: "Living Room")
+    monkeypatch.setattr(tools, "_keyboard_result", lambda **k: (True, "Living Room"))
     monkeypatch.setattr(tools, "_set_devicename", lambda n: True)
 
     def boom(*a, **k):
@@ -3385,3 +3386,120 @@ def test_dead_extractors_are_gone_and_stay_gone(wiz):
     )
     for gone in ("def ExtractZip", "def ExtractNOProgress"):
         assert gone not in src, "wiz.py must no longer contain %r" % gone
+
+
+# --------------------------------------------------------------------------- #
+# Restore defect B: a destroyed dialog must never be treated as an answer.
+# Reproduced on the bench 2026-07-18: skin.estuary7 arms a 15s AlarmClock on first
+# Home load whose skinshortcuts rebuild ends in ReloadSkin(), which destroyed this
+# very prompt 15.27s in while the marker was then consumed as if answered.
+# See docs/restore-defect-b-reproduced-2026-07-18.md.
+# --------------------------------------------------------------------------- #
+
+
+def test_prompt_devicename_destroyed_select_does_not_advance(wiz, monkeypatch):
+    """A torn-down select (-1) must be RE-PRESENTED, not treated as 'Keep'.
+
+    This is the exact reproduced failure: the select dialog died before the keyboard
+    ever opened, and the old code returned False and let the flow consume the marker."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
+    seen = []
+
+    def flaky_select(*a, **k):
+        seen.append(1)
+        return -1 if len(seen) == 1 else 0  # destroyed once, then user picks Rename
+
+    monkeypatch.setattr(tools.dialog, "select", flaky_select)
+    monkeypatch.setattr(tools, "_keyboard_result", lambda **k: (True, "Living Room"))
+    sets = []
+    monkeypatch.setattr(tools, "_set_devicename", lambda n: sets.append(n) or True)
+    monkeypatch.setattr(tools.dialog, "notification", lambda *a, **k: None)
+
+    assert tools.prompt_devicename_after_restore() is True
+    assert sets == ["Living Room"], "the rename must still land after a destroyed select"
+    assert len(seen) == 2, "the destroyed select must be re-presented exactly once"
+
+
+def test_prompt_devicename_destroyed_keyboard_preserves_typed_text(wiz, monkeypatch):
+    """A torn-down keyboard must re-present PREFILLED with what was already typed.
+
+    The user typing 'Living Ro' when the skin reload fires must not lose those keystrokes."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)
+    calls = []
+
+    def flaky_kb(default="", heading="", hidden=False):
+        calls.append(default)
+        if len(calls) == 1:
+            return False, "Living Ro"  # destroyed mid-typing
+        return True, "Living Room"
+
+    monkeypatch.setattr(tools, "_keyboard_result", flaky_kb)
+    sets = []
+    monkeypatch.setattr(tools, "_set_devicename", lambda n: sets.append(n) or True)
+    monkeypatch.setattr(tools.dialog, "notification", lambda *a, **k: None)
+
+    assert tools.prompt_devicename_after_restore() is True
+    assert sets == ["Living Room"]
+    assert calls[0] == "OfficeBox", "first keyboard is prefilled with the current name"
+    assert calls[1] == "Living Ro", (
+        "the re-presented keyboard must carry the half-typed text, not reset to the old name"
+    )
+
+
+def test_prompt_devicename_all_attempts_destroyed_changes_nothing(wiz, monkeypatch):
+    """If every attempt is a non-answer, bail out bounded and leave the name alone."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
+    n = []
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: n.append(1) or -1)
+    monkeypatch.setattr(
+        tools,
+        "_set_devicename",
+        lambda x: (_ for _ in ()).throw(AssertionError("must not set on a non-answer")),
+    )
+    assert tools.prompt_devicename_after_restore() is False
+    assert len(n) == tools._PROMPT_MAX_ATTEMPTS, "must be bounded, not infinite"
+
+
+def test_prompt_devicename_explicit_keep_exits_immediately(wiz, monkeypatch):
+    """An explicit 'Keep' is a real answer and must NOT be retried."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
+    n = []
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: n.append(1) or 1)
+    monkeypatch.setattr(
+        tools,
+        "_set_devicename",
+        lambda x: (_ for _ in ()).throw(AssertionError("must not set on Keep")),
+    )
+    assert tools.prompt_devicename_after_restore() is False
+    assert len(n) == 1, "an explicit answer must not be re-presented"
+
+
+def test_keyboard_result_reports_confirmation_honestly(wiz, monkeypatch):
+    """_keyboard_result must return the text even when unconfirmed, so callers can
+    re-present prefilled. _get_keyboard keeps its legacy cancel-sentinel contract."""
+    tools = wiz.tools
+
+    class FakeKB:
+        def __init__(self, default="", heading="", hidden=False):
+            self.text = default
+
+        def doModal(self):
+            self.text = "half typed"
+
+        def isConfirmed(self):
+            return False
+
+        def getText(self):
+            return self.text
+
+    monkeypatch.setattr(tools.xbmc, "Keyboard", FakeKB)
+    confirmed, text = tools._keyboard_result(default="OfficeBox")
+    assert confirmed is False
+    assert text == "half typed", "unconfirmed text must still be returned, not discarded"
+    # legacy wrapper is unchanged for the sentinel callers (wiz backup naming, cache size)
+    assert tools._get_keyboard(default="OfficeBox", cancel="-") == "-"

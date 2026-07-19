@@ -218,6 +218,12 @@ BUFFER_PROMPT_MARKER = translatePath(
     "special://home/userdata/addon_data/script.ezmaintenanceplusplus/.ezm_buffer_prompt"
 )
 
+# How many times a post-restore prompt is re-presented after a NON-ANSWER (cancelled or
+# destroyed - the two are indistinguishable through Kodi's Python API). Bounded so an
+# unattended box that keeps losing its dialogs cannot spin forever; an explicit answer
+# always exits on the first pass. See docs/restore-defect-b-reproduced-2026-07-18.md.
+_PROMPT_MAX_ATTEMPTS = 5
+
 # First-ever-run flag: written the first time the boot service looks for it, making that
 # check exactly-once for the lifetime of this install (a rebuilt box has no addon_data,
 # so it legitimately counts as a first run again).
@@ -427,20 +433,47 @@ def prompt_devicename_after_restore():
     keep / cancel / unchanged / empty / failure."""
     try:
         cur = _get_devicename()
-        idx = dialog.select(
-            "Finish setup (1 of 2): Device name",
-            [
-                "Rename this device (currently '%s')" % (cur or "unknown"),
-                "Keep the name '%s'" % (cur or "unknown"),
-            ],
-        )
-        if idx != 0:
-            return False  # Keep (1) or cancel / back (-1)
-        entered = _get_keyboard(
-            default=cur, heading="Device name (Cancel to keep current)", cancel=cur
-        )
-        new = (entered or "").strip()
-        if not new or new == cur:
+        # A destroyed dialog is INDISTINGUISHABLE from a deliberate answer: dialog.select
+        # returns -1 for both "user pressed Back" and "the window stack was torn down",
+        # exactly as isConfirmed() False covers both for the keyboard. Reproduced
+        # 2026-07-18: skin.estuary7 arms a 15s AlarmClock on first Home load whose
+        # skinshortcuts rebuild ends in ReloadSkin(), and it killed THIS select dialog
+        # 15.27s in, with the marker then consumed as if answered. So a non-answer must
+        # never advance the flow; it must be re-presented, prefilled, a bounded number of
+        # times. Explicit choices (Keep, or a confirmed keyboard) still exit immediately.
+        # See docs/restore-defect-b-reproduced-2026-07-18.md.
+        prefill = cur
+        for _attempt in range(_PROMPT_MAX_ATTEMPTS):
+            idx = dialog.select(
+                "Finish setup (1 of 2): Device name",
+                [
+                    "Rename this device (currently '%s')" % (cur or "unknown"),
+                    "Keep the name '%s'" % (cur or "unknown"),
+                ],
+            )
+            if idx == 1:
+                return False  # explicit Keep
+            if idx != 0:
+                continue  # -1: cancelled OR destroyed. Do not advance; re-present.
+            confirmed, entered = _keyboard_result(
+                default=prefill, heading="Device name (Cancel to keep current)"
+            )
+            if not confirmed:
+                # Carry the half-typed text forward so nothing the user typed is lost.
+                prefill = entered or prefill
+                continue
+            new = (entered or "").strip()
+            if not new or new == cur:
+                return False
+            break
+        else:
+            # Every attempt was a non-answer. Leave the name alone rather than guess, and
+            # say so in the log: on a torn-down boot this is the visible symptom.
+            xbmc.log(
+                "%s : device-name prompt got no answer in %s attempts - name unchanged"
+                % (AddonID, _PROMPT_MAX_ATTEMPTS),
+                xbmc.LOGWARNING,
+            )
             return False
         if _set_devicename(new):
             try:
@@ -479,15 +512,48 @@ def prompt_after_restore():
     return True
 
 
+def _keyboard_result(default="", heading="", hidden=False):
+    """Show a keyboard and return (confirmed, text) WITHOUT collapsing a non-answer.
+
+    Kodi's Python API cannot distinguish "user pressed Back" from "the dialog was
+    destroyed under us" - both give isConfirmed() False with the typed text still in
+    getText(). Do not claim to detect teardown; callers must instead refuse to treat a
+    non-answer as an answer (see prompt_devicename_after_restore). Returning the text
+    even when unconfirmed lets a caller re-present the dialog PREFILLED with whatever
+    the user had already typed, so nothing is silently discarded.
+
+    Teardown is real and reproduced: skin.estuary7's Home.xml onload arms a 15s
+    AlarmClock that runs a skinshortcuts buildxml; when the menu is stale (exactly what
+    a restore produces) that ends in ReloadSkin(), which destroys the whole window
+    stack. See docs/restore-defect-b-reproduced-2026-07-18.md."""
+    confirmed = False
+    text = ""
+    try:
+        keyboard = xbmc.Keyboard(default, heading, hidden)
+        keyboard.doModal()
+        try:
+            confirmed = bool(keyboard.isConfirmed())
+        except Exception:
+            confirmed = False
+        try:
+            text = unicode(keyboard.getText() or "")
+        except Exception:
+            text = ""
+    except Exception:
+        return False, ""
+    return confirmed, text
+
+
 def _get_keyboard(default="", heading="", hidden=False, cancel=""):
-    """shows a keyboard and returns a value"""
+    """shows a keyboard and returns a value
+
+    Legacy contract, deliberately unchanged: returns ``cancel`` on any non-answer. The
+    sentinel callers (wiz.py backup naming, cache size) rely on it. New callers that
+    must not discard input should use _keyboard_result instead."""
     if cancel == "":
         cancel = default
-    keyboard = xbmc.Keyboard(default, heading, hidden)
-    keyboard.doModal()
-    if keyboard.isConfirmed():
-        return unicode(keyboard.getText())
-    return cancel
+    confirmed, text = _keyboard_result(default, heading, hidden)
+    return text if confirmed else cancel
 
 
 ##############################    END    #########################################

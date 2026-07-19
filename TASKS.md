@@ -64,7 +64,83 @@ Full record, fix plan, task breakdown, acceptance criteria and references:
 
 ---
 
-## 🔴 OPEN - Restore defect B: post-restore device-name prompt discards input
+## 🟢 FIXED IN CODE, AWAITING DEVICE RUN - Restore defect B
+
+**2026-07-18: trigger identified, REPRODUCED TWICE on the local Kodi bench, and
+fixed. Code + tests are in; only the hardware gate remains.**
+
+The trigger was never in EZM++. `skin.estuary7`'s `Home.xml:9` arms
+`AlarmClock(t7bbuild,...,00:15)` on the first Home load of every boot; when the
+menu is stale (exactly what a restore produces) the skinshortcuts rebuild ends in
+`ReloadSkin()`, which destroys the entire window stack. Bench evidence:
+
+```text
+17:50:20.052  started alarm t7bbuild
+17:50:20.140  Window Init (DialogSelect.xml)     <- EZM++ prompt opens
+17:50:35.106  type=buildxml                      <- 15.05 s later
+17:50:35.405  Window Deinit (DialogSelect.xml)   <- prompt DESTROYED, marker consumed
+```
+
+**Correction to the old record:** the `DialogSelect` (prompt 1 of 2) dies before
+the keyboard ever opens. The ambiguity exists twice, not once - `dialog.select`
+returns -1 for both Back and teardown, exactly as `isConfirmed()` is False for
+both. Hardening only `_get_keyboard` would have left the likelier path broken.
+
+What shipped: `_keyboard_result` returns `(confirmed, text)` without collapsing a
+non-answer (`_get_keyboard` keeps its legacy sentinel contract for the three
+existing callers); `prompt_devicename_after_restore` re-presents a non-answer
+instead of advancing and carries half-typed text forward, bounded to
+`_PROMPT_MAX_ATTEMPTS`; and `service._wait_skin_settled` waits past the skin's
+deferred build before any prompt opens.
+
+**Verified on the bench after the fix:** reload at `18:00:43.944`, prompt opened
+`18:00:53.713` (9.8 s later, safely after), and survived 80 s until a scripted
+quit. Full record: `docs/restore-defect-b-reproduced-2026-07-18.md`.
+
+Remaining: the device-verification gate below.
+
+---
+
+## 🔴 OPEN - device-verification gate for 2026.07.18.0
+
+**This is the ONLY red test. It is correct to be red, and it is now honest.**
+
+The branch had changed `nsud.py` and `wiz.py` (commits `2805f48`, `b162c03`)
+while still declaring the RELEASED version `2026.07.17.7`. That collision was a
+real hole: `tools/verify_device.py` refuses to write an artifact when the box's
+version differs from `addon.xml`, so identical version strings would have let a
+device run certify branch code the box was not running. **Version bumped to
+`2026.07.18.0`** to close it; the gate now correctly demands a fresh artifact.
+
+To clear it (build already made, `dist/script.ezmaintenanceplusplus-2026.07.18.0.zip`):
+
+1. Deploy that zip to a Fire TV, then
+   `python3 tools/verify_device.py --host <firetv-ip> --class android`
+2. Deploy to an Apple TV, then
+   `python3 tools/verify_device.py --host <appletv-ip> --class tvos`
+
+Both are owner-gated: installing an unreleased build on a production box.
+A `{"waived": "<reason>"}` per class is sanctioned for a genuine hotfix, but
+**waiving `tvos` would be wrong here** - the `persist_one` change is
+tvOS-specific storage behaviour, which is precisely what that class covers.
+
+---
+
+## 🔴 SEPARATE - EZM++ service ignores Kodi's shutdown abort
+
+Surfaced on the bench 2026-07-18, not previously recorded, NOT part of defect B:
+
+```text
+error <general>: CPythonInvoker(2, .../service.py): script didn't stop in 5 seconds
+```
+
+Kodi asks the service to abort and kills it after 5 s. Likely a blocking call or
+a `waitForAbort` gap in the maintenance loop. Reproducible on the bench. Do not
+bundle into the defect B fix.
+
+---
+
+## 🔴 SUPERSEDED - Restore defect B: post-restore device-name prompt discards input
 
 **Status: MECHANISM PROVEN, TRIGGER UNIDENTIFIED. NOT FIXED.** Affects BOTH
 tvOS and Fire OS.

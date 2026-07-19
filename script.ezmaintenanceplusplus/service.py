@@ -33,10 +33,50 @@ class Monitor(xbmc.Monitor):
         maintenance.determineNextMaintenance()
 
 
+# The skin's deferred first-boot menu rebuild. skin.estuary7's Home.xml onload arms
+# AlarmClock(t7bbuild,...,00:15) on the first Home load of every boot; when the menu is
+# stale - exactly what a restore produces - the resulting skinshortcuts buildxml ends in
+# ReloadSkin(), which destroys the entire window stack including any dialog we have open.
+# Reproduced twice on the bench 2026-07-18 at 15.05s and 15.45s after the alarm was
+# armed, killing an EZM++ prompt 15.27s in. Home-visible is the moment that timer STARTS,
+# so prompting there is prompting into a guaranteed-doomed window. Wait past it, plus
+# margin, and also honour skinshortcuts' own in-progress flag.
+# See ezmpp/docs/restore-defect-b-reproduced-2026-07-18.md.
+_SKIN_DEFERRED_BUILD_SECS = 25
+
+
+def _wait_skin_settled(monitor, extra=_SKIN_DEFERRED_BUILD_SECS, timeout=90):
+    """Block (interruptibly) until the skin's deferred build can no longer eat our dialog.
+
+    Two conditions, both cheap: at least ``extra`` seconds past home-visible (covering the
+    skin's 15s alarm with margin), and skinshortcuts not reporting a build in progress.
+    Returns False on abort, True otherwise. Never raises. A skin without the alarm simply
+    costs this wait once per restored boot, which is invisible next to a restore."""
+    if monitor.waitForAbort(extra):
+        return False
+    waited = extra
+    while waited < timeout:
+        try:
+            if xbmc.getCondVisibility(
+                "String.IsEqual(Window(10000).Property(skinshortcuts-isrunning),True)"
+            ):
+                if monitor.waitForAbort(2):
+                    return False
+                waited += 2
+                continue
+        except Exception:
+            pass
+        return True
+    return True
+
+
 def _wait_kodi_ready(monitor, timeout=120):
     """Block (interruptibly) until Kodi's GUI is actually up, so we never prompt on a black
     boot screen. Returns False on abort; True once the home window is visible OR the bound
-    is reached (well past any black-screen phase). Never raises."""
+    is reached (well past any black-screen phase). Never raises.
+
+    NOTE: home-visible is NOT boot-settled. Callers that open a dialog must additionally
+    call _wait_skin_settled - see its comment for the teardown this avoids."""
     waited = 0
     while waited < timeout:
         if monitor.abortRequested():
@@ -176,6 +216,10 @@ def _maybe_prompt_after_restore(monitor):
         return
     try:
         if not _wait_kodi_ready(monitor):
+            return
+        # Home-visible starts the skin's 15s deferred-build timer; opening a dialog now
+        # gets it destroyed. Wait past that before prompting.
+        if not _wait_skin_settled(monitor):
             return
         tools.prompt_after_restore()
     except Exception:

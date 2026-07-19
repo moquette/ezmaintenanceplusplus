@@ -241,3 +241,68 @@ def test_probe_exception_does_not_break_boot_and_clears_marker(env, monkeypatch)
     monkeypatch.setattr(rc, "duplicate_listing_hits", _boom)
     svc._maybe_restore_check(_Mon())  # must not raise
     assert not env.marker.exists()
+
+
+# --------------------------------------------------------------------------- #
+# Restore defect B3: home-visible is NOT boot-settled.
+# skin.estuary7's Home.xml onload arms AlarmClock(t7bbuild,...,00:15); when the menu
+# is stale (what a restore produces) the skinshortcuts rebuild ends in ReloadSkin(),
+# destroying the window stack. Reproduced on the bench 2026-07-18 at 15.05s and
+# 15.45s, killing an open EZM++ prompt 15.27s in. Prompting at home-visible is
+# prompting into a doomed window, so the service must wait past the deferred build.
+# See docs/restore-defect-b-reproduced-2026-07-18.md.
+# --------------------------------------------------------------------------- #
+
+
+class _RecordingMon:
+    """Monitor that records how long it was asked to wait."""
+
+    def __init__(self, abort_after=None):
+        self.waits = []
+        self.abort_after = abort_after
+
+    def abortRequested(self):
+        return False
+
+    def waitForAbort(self, t):
+        self.waits.append(t)
+        if self.abort_after is not None and len(self.waits) >= self.abort_after:
+            return True  # abort signalled
+        return False
+
+
+def test_wait_skin_settled_waits_past_the_deferred_build(env):
+    """It must wait longer than the skin's 15s alarm before any dialog is opened."""
+    svc = env.load()
+    mon = _RecordingMon()
+    assert svc._wait_skin_settled(mon) is True
+    assert mon.waits, "it must actually wait"
+    assert mon.waits[0] >= 16, (
+        "the first wait must clear the skin's 15s AlarmClock with margin, got %r"
+        % (mon.waits[0],)
+    )
+    assert svc._SKIN_DEFERRED_BUILD_SECS >= 16
+
+
+def test_wait_skin_settled_aborts_cleanly(env):
+    """A shutdown during the wait must return False, never block the service."""
+    svc = env.load()
+    assert svc._wait_skin_settled(_RecordingMon(abort_after=1)) is False
+
+
+def test_wait_skin_settled_honours_skinshortcuts_isrunning(env, monkeypatch):
+    """While skinshortcuts reports a build in progress, keep waiting."""
+    svc = env.load()
+    calls = []
+
+    def cond(expr):
+        if "skinshortcuts-isrunning" in expr:
+            calls.append(1)
+            return len(calls) <= 3  # busy for three polls, then clear
+        return True
+
+    monkeypatch.setattr(svc.xbmc, "getCondVisibility", cond)
+    mon = _RecordingMon()
+    assert svc._wait_skin_settled(mon) is True
+    assert len(calls) >= 4, "it must poll until the build flag clears"
+    assert len(mon.waits) >= 4, "each busy poll must be an interruptible wait"

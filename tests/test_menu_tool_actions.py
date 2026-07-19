@@ -1,10 +1,11 @@
 """Coverage for the owner-facing tool actions in default.py.
 
-The Tools menu carries exactly ONE action:
+The owner-facing tool action is:
   * "Verify backup archive" (action verify_backup_archive): the restore.path picker,
     then a READ-ONLY zip analysis (entry count, backup_manifest.json presence, the
     manifest failed list, IPTV addon_data presence, top-level composition). It never
-    extracts and never restores.
+    extracts and never restores. It is reached from the Backup/Restore select dialog
+    (its third entry); the Tools category that used to host it is gone.
 
 The real default.py is imported against fully faked Kodi modules and stubbed sibling
 modules (control/ui/maintenance), following the pattern of
@@ -241,34 +242,159 @@ def _make_zip(path, members, manifest=None):
 # --------------------------------------------------------------------------- #
 # Menu wiring
 # --------------------------------------------------------------------------- #
-def test_categories_menu_has_tools_folder(dmod):
+def test_categories_menu_has_no_tools_folder(dmod):
+    """The Tools category is DELETED, not hidden and not emptied.
+
+    Once the manual stale-key purge went in 2026.07.19.5, Tools held exactly one
+    item - and that item is a backup operation. A folder a user must open to find
+    a single entry is not a category. Nothing in the top-level menu may name it or
+    route to it."""
     dmod.mod.CATEGORIES()
-    tools = [
-        (url, folder) for url, name, folder in dmod.xbmcplugin.items if name == "Tools"
-    ]
-    assert len(tools) == 1
-    url, is_folder = tools[0]
-    assert "action=tools" in url
-    assert is_folder is True
-
-
-def test_tools_menu_offers_only_verify_backup_archive(dmod):
-    """The Tools menu must NOT expose a manual stale-key purge.
-
-    Removed 2026.07.19.5: three clearers already run nsud.purge_stale_keys
-    automatically (restore, once-per-version at boot, the two-layer wipe), so the
-    item covered no case the box does not handle itself - while asking a
-    non-technical owner to know she had restored a 2026.07.08-13 era archive onto
-    an Apple TV, which is not something anyone knows about themselves. This pins
-    the removal: reintroducing the entry, under ANY label, fails here."""
-    dmod.mod.TOOLS()
-    urls = [url for url, _name, _folder in dmod.xbmcplugin.items]
     names = [name for _url, name, _folder in dmod.xbmcplugin.items]
-    assert len(urls) == 1
-    assert not any("action=purge_stale_tvos_keys" in u for u in urls)
-    assert not any("purge" in n.lower() for n in names)
-    assert any("action=verify_backup_archive" in u for u in urls)
-    assert "Verify backup archive" in names
+    urls = [url for url, _name, _folder in dmod.xbmcplugin.items]
+    assert "Tools" not in names, names
+    assert not any("action=tools" in u for u in urls), urls
+    assert not hasattr(dmod.mod, "TOOLS"), "the TOOLS() builder must be gone entirely"
+
+
+def test_backup_restore_offers_verify_last(dmod, monkeypatch):
+    """ "Verify backup archive" now lives in Backup/Restore, and lives there LAST.
+
+    It is a diagnostic on an archive that already exists, not a primary action, so
+    it must sit after BACKUP and RESTORE rather than ahead of them. default.py
+    routes at IMPORT time, so drive the real dispatch with the querystring and
+    inspect the options the select dialog was actually offered."""
+    wiz = types.ModuleType("resources.lib.modules.wiz")
+    wiz.backup = lambda *a, **k: None
+    wiz.restoreFolder = lambda *a, **k: None
+    monkeypatch.setitem(sys.modules, "resources.lib.modules.wiz", wiz)
+    setattr(sys.modules["resources.lib.modules"], "wiz", wiz)
+
+    dmod.control.select_calls.clear()
+    dmod.control.select_result = -1  # cancel the dialog; we only want the options
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["plugin://script.ezmaintenanceplusplus/", "1", "?action=backup_restore"],
+    )
+    monkeypatch.delitem(sys.modules, "ezm_backup_restore_under_test", raising=False)
+    spec = importlib.util.spec_from_file_location(
+        "ezm_backup_restore_under_test", DEFAULT_PY
+    )
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["ezm_backup_restore_under_test"] = mod
+    spec.loader.exec_module(mod)
+
+    assert dmod.control.select_calls, "the Backup/Restore dialog never opened"
+    options = dmod.control.select_calls[0]
+    assert len(options) == 3, options
+    assert options[0] == "BACKUP"
+    assert options[1] == "RESTORE"
+    assert "VERIFY" in options[2].upper(), (
+        "the verify entry must be the LAST option, after backup and restore: %r"
+        % (options,)
+    )
+
+
+def test_backup_restore_verify_choice_runs_the_verifier(dmod, monkeypatch):
+    """Picking the third entry must actually reach VERIFY_BACKUP_ARCHIVE.
+
+    Without this, the label could be present and wired to nothing (or to the
+    restore path, which is the dangerous mis-wire) and the options test above
+    would still pass."""
+    wiz = types.ModuleType("resources.lib.modules.wiz")
+    backups, restores = [], []
+    wiz.backup = lambda *a, **k: backups.append(k)
+    wiz.restoreFolder = lambda *a, **k: restores.append(True)
+    monkeypatch.setitem(sys.modules, "resources.lib.modules.wiz", wiz)
+    setattr(sys.modules["resources.lib.modules"], "wiz", wiz)
+
+    dmod.control.select_result = 2  # the verify entry
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["plugin://script.ezmaintenanceplusplus/", "1", "?action=backup_restore"],
+    )
+    monkeypatch.delitem(
+        sys.modules, "ezm_backup_restore_verify_under_test", raising=False
+    )
+    spec = importlib.util.spec_from_file_location(
+        "ezm_backup_restore_verify_under_test", DEFAULT_PY
+    )
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["ezm_backup_restore_verify_under_test"] = mod
+    spec.loader.exec_module(mod)
+
+    # No restore.path is configured, so the verifier's own first guard fires. That
+    # dialog is the proof the verify branch ran, and it proves nothing destructive
+    # ran instead.
+    assert dmod.control.infoDialog_calls == ["Please Setup a Zip Files Location first"]
+    assert restores == [], "the verify entry must never reach restoreFolder"
+    assert backups == [], "the verify entry must never reach backup"
+
+
+def test_verify_entry_keeps_its_description_verbatim(dmod):
+    """The plain-language copy survives the move.
+
+    The Backup/Restore select dialog has no plot slot, so the description now lives
+    beside the entry in default.py. It is good copy and it is not to be reworded or
+    dropped as a casualty of the menu move."""
+    src = (ADDON_ROOT / "default.py").read_text()
+    # Flatten comment markers and wrapping so a reflow cannot fail this test, while
+    # a reworded or truncated sentence still does.
+    flat = " ".join(line.strip().lstrip("#").strip() for line in src.splitlines())
+    flat = " ".join(flat.split())
+    assert (
+        "Read-only check of a backup zip: entry count, manifest, failed list, "
+        "IPTV data, top-level layout. Restores nothing." in flat
+    ), "the verify item's description must be preserved verbatim"
+
+
+def test_retired_tools_category_is_a_silent_no_op(dmod, monkeypatch):
+    """A stale favourite/widget pointing at the deleted category must land on a
+    benign no-op, never the unknown-action path and never a traceback.
+
+    Mirrors the retired purge action's treatment (2026.07.19.5). default.py routes
+    at IMPORT time off sys.argv[2], so the honest test imports it with the retired
+    querystring and asserts a clean load: no exception, no dialog of any kind."""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["plugin://script.ezmaintenanceplusplus/", "1", "?action=tools"],
+    )
+    monkeypatch.delitem(sys.modules, "ezm_retired_tools_under_test", raising=False)
+    spec = importlib.util.spec_from_file_location(
+        "ezm_retired_tools_under_test", DEFAULT_PY
+    )
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["ezm_retired_tools_under_test"] = mod
+
+    spec.loader.exec_module(mod)  # must not raise
+
+    ui = sys.modules["resources.lib.modules.ui"]
+    assert getattr(ui, "error_calls", []) == [], "the retired category must not error"
+    assert getattr(ui, "done_calls", []) == [], (
+        "the retired category must be SILENT - no dialog at all"
+    )
+    assert dmod.xbmcplugin.items == [], "the retired category must list nothing"
+
+
+def test_retired_tools_category_is_explicitly_routed(dmod):
+    """Pairs with the behavioural test above, which cannot stand alone.
+
+    Mutation-checked 2026-07-19: DELETING the `elif action == "tools"` branch keeps
+    the behavioural test GREEN, because the unknown-action fallthrough is silent
+    too. Silence is not the property we want - an explicit route is. Without the
+    branch a stale bookmark lands in the unknown-action path and renders an empty
+    directory (a visible dead end), which the Kodi fakes cannot distinguish from a
+    deliberate no-op. This is the same source-level pin the retired purge action
+    carries, and for the same reason."""
+    src = (ADDON_ROOT / "default.py").read_text()
+    assert 'elif action == "tools":' in src, (
+        "the retired category must still be routed, so an old bookmark cannot fall "
+        "through to the unknown-action path"
+    )
+    assert "def TOOLS(" not in src, "the TOOLS() builder must be deleted, not kept"
 
 
 def test_retired_purge_action_is_a_silent_no_op(dmod):

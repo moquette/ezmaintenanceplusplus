@@ -70,16 +70,6 @@ def CATEGORIES():
         isFolder=True,
     )
     CreateDir(
-        "Tools",
-        "ur",
-        "tools",
-        ADDON_ICON,
-        ADDON_FANART,
-        "",
-        isFolder=True,
-    )
-
-    CreateDir(
         "Maintenance",
         "ur",
         "maintenance",
@@ -92,14 +82,6 @@ def CATEGORIES():
         "Video Cache Buffer",
         "ur",
         "adv_settings",
-        ADDON_ICON,
-        ADDON_FANART,
-        "",
-    )
-    CreateDir(
-        "Device Name",
-        "ur",
-        "device_name",
         ADDON_ICON,
         ADDON_FANART,
         "",
@@ -176,32 +158,26 @@ def MAINTENANCE():
 
 
 def BOX_SETUP():
+    # "Device Name" moved here from the top level. Naming a box is exactly what this
+    # folder is for, and since 2026.07.19.4 removed the post-restore name prompt
+    # (restore now PRESERVES the box's existing name rather than asking), this item
+    # is the only deliberate way to change a name. It sits FIRST because naming is
+    # the first thing an owner does with a new box and the item most likely to be
+    # wanted on its own, so it must not be buried under the bulk actions.
+    CreateDir(
+        "Device Name",
+        "ur",
+        "device_name",
+        ADDON_ICON,
+        ADDON_FANART,
+        "Name this box so you can tell it apart from the others.",
+    )
     CreateDir("Set up everything", "url", "setup_all_box", ADDON_ICON, ADDON_FANART, "")
     CreateDir(
         "Add media sources (mini)", "url", "setup_sources", ADDON_ICON, ADDON_FANART, ""
     )
     CreateDir("Set up weather", "url", "setup_weather", ADDON_ICON, ADDON_FANART, "")
     CreateDir("Enable RSS ticker", "url", "setup_rss", ADDON_ICON, ADDON_FANART, "")
-
-
-def TOOLS():
-    # "Purge stale tvOS keys" was REMOVED (2026.07.19.5). Three clearers already
-    # run the same nsud.purge_stale_keys automatically - inside every restore
-    # (wiz.py, both the wipe and merge paths), once per add-on version at boot
-    # (service.py), and the two-layer wipe's own key pass (onetap.py) - so the
-    # menu item covered no case the box does not already handle. What it did do
-    # was ask a non-technical owner to know she had restored a 2026.07.08-13 era
-    # archive onto an Apple TV, which nobody knows about themselves. The purge
-    # itself is untouched; only this manual entry point is gone.
-    CreateDir(
-        "Verify backup archive",
-        "url",
-        "verify_backup_archive",
-        ADDON_ICON,
-        ADDON_FANART,
-        "Read-only check of a backup zip: entry count, manifest, failed list, "
-        "IPTV data, top-level layout. Restores nothing.",
-    )
 
 
 # ###########################################################################################
@@ -614,7 +590,15 @@ elif action == "clear_thumbs":
 elif action == "backup_restore":
     from resources.lib.modules import wiz
 
-    typeOfBackup = ["BACKUP", "RESTORE"]
+    # "VERIFY BACKUP ARCHIVE" moved here from the retired Tools category, which had
+    # shrunk to this single entry once the manual stale-key purge was removed in
+    # 2026.07.19.5 - a folder a user had to open to find one item, and that item is
+    # plainly a backup operation. It sits LAST because it is a diagnostic on an
+    # archive that already exists, not a primary action. Its Tools-era description,
+    # kept verbatim because this select dialog has no plot slot to render it in:
+    # "Read-only check of a backup zip: entry count, manifest, failed list, IPTV
+    # data, top-level layout. Restores nothing."
+    typeOfBackup = ["BACKUP", "RESTORE", "VERIFY BACKUP ARCHIVE"]
     s_type = control.selectDialog(typeOfBackup)
     if s_type == 0:
         modes = ["Full Backup", "Addons Settings"]
@@ -625,6 +609,8 @@ elif action == "backup_restore":
             wiz.backup(mode="userdata")
     elif s_type == 1:
         wiz.restoreFolder()
+    elif s_type == 2:
+        VERIFY_BACKUP_ARCHIVE()
 
 elif action == "speedtest":
     xbmc.executebuiltin(
@@ -647,7 +633,13 @@ elif action == "box_setup":
     BOX_SETUP()
 
 elif action == "tools":
-    TOOLS()
+    # RETIRED: the Tools category is gone. Its last remaining item, "Verify backup
+    # archive", now lives at the bottom of Backup/Restore where it belongs, so the
+    # category was a folder wrapping a single backup action. Kept as an explicit
+    # no-op so a stale favourite, widget or bookmark pointing at the old category
+    # lands here instead of falling through to the unknown-action path. Deliberately
+    # silent, same shape as the retired purge action below.
+    pass
 
 elif action == "purge_stale_tvos_keys":
     # RETIRED in 2026.07.19.5 (the purge runs automatically in restore, at boot

@@ -933,16 +933,15 @@ def test_plugin_root_menu_renders(monkeypatch, tmp_path):
     _import_plugin(
         monkeypatch, tmp_path, rec, ["plugin://script.ezmaintenanceplusplus/", "7", ""]
     )
-    # 11 menu rows + the non-clickable version row.
+    # 9 menu rows + the non-clickable version row.
     # (Went 8 -> 9 in 2026.07.13.1 when "Set up this box" was added; 9 -> 10 on
     # 2026-07-16 when the "Tools" folder landed: stale-key purge + backup verify;
-    # 10 -> 11 on 2026-07-19 when "Device Name" landed beside "Video Cache Buffer".)
-    assert len(rec.dir_items) == 12
+    # 10 -> 11 on 2026-07-19 when "Device Name" landed beside "Video Cache Buffer";
+    # 11 -> 9 on 2026-07-19 when BOTH moved out: "Tools" was deleted outright once
+    # it held a single backup action, which went to Backup/Restore, and "Device
+    # Name" moved into "Set up this box" where naming a box belongs.)
+    assert len(rec.dir_items) == 10
     assert rec.end_dirs == [True]
-    # The two per-box identity settings are reachable ON DEMAND. This is what makes
-    # deleting the post-restore prompt safe: a restore preserves both values, and the
-    # user can still change either whenever he wants. A count alone would pass if the
-    # new row were a duplicate of the old one.
     # Parse the action out of each url rather than substring-matching it: "device_name"
     # is a prefix of "device_nameXX", so a substring test passes against a renamed or
     # misspelled action that routes nowhere. (Caught by mutation, 2026-07-19.)
@@ -951,14 +950,55 @@ def test_plugin_root_menu_renders(monkeypatch, tmp_path):
     actions = set()
     for url in rec.dir_items:
         actions.update(parse_qs(urlparse(url).query).get("action", []))
-    assert "device_name" in actions, (
-        "the Device Name menu item is the on-demand replacement for the deleted "
-        "post-restore rename prompt - without it the capability is simply gone"
-    )
     assert "adv_settings" in actions, (
         "the Video Cache Buffer menu item is the on-demand replacement for the "
         "deleted post-restore buffer prompt"
     )
+    assert "device_name" not in actions, (
+        "Device Name moved into 'Set up this box' on 2026-07-19; it must not also "
+        "linger at the top level as a second way in"
+    )
+    assert "tools" not in actions, (
+        "the Tools category was deleted on 2026-07-19, not hidden and not emptied"
+    )
+    assert "box_setup" in actions, (
+        "'Set up this box' is now the only route to Device Name - if this row ever "
+        "disappears, the rename capability goes with it"
+    )
+
+
+def test_plugin_box_setup_submenu_offers_device_name_first(monkeypatch, tmp_path):
+    """Device Name lives in "Set up this box", at the TOP.
+
+    Moved there 2026-07-19. Naming a box is what that folder is for, and since
+    2026.07.19.4 deleted the post-restore rename prompt (restore now PRESERVES the
+    existing name instead of asking), this item is the ONLY deliberate way to change
+    a name - so it must be reachable and it must not be buried under the bulk
+    setup actions."""
+    rec = _Recorder()
+    _install_fakes(monkeypatch, tmp_path, rec)
+    _import_plugin(
+        monkeypatch,
+        tmp_path,
+        rec,
+        ["plugin://script.ezmaintenanceplusplus/", "7", "?action=box_setup"],
+    )
+    from urllib.parse import parse_qs, urlparse
+
+    ordered = []
+    for url in rec.dir_items:
+        ordered.extend(parse_qs(urlparse(url).query).get("action", []))
+    assert "device_name" in ordered, (
+        "Device Name must be reachable from 'Set up this box' - it left the top "
+        "level, so losing it here loses the rename capability entirely"
+    )
+    assert ordered[0] == "device_name", (
+        "Device Name must come FIRST, above 'Set up everything': naming is the first "
+        "thing an owner does with a new box and the item most wanted on its own. "
+        "Order was %r" % (ordered,)
+    )
+    assert "setup_all_box" in ordered
+    assert rec.end_dirs == [True]
 
 
 def test_plugin_maintenance_submenu_renders_without_service(monkeypatch, tmp_path):

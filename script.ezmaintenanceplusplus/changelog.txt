@@ -1,3 +1,18 @@
+v2026.07.19.7
+- "Verify backup archive" has moved into Backup/Restore. It is now the third and
+  last choice there, after Backup and Restore. It used to live in a Tools folder,
+  and that folder is gone: when the stale-key repair was retired last release,
+  Tools was left holding this single item - a folder you had to open to find one
+  thing, and that one thing is plainly a backup job. It now sits with the rest of
+  the backup work. It still only reads a backup file and reports what is inside;
+  it never restores anything.
+- "Device Name" has moved off the main menu and into "Set up this box". It is the
+  first item there, above "Set up everything". Naming a box is something you do
+  when setting one up, so it now sits with the other setup steps instead of on its
+  own at the top level.
+- Nothing else changed. Both items behave exactly as they did before, and no
+  backup, setting, or custom menu is affected by this release.
+
 v2026.07.19.6
 - Finishes the message change 2026.07.19.5 started. That release updated the
   start-up message but left the restore dialog still saying "this box needs

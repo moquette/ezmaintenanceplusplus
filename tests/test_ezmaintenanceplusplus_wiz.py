@@ -3421,7 +3421,9 @@ def test_prompt_devicename_destroyed_select_does_not_advance(wiz, monkeypatch):
     monkeypatch.setattr(tools.dialog, "notification", lambda *a, **k: None)
 
     assert tools.prompt_devicename_after_restore() is True
-    assert sets == ["Living Room"], "the rename must still land after a destroyed select"
+    assert sets == ["Living Room"], (
+        "the rename must still land after a destroyed select"
+    )
     assert len(seen) == 2, "the destroyed select must be re-presented exactly once"
 
 
@@ -3504,7 +3506,9 @@ def test_keyboard_result_reports_confirmation_honestly(wiz, monkeypatch):
     monkeypatch.setattr(tools.xbmc, "Keyboard", FakeKB)
     confirmed, text = tools._keyboard_result(default="OfficeBox")
     assert confirmed is False
-    assert text == "half typed", "unconfirmed text must still be returned, not discarded"
+    assert text == "half typed", (
+        "unconfirmed text must still be returned, not discarded"
+    )
     # legacy wrapper is unchanged for the sentinel callers (wiz backup naming, cache size)
     assert tools._get_keyboard(default="OfficeBox", cancel="-") == "-"
 
@@ -3529,7 +3533,9 @@ def test_destroyed_buffer_prompt_does_not_consume_the_marker(wiz, monkeypatch):
     monkeypatch.setattr(
         tools,
         "_set_cache_mb",
-        lambda mb: (_ for _ in ()).throw(AssertionError("must not set on a non-answer")),
+        lambda mb: (_ for _ in ()).throw(
+            AssertionError("must not set on a non-answer")
+        ),
     )
     monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: -1)
 
@@ -3548,7 +3554,9 @@ def test_explicit_keep_consumes_the_marker(wiz, monkeypatch):
     monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 2)
 
     assert tools.prompt_buffer_after_restore() is True
-    assert not tools.buffer_prompt_pending(), "an explicit answer must consume the marker"
+    assert not tools.buffer_prompt_pending(), (
+        "an explicit answer must consume the marker"
+    )
 
 
 def test_unanswered_prompt_gives_up_after_bounded_boots(wiz, monkeypatch):
@@ -3585,7 +3593,9 @@ def test_crash_mid_prompt_is_not_an_answer(wiz, monkeypatch):
     tools.mark_buffer_prompt_pending()
     monkeypatch.setattr(tools, "_recommended_mb", lambda: 128)
     monkeypatch.setattr(
-        tools.dialog, "select", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+        tools.dialog,
+        "select",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
     assert tools.prompt_buffer_after_restore() is True
@@ -3655,14 +3665,114 @@ def test_apply_skin_settings_uses_two_argument_builtins(wiz, monkeypatch):
     status = wiz._apply_skin_settings(
         lambda *a, **k: None,
         "skin.estuary7",
-        [("use_pov_search", "bool", "true"), ("hide_x", "bool", "false"),
-         ("home_label", "string", "Movies")],
+        [
+            ("use_pov_search", "bool", "true"),
+            ("hide_x", "bool", "false"),
+            ("home_label", "string", "Movies"),
+        ],
     )
 
     assert "Skin.SetBool(use_pov_search,true)" in builtins
     assert "Skin.SetBool(hide_x,false)" in builtins, "false must be set explicitly"
-    assert "Skin.SetString(home_label,Movies)" in builtins
+    # The value is QUOTED: unquoted, any value containing a comma is truncated by
+    # CUtil::SplitParams and the truncated form is what the shutdown flush persists.
+    assert 'Skin.SetString(home_label,"Movies")' in builtins
     assert status.startswith("applied:3/3")
+
+
+def _split_params(cmd):
+    """Faithful port of Kodi's CUtil::SplitParams (Util.cpp:1211).
+
+    The defect this guards is only visible through Kodi's own parser: the bug is
+    that a value or id changes the ARITY of the builtin. Asserting on the command
+    string cannot see that; parsing it the way Kodi does can."""
+    inner = cmd[cmd.index("(") + 1 : cmd.rindex(")")]
+    params, parameter, in_quotes, in_function, escaped = [], "", False, 0, False
+    for ch in inner:
+        if escaped:
+            parameter += ch
+            escaped = False
+            continue
+        if ch == "\\" and in_quotes:
+            escaped = True
+            continue
+        if ch == '"':
+            in_quotes = not in_quotes
+            continue
+        if not in_quotes:
+            if ch == "(":
+                in_function += 1
+            elif ch == ")" and in_function:
+                in_function -= 1
+            elif ch == "," and not in_function:
+                params.append(parameter)
+                parameter = ""
+                continue
+        parameter += ch
+    if parameter or params:
+        params.append(parameter)
+    return params
+
+
+def test_skin_string_values_survive_kodi_param_splitting(wiz, monkeypatch):
+    """A value containing a comma, quote or paren must round-trip EXACTLY.
+
+    Unquoted, `Skin.SetString(label,Movies, HD)` parses to ["label", "Movies"]:
+    the value is silently truncated, set in live memory, and then serialized over
+    the correctly restored file by the shutdown flush - so the fix meant to prevent
+    the clobber becomes the clobber. Skin string settings hold user-typed labels,
+    so commas are ordinary, not exotic."""
+    _record_window_props(wiz, monkeypatch)
+    builtins = []
+    monkeypatch.setattr(
+        wiz.xbmc, "executebuiltin", lambda cmd, *a: builtins.append(cmd), raising=False
+    )
+    monkeypatch.setattr(wiz.xbmc, "getSkinDir", lambda: "skin.estuary7", raising=False)
+
+    hostile = [
+        "Movies, HD",
+        'He said "hi"',
+        "path\\to\\thing",
+        "Kids (ages 4-8)",
+        "  padded  ",
+        "",
+    ]
+    wiz._apply_skin_settings(
+        lambda *a, **k: None,
+        "skin.estuary7",
+        [("v%d" % i, "string", v) for i, v in enumerate(hostile)],
+    )
+
+    assert len(builtins) == len(hostile)
+    for cmd, original in zip(builtins, hostile):
+        params = _split_params(cmd)
+        assert len(params) == 2, "arity must stay 2, else a KEYBOARD opens: %r" % cmd
+        assert params[1] == original, "value corrupted: %r -> %r" % (
+            original,
+            params[1],
+        )
+
+
+def test_read_skin_settings_drops_ids_that_would_open_a_keyboard(wiz, tmp_path):
+    """An id carrying "(" or '"' collapses the builtin to ONE parameter.
+
+    CUtil::SplitParams suppresses the separating comma inside a paren or quote, so
+    `Skin.SetString(Bad(Id,hello)` parses to a single param - the one-argument form,
+    which opens a keyboard. executebuiltin(..., True) BLOCKS, so the restore hangs
+    unrecoverably on a TV with no restore UI expecting input. The id comes from a
+    restored archive, possibly fetched from Dropbox, so it is untrusted."""
+    p = tmp_path / "settings.xml"
+    p.write_text(
+        "<settings>"
+        '<setting id="good.id_1" type="string">ok</setting>'
+        '<setting id="Bad(Id" type="string">hello</setting>'
+        '<setting id="quo&quot;te" type="string">hello</setting>'
+        '<setting id="semi;colon" type="bool">true</setting>'
+        "</settings>",
+        encoding="utf-8",
+    )
+    ids = [sid for sid, _t, _v in wiz._read_skin_settings(str(p))]
+    assert ids == ["good.id_1"], "unsafe ids must be dropped, not emitted"
 
 
 def test_apply_skin_settings_skipped_when_restored_skin_is_not_live(wiz, monkeypatch):
@@ -3693,8 +3803,12 @@ def test_apply_skin_settings_never_breaks_a_restore(wiz, monkeypatch):
         lambda: (_ for _ in ()).throw(RuntimeError("boom")),
         raising=False,
     )
-    assert wiz._apply_skin_settings(lambda *a, **k: None, "skin.estuary7",
-                                   [("x", "bool", "true")]) is not None
+    assert (
+        wiz._apply_skin_settings(
+            lambda *a, **k: None, "skin.estuary7", [("x", "bool", "true")]
+        )
+        is not None
+    )
 
 
 def test_no_test_probes_skin_settings_via_the_mutating_api(wiz):
@@ -3705,7 +3819,9 @@ def test_no_test_probes_skin_settings_via_the_mutating_api(wiz):
 
     root = pathlib.Path(__file__).resolve().parent.parent
     hits = []
-    for p in list((root / "tests").rglob("*.py")) + list((root / "tools").rglob("*.py")):
+    for p in list((root / "tests").rglob("*.py")) + list(
+        (root / "tools").rglob("*.py")
+    ):
         try:
             t = p.read_text(encoding="utf-8", errors="replace")
         except Exception:

@@ -1,3 +1,21 @@
+v2026.07.18.1
+- Restoring a skin setting whose value contains a comma no longer corrupts it.
+  Values are passed to Kodi's Skin.SetString builtin, and Kodi splits builtin
+  parameters on commas, so a label like "Movies, HD" arrived truncated to
+  "Movies". Because the truncated value was set in live memory, Kodi's
+  clean-shutdown flush then wrote it over the correctly restored file: the step
+  that exists to protect restored settings was corrupting them instead. Values
+  are now quoted and escaped, so commas, quotes, backslashes and parentheses all
+  survive exactly as archived, including leading and trailing spaces.
+- A restored skin setting whose ID contained a parenthesis or a quote could hang
+  a restore. Such an ID collapsed the builtin to its one-argument form, which
+  opens an on-screen keyboard and blocks until answered, on a TV with nothing
+  expecting input. IDs are now validated and unsafe ones are skipped.
+- The hardware-verification gate can no longer be satisfied with stale evidence
+  for one device class. Each verified device now records the exact storage-code
+  fingerprint it was tested against, instead of the artifact carrying one shared
+  value that a later run of a different device would silently re-stamp.
+
 v2026.07.18.0
 - Post-restore prompts no longer lose what you typed. A destroyed dialog is
   indistinguishable from a deliberate answer through Kodi's Python API

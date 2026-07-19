@@ -750,6 +750,25 @@ def _read_target_skin(guisettings_path):
     return None
 
 
+# Skin setting ids that are safe to interpolate into a Kodi builtin. Kodi's own
+# skin setting ids are plain identifiers; anything outside this set cannot be
+# emitted safely, because CUtil::SplitParams treats "(" and '"' as structure.
+_SAFE_SETTING_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def _quote_builtin_arg(value):
+    """Quote a value for a Kodi builtin parameter (CUtil::SplitParams, Util.cpp:1211).
+
+    SplitParams splits on commas, honors double quotes, and unescapes `\\"` and `\\\\`
+    inside them. So the inverse - escape backslash and quote, then wrap in quotes -
+    round-trips any value, including one containing commas, quotes or parentheses.
+
+    Without this, a restored value like "Movies, HD" is truncated at the comma and the
+    truncated form is what the shutdown flush persists."""
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return '"%s"' % escaped
+
+
 def _read_skin_settings(settings_path):
     """Read a restored addon_data/<skin>/settings.xml into [(id, type, value)].
 
@@ -767,7 +786,18 @@ def _read_skin_settings(settings_path):
         stype = (node.get("type") or "").strip()
         if not sid or stype not in ("bool", "string"):
             continue
-        out.append((sid, stype, (node.text or "").strip()))
+        if not _SAFE_SETTING_ID.match(sid):
+            # The id is interpolated into a Kodi builtin, and CUtil::SplitParams
+            # (Util.cpp:1211) suppresses the separating comma inside "(" or '"'.
+            # An id carrying either collapses Skin.SetString(id,value) to a SINGLE
+            # parameter, which is the one-argument form: it opens a KEYBOARD, and
+            # executebuiltin(..., True) BLOCKS, so the restore hangs unrecoverably.
+            # This id comes from a restored archive (possibly fetched from Dropbox),
+            # so it is untrusted input. Drop it rather than emit an unsafe builtin.
+            continue
+        # Do NOT strip the value: skin string settings hold user-typed labels, and
+        # leading/trailing whitespace is part of the archived value.
+        out.append((sid, stype, node.text or ""))
     return out
 
 
@@ -828,7 +858,13 @@ def _apply_skin_settings(rlog, target_skin, settings):
                 else:
                     # TWO-argument form is mandatory: Skin.SetString(id) with one
                     # argument opens a KEYBOARD and would hang the restore.
-                    cmd = "Skin.SetString(%s,%s)" % (sid, value)
+                    #
+                    # The value MUST be quoted. CUtil::SplitParams splits on commas,
+                    # so an unquoted "Movies, HD" arrives as just "Movies" - silently
+                    # TRUNCATED, then set live, then serialized over the correctly
+                    # restored file by the shutdown flush. Unquoted, this fix becomes
+                    # the very clobber it exists to prevent.
+                    cmd = "Skin.SetString(%s,%s)" % (sid, _quote_builtin_arg(value))
                 xbmc.executebuiltin(cmd, True)
                 applied += 1
             except Exception:

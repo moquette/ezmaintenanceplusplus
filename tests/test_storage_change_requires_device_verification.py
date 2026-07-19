@@ -110,8 +110,21 @@ def _contract_changed_since_last_verification():
             except (ValueError, OSError):
                 continue
             devices = doc.get("devices", {})
-            if all(k in devices for k in REQUIRED_CLASSES):
-                verified.add(doc.get("storage_fingerprint"))
+            if not all(k in devices for k in REQUIRED_CLASSES):
+                continue
+            # EVERY class must carry the SAME fingerprint in its OWN entry. The
+            # top-level value is a summary of the last pull, not evidence: a
+            # single-class run rewrites the whole document, so trusting it lets one
+            # class's fresh run launder another's stale entry. A waiver is a
+            # deliberate, recorded bypass and stands in for its class's fingerprint.
+            stamps = {
+                doc.get("storage_fingerprint")
+                if devices[k].get("waived")
+                else devices[k].get("storage_fingerprint")
+                for k in REQUIRED_CLASSES
+            }
+            if len(stamps) == 1:
+                verified.add(stamps.pop())
     return _fingerprint() not in verified
 
 
@@ -139,13 +152,6 @@ def test_storage_contract_change_has_a_device_run():
     )
 
     doc = json.loads(path.read_text())
-    assert doc.get("storage_fingerprint") == _fingerprint(), (
-        "verification/%s.json exists but certifies DIFFERENT storage code than is committed "
-        "here (its fingerprint does not match nsud.py+boxsetup.py at HEAD). A stale artifact "
-        "cannot cover new code - re-run verify_device.py on a box carrying THIS build."
-        % version
-    )
-
     devices = doc.get("devices", {})
     for cls in REQUIRED_CLASSES:
         assert cls in devices, (
@@ -156,6 +162,16 @@ def test_storage_contract_change_has_a_device_run():
         entry = devices[cls]
         if entry.get("waived"):
             continue  # deliberate, recorded bypass
+        assert entry.get("storage_fingerprint") == _fingerprint(), (
+            "The '%s' entry in verification/%s.json certifies DIFFERENT storage code than is "
+            "committed here. Each class carries its OWN fingerprint precisely so that a fresh "
+            "run of the other class cannot launder it: this entry was captured against code "
+            "that is no longer at HEAD. Re-run verify_device.py --class %s on a box carrying "
+            "THIS build.\n"
+            "  entry fingerprint: %s\n"
+            "  HEAD fingerprint:  %s"
+            % (cls, version, cls, entry.get("storage_fingerprint"), _fingerprint())
+        )
         assert entry.get("addon_version_on_box") == version, (
             "The '%s' verification for %s was captured on a box running %s, not %s. Verify on "
             "a box that actually has this build installed."

@@ -745,10 +745,19 @@ def main():
             "devices": {},
         }
     )
-    # Always re-stamp the fingerprint to the current tree: a device run certifies the code
-    # as it stands right now.
-    doc["storage_fingerprint"] = storage_fingerprint()
+    # Stamp the fingerprint INTO THIS CLASS'S ENTRY. It must never be a single
+    # top-level scalar: this function refreshes ONE class but re-writes the whole
+    # document, so a top-level stamp certifies the OTHER class's carried-forward
+    # entry as covering code that box never ran. Pull android, change wiz.py, pull
+    # tvos, and the artifact reads complete-and-current while android is stale.
+    # Per-entry, a carried-forward entry keeps its own older fingerprint and the
+    # gate can see it.
+    fingerprint = storage_fingerprint()
+    evidence["storage_fingerprint"] = fingerprint
     doc["devices"][args.device_class] = evidence
+    # Kept only as a human-readable summary of the most recent pull. The gate must
+    # NOT trust it; it is not evidence about any particular device.
+    doc["storage_fingerprint"] = fingerprint
     path.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
     print("wrote %s" % path.relative_to(ROOT))
     print(json.dumps(evidence, indent=2))

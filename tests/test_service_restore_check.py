@@ -284,6 +284,48 @@ def test_wait_skin_settled_waits_past_the_deferred_build(env):
     assert svc._SKIN_DEFERRED_BUILD_SECS >= 16
 
 
+def test_boot_service_settles_the_skin_BEFORE_prompting(env, monkeypatch):
+    """The service must CALL _wait_skin_settled, and call it before the prompt.
+
+    The other tests here call _wait_skin_settled directly, so they all still pass if
+    the call is deleted from _maybe_prompt_after_restore or reordered after the
+    prompt - an adversarial QA pass on 2026-07-18 demonstrated exactly that deletion
+    with the full suite green. That regression is invisible in code review and fatal
+    in behaviour: the prompt goes straight back into the skin's 15s AlarmClock window,
+    which tears down the window stack mid-dialog. This pins the ORDER, which is the
+    entire content of the fix."""
+    svc = env.load()
+    order = []
+    monkeypatch.setattr(
+        svc, "_wait_kodi_ready", lambda *a, **k: order.append("ready") or True
+    )
+    monkeypatch.setattr(
+        svc, "_wait_skin_settled", lambda *a, **k: order.append("settled") or True
+    )
+    # service.py imports tools INSIDE the function, so patch the module object itself.
+    tools = sys.modules["resources.lib.modules.tools"]
+    monkeypatch.setattr(
+        tools,
+        "prompt_after_restore",
+        lambda *a, **k: order.append("prompt"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        tools, "buffer_prompt_pending", lambda *a, **k: True, raising=False
+    )
+
+    svc._maybe_prompt_after_restore(_RecordingMon())
+
+    assert "prompt" in order, "the prompt must still run"
+    assert "settled" in order, (
+        "the service must CALL _wait_skin_settled - deleting the call leaves every "
+        "other settle test passing while the defect is fully restored"
+    )
+    assert order.index("settled") < order.index("prompt"), (
+        "the skin must settle BEFORE the prompt opens, got %r" % (order,)
+    )
+
+
 def test_wait_skin_settled_aborts_cleanly(env):
     """A shutdown during the wait must return False, never block the service."""
     svc = env.load()

@@ -52,8 +52,36 @@ def dmod(monkeypatch):
     xbmc.sleep = lambda *a, **k: None
     xbmc.translatePath = lambda p: p
     xbmc._tvos = False
-    xbmc.getCondVisibility = lambda cond: bool(xbmc._tvos) if "TVOS" in cond else False
     xbmc.executebuiltin = lambda *a, **k: None
+
+    # Monitor.waitForAbort is Kodi's shutdown signal. The looping Backup/Restore menu
+    # consults it because `Quit` is ASYNC: the script outlives it, so the menu must
+    # not open a modal into a teardown. `_abort` scripts that; the fake NEVER sleeps,
+    # so the guard's settle time costs the suite nothing.
+    xbmc._abort = False
+    xbmc._abort_waits = []
+
+    class _Monitor:
+        def waitForAbort(self, timeout=0):
+            xbmc._abort_waits.append(timeout)
+            return bool(xbmc._abort)
+
+        def abortRequested(self):
+            return bool(xbmc._abort)
+
+    xbmc.Monitor = _Monitor
+    # Window.IsActive(addonsettings) - the other async builtin the menu must not
+    # fight. `_active_window` scripts which window Kodi reports as active.
+    xbmc._active_window = ""
+
+    def _cond(cond):
+        if "TVOS" in cond:
+            return bool(xbmc._tvos)
+        if cond.startswith("Window.IsActive("):
+            return cond[len("Window.IsActive(") :].rstrip(")") == xbmc._active_window
+        return False
+
+    xbmc.getCondVisibility = _cond
     monkeypatch.setitem(sys.modules, "xbmc", xbmc)
 
     # ---- xbmcgui ---- #
@@ -73,6 +101,26 @@ def dmod(monkeypatch):
             pass
 
     xbmcgui.ListItem = _ListItem
+
+    # Home window (10000) properties. wiz.restore() publishes ezm_restore_verdict
+    # there, and the looping Backup/Restore menu reads it back to tell "a restore ran
+    # on this box" from "she cancelled before one started".
+    xbmcgui._props = {}
+
+    class _Window:
+        def __init__(self, wid=0):
+            self.wid = wid
+
+        def setProperty(self, key, value):
+            xbmcgui._props[key] = value
+
+        def getProperty(self, key):
+            return xbmcgui._props.get(key, "")
+
+        def clearProperty(self, key):
+            xbmcgui._props.pop(key, None)
+
+    xbmcgui.Window = _Window
     monkeypatch.setitem(sys.modules, "xbmcgui", xbmcgui)
 
     # ---- xbmcplugin ---- #
@@ -120,9 +168,27 @@ def dmod(monkeypatch):
     control.addonInfo = lambda key: {"version": "9.9.9"}.get(key, "")
     control.select_result = -1
     control.select_calls = []
+    # Scripted answers, consumed in order; once empty, `select_result` answers every
+    # further call. Needed now that the Backup/Restore menu LOOPS: a single fixed
+    # answer that is not -1 would re-drive the same branch forever.
+    control.select_results = []
+    # HARD BOUND. A stub that never returns -1 against a non-terminating menu loop
+    # would hang the whole suite instead of failing it, so the stub itself refuses to
+    # be called unreasonably often. This is what keeps the mutation check (delete the
+    # loop / break, watch it go red) a FAILURE rather than a hang.
+    control.select_limit = 25
+    control.select_count = [0]
 
     def _select(options, heading=None):
         control.select_calls.append(list(options))
+        control.select_count[0] += 1
+        if control.select_count[0] > control.select_limit:
+            raise AssertionError(
+                "selectDialog called %d times (limit %d): a menu loop is not "
+                "terminating" % (control.select_count[0], control.select_limit)
+            )
+        if control.select_results:
+            return control.select_results.pop(0)
         return control.select_result
 
     control.selectDialog = _select
@@ -309,7 +375,8 @@ def test_backup_restore_verify_choice_runs_the_verifier(dmod, monkeypatch):
     monkeypatch.setitem(sys.modules, "resources.lib.modules.wiz", wiz)
     setattr(sys.modules["resources.lib.modules"], "wiz", wiz)
 
-    dmod.control.select_result = 2  # the verify entry
+    # The verify entry, then Back out of the (now looping) Backup/Restore menu.
+    dmod.control.select_results = [2, -1]
     monkeypatch.setattr(
         sys,
         "argv",
@@ -331,6 +398,328 @@ def test_backup_restore_verify_choice_runs_the_verifier(dmod, monkeypatch):
     assert dmod.control.infoDialog_calls == ["Please Setup a Zip Files Location first"]
     assert restores == [], "the verify entry must never reach restoreFolder"
     assert backups == [], "the verify entry must never reach backup"
+
+
+# --------------------------------------------------------------------------- #
+# The Backup/Restore menu LOOPS (2026.07.19.8)
+#
+# Owner report: "the verify backup cancel button should take us back inside the
+# backup/restore and not the root". Cancelling any sub-action used to end the
+# branch, end the script, and drop her at Kodi's root menu.
+# --------------------------------------------------------------------------- #
+def _drive_backup_restore(monkeypatch, name):
+    """Execute default.py's real backup_restore branch under the fixture's fakes."""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["plugin://script.ezmaintenanceplusplus/", "1", "?action=backup_restore"],
+    )
+    monkeypatch.delitem(sys.modules, name, raising=False)
+    spec = importlib.util.spec_from_file_location(name, DEFAULT_PY)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _stub_wiz(monkeypatch):
+    """Install a recording wiz stub; returns (module, backups, restores)."""
+    wiz = types.ModuleType("resources.lib.modules.wiz")
+    backups, restores = [], []
+    wiz.backup = lambda *a, **k: backups.append(k)
+    wiz.restoreFolder = lambda *a, **k: restores.append(True)
+    monkeypatch.setitem(sys.modules, "resources.lib.modules.wiz", wiz)
+    setattr(sys.modules["resources.lib.modules"], "wiz", wiz)
+    return wiz, backups, restores
+
+
+def test_cancelled_verify_re_presents_the_backup_restore_menu(dmod, monkeypatch):
+    """THE REPORTED BUG. Cancel out of the verify flow -> back INSIDE Backup/Restore.
+
+    Answers the menu with VERIFY, lets the verifier bail on its own missing-path
+    guard (a cancel-shaped exit that restores nothing), then Backs out. The menu must
+    have been presented TWICE: once to choose verify, once after it returned. One
+    presentation means the script exited to the root menu, which is the defect."""
+    _stub_wiz(monkeypatch)
+    dmod.control.select_calls.clear()
+    dmod.control.select_results = [2, -1]
+
+    _drive_backup_restore(monkeypatch, "ezm_br_loop_verify_uut")
+
+    menus = [c for c in dmod.control.select_calls if c and c[0] == "BACKUP"]
+    assert len(menus) == 2, (
+        "after a cancelled verify the Backup/Restore menu must be re-presented, not "
+        "abandoned to the root menu; dialogs seen: %r" % (dmod.control.select_calls,)
+    )
+
+
+def test_cancelled_restore_picker_re_presents_the_backup_restore_menu(
+    dmod, monkeypatch
+):
+    """Same rule for RESTORE. restoreFolder() returns on every cancel path of its
+    own (no zip location, empty folder, Back out of the file picker, "Cancel - don't
+    restore anything"); whichever one fired, she lands back on this menu."""
+    _wiz, _backups, restores = _stub_wiz(monkeypatch)
+    dmod.control.select_calls.clear()
+    dmod.control.select_results = [1, -1]
+
+    _drive_backup_restore(monkeypatch, "ezm_br_loop_restore_uut")
+
+    assert restores == [True], "the RESTORE entry must still reach restoreFolder once"
+    menus = [c for c in dmod.control.select_calls if c and c[0] == "BACKUP"]
+    assert len(menus) == 2, dmod.control.select_calls
+
+
+def test_cancelled_backup_mode_falls_back_to_the_menu_not_the_root(dmod, monkeypatch):
+    """Backing out of the Full/Addons mode dialog is a sub-dialog cancel too.
+
+    It must land on Backup/Restore, and it must NOT have taken a backup: a fallback
+    that runs the default mode anyway would be far worse than the original bug."""
+    _wiz, backups, _restores = _stub_wiz(monkeypatch)
+    dmod.control.select_calls.clear()
+    dmod.control.select_results = [0, -1, -1]  # BACKUP, cancel the mode dialog, Back
+
+    _drive_backup_restore(monkeypatch, "ezm_br_loop_backupmode_uut")
+
+    assert backups == [], "a cancelled mode dialog must not take a backup"
+    menus = [c for c in dmod.control.select_calls if c and c[0] == "BACKUP"]
+    assert len(menus) == 2, (
+        "cancelling the backup MODE dialog must fall back to Backup/Restore, not to "
+        "the root menu; dialogs seen: %r" % (dmod.control.select_calls,)
+    )
+
+
+def test_cancelling_the_menu_itself_exits_exactly_once(dmod, monkeypatch):
+    """The menu's own Back is the ONE exit. It must not re-present itself.
+
+    A loop that re-presented on -1 too would be unescapable - a worse bug than the
+    one being fixed, and the mirror-image failure of the original."""
+    _stub_wiz(monkeypatch)
+    dmod.control.select_calls.clear()
+    dmod.control.select_results = [-1]
+
+    _drive_backup_restore(monkeypatch, "ezm_br_loop_exit_uut")
+
+    menus = [c for c in dmod.control.select_calls if c and c[0] == "BACKUP"]
+    assert len(menus) == 1, (
+        "cancelling Backup/Restore must exit immediately; it was presented %d times"
+        % len(menus)
+    )
+
+
+def test_an_unexpected_select_return_cannot_spin_the_menu(dmod, monkeypatch):
+    """Anything outside 0/1/2/-1 exits rather than looping.
+
+    selectDialog is a fake here and a real one could grow a new sentinel; a menu
+    whose exit condition is `== -1` would spin forever on it, with no dialog on
+    screen to cancel. The exit condition must be "not a known entry", not "-1".
+    The fixture's call limit turns a regression here into a failure, not a hang."""
+    _stub_wiz(monkeypatch)
+    dmod.control.select_calls.clear()
+    dmod.control.select_result = 99  # every call answers 99; nothing ever returns -1
+
+    _drive_backup_restore(monkeypatch, "ezm_br_loop_unknown_uut")
+
+    menus = [c for c in dmod.control.select_calls if c and c[0] == "BACKUP"]
+    assert len(menus) == 1, (
+        "an unrecognised selectDialog return must break the loop, not spin it: %d "
+        "presentations" % len(menus)
+    )
+
+
+def test_cancelling_the_zip_picker_re_presents_the_menu(dmod, monkeypatch):
+    """The owner's LITERAL path: a configured zip location, a real list of archives,
+    and Back out of the picker.
+
+    The other verify test bails at the missing-zip-location guard, which is a
+    cancel-SHAPED exit but not the one she hit - she had backups to pick from and
+    pressed cancel on the list. Configure the location and stock the folder so the
+    verifier reaches its real picker (default.py:302), then cancel THAT."""
+    _stub_wiz(monkeypatch)
+    dmod.control._settings["restore.path"] = "/fake/zips/"
+    dmod.xbmcvfs.listdir_result = ([], ["kodi_backup_1.zip", "kodi_backup_2.zip"])
+    dmod.control.select_calls.clear()
+    # VERIFY, cancel the zip picker, then back out of the menu.
+    dmod.control.select_results = [2, -1, -1]
+
+    _drive_backup_restore(monkeypatch, "ezm_br_loop_picker_uut")
+
+    picked = [c for c in dmod.control.select_calls if "kodi_backup_1.zip" in c]
+    assert picked, (
+        "the verifier never reached its zip picker, so this test is not exercising "
+        "the reported path: %r" % (dmod.control.select_calls,)
+    )
+    assert dmod.control.infoDialog_calls == [], "no guard dialog should have fired"
+    menus = [c for c in dmod.control.select_calls if c and c[0] == "BACKUP"]
+    assert len(menus) == 2, (
+        "cancelling the zip picker must land back inside Backup/Restore: %r"
+        % (dmod.control.select_calls,)
+    )
+
+
+def test_a_restore_that_ran_ends_the_menu(dmod, monkeypatch):
+    """A restore that REACHED THE BOX must not re-present the menu.
+
+    Every terminal path of wiz.restore() ends in ui.ask_restart(), and accepting it
+    fires an ASYNC `Quit` - so Kodi is already tearing down when restoreFolder()
+    returns. Re-presenting would open a modal into a shutting-down message pump.
+    Declining leaves the box half-applied, which is no state to offer BACKUP in.
+    wiz.restore() publishes ezm_restore_verdict on every path that touched the box;
+    that property is the signal, since restoreFolder() returns None either way."""
+    wiz, _backups, restores = _stub_wiz(monkeypatch)
+
+    def _restore_that_ran(*a, **k):
+        restores.append(True)
+        # exactly what wiz.restore() does at wiz.py:1769
+        sys.modules["xbmcgui"].Window(10000).setProperty(
+            "ezm_restore_verdict", "complete"
+        )
+
+    wiz.restoreFolder = _restore_that_ran
+    dmod.control.select_calls.clear()
+    # Answer RESTORE, then keep answering RESTORE. If the menu re-presents, the stub
+    # runs another restore and the call bound trips - a failure, not a hang.
+    dmod.control.select_result = 1
+
+    _drive_backup_restore(monkeypatch, "ezm_br_loop_restore_ran_uut")
+
+    assert restores == [True], "the restore must run exactly once"
+    menus = [c for c in dmod.control.select_calls if c and c[0] == "BACKUP"]
+    assert len(menus) == 1, (
+        "a restore that ran must END the menu, not re-present it: %d presentations"
+        % len(menus)
+    )
+
+
+def test_a_cancelled_restore_still_re_presents_the_menu(dmod, monkeypatch):
+    """The mirror of the test above, and the owner's case for RESTORE.
+
+    A cancel at the file picker or the how-dialog never reaches wiz.restore(), so
+    nothing is published and the menu must stay open. Without this, the exit above
+    could be implemented as "always exit after RESTORE" and still look correct."""
+    _wiz, _backups, restores = _stub_wiz(monkeypatch)  # restoreFolder publishes nothing
+    dmod.control.select_calls.clear()
+    dmod.control.select_results = [1, -1]
+
+    _drive_backup_restore(monkeypatch, "ezm_br_loop_restore_cancelled_uut")
+
+    assert restores == [True]
+    menus = [c for c in dmod.control.select_calls if c and c[0] == "BACKUP"]
+    assert len(menus) == 2, (
+        "a CANCELLED restore publishes no verdict and must come back to the menu: %r"
+        % (dmod.control.select_calls,)
+    )
+
+
+def test_a_stale_verdict_from_an_earlier_restore_does_not_end_the_menu(
+    dmod, monkeypatch
+):
+    """The verdict is cleared before each restore, not just read after it.
+
+    Kodi window properties outlive the script. Without the clear, one restore would
+    poison every later RESTORE pick for the rest of the Kodi session: the stale
+    property would still be set and the menu would exit on a restore the user
+    actually cancelled - the reported bug, reintroduced through the back door."""
+    _wiz, _backups, restores = _stub_wiz(monkeypatch)  # a cancel: publishes nothing
+    sys.modules["xbmcgui"].Window(10000).setProperty("ezm_restore_verdict", "complete")
+    dmod.control.select_calls.clear()
+    dmod.control.select_results = [1, -1]
+
+    _drive_backup_restore(monkeypatch, "ezm_br_loop_stale_verdict_uut")
+
+    assert restores == [True]
+    menus = [c for c in dmod.control.select_calls if c and c[0] == "BACKUP"]
+    assert len(menus) == 2, (
+        "a verdict left over from an EARLIER restore must not end this menu: %r"
+        % (dmod.control.select_calls,)
+    )
+
+
+def test_the_menu_stops_when_kodi_is_shutting_down(dmod, monkeypatch):
+    """`Quit` is asynchronous, so the script outlives it. The menu must notice.
+
+    ui.restart() calls executebuiltin("Quit") WITHOUT the wait flag - this codebase
+    documents the blocking form as executebuiltin(..., True) (wiz.py:867) - so Kodi's
+    teardown runs while this Python is still alive. That is not theoretical: defect A
+    is a CApplication::Stop settings flush landing after the add-on returned. Opening
+    a modal into a shutting-down message pump is the race this guard exists to avoid,
+    and Monitor.waitForAbort is Kodi's own signal for it."""
+    _stub_wiz(monkeypatch)
+    dmod.control.select_calls.clear()
+    dmod.control.select_result = 2  # VERIFY forever; only the abort can stop this
+    dmod.xbmc._abort = True
+
+    _drive_backup_restore(monkeypatch, "ezm_br_loop_abort_uut")
+
+    menus = [c for c in dmod.control.select_calls if c and c[0] == "BACKUP"]
+    assert len(menus) == 1, (
+        "the menu must not re-present while Kodi is shutting down: %d presentations"
+        % len(menus)
+    )
+    assert dmod.xbmc._abort_waits, "the shutdown check never ran"
+
+
+def test_the_menu_stops_when_a_sub_action_opened_settings(dmod, monkeypatch):
+    """All three sub-actions bail to Kodi's Settings window when their path setting
+    is unconfigured: wiz.backup on download.path (wiz.py:337), wiz.restoreFolder
+    (wiz.py:684) and VERIFY_BACKUP_ARCHIVE on restore.path.
+
+    Addon.OpenSettings is ASYNC too, so the sub-action returns immediately and the
+    menu would otherwise drop a modal select dialog on top of the settings window the
+    user was just sent to - a new defect, created by the loop itself."""
+    _stub_wiz(monkeypatch)
+    dmod.control.select_calls.clear()
+    dmod.control.select_result = 2  # VERIFY forever; only the settings check stops it
+
+    # VERIFY_BACKUP_ARCHIVE's own guard fires (no restore.path) and calls
+    # control.openSettings; model Kodi honouring that async builtin.
+    def _open_settings(*a, **k):
+        dmod.control.openSettings_calls.append(a)
+        dmod.xbmc._active_window = "addonsettings"
+
+    dmod.control.openSettings = _open_settings
+
+    _drive_backup_restore(monkeypatch, "ezm_br_loop_settings_uut")
+
+    assert dmod.control.openSettings_calls, "the settings bail never happened"
+    menus = [c for c in dmod.control.select_calls if c and c[0] == "BACKUP"]
+    assert len(menus) == 1, (
+        "the menu must not re-present on top of the Settings window: %d presentations"
+        % len(menus)
+    )
+
+
+def test_the_guard_probes_are_best_effort_and_never_break_the_menu(dmod):
+    """A guard that raises must not take the menu down with it.
+
+    These probes are diagnostics, not the feature. If Monitor or getCondVisibility
+    throws (a fake, an odd platform, a Kodi version without the property), staying on
+    the menu is the behaviour the owner asked for, so the failure must be swallowed
+    and answered "safe"."""
+
+    class _Boom:
+        def waitForAbort(self, timeout=0):
+            raise RuntimeError("no monitor here")
+
+    assert dmod.mod._safe_to_re_present(monitor=_Boom()) is True
+    # And the verdict read must answer False (keep the menu) when it cannot read.
+    dmod.mod.xbmcgui.Window = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x"))
+    assert dmod.mod._restore_verdict() is False
+    dmod.mod._clear_restore_verdict()  # must not raise
+
+
+def test_the_menu_loop_is_bounded_by_the_stub(dmod, monkeypatch):
+    """Self-test of the guard above: prove the fixture BOUNDS a runaway loop.
+
+    Without this, "the suite did not hang" is an unverified claim about the stub. A
+    branch that ignored the exit condition would hang forever under an unbounded
+    stub; under this one it raises. Driven against the real dialog options so it
+    fails if the stub's limit is ever removed."""
+    dmod.control.select_limit = 5
+    dmod.control.select_result = 0  # never -1: a loop keying only on -1 never exits
+    with pytest.raises(AssertionError, match="not terminating"):
+        while True:
+            dmod.control.selectDialog(["BACKUP", "RESTORE", "VERIFY BACKUP ARCHIVE"])
 
 
 def test_verify_entry_keeps_its_description_verbatim(dmod):

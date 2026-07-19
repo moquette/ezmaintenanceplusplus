@@ -1,3 +1,20 @@
+v2026.07.19.8
+- Cancelling out of a backup, a restore, or an archive check now takes you back to
+  the Backup/Restore menu instead of the main screen. Backing out of the file list,
+  or closing the report at the end of an archive check, used to drop you all the way
+  out to the main menu - so checking a second backup file meant walking back in from
+  the top every time.
+- The same applies to the Full Backup / Addons Settings question: backing out of it
+  returns to Backup/Restore, and still takes no backup.
+- Backing out of the Backup/Restore menu itself is the way out.
+- Two deliberate exceptions, so the menu never gets in the way. A restore that
+  actually ran closes the menu, because the next thing to do is close and reopen
+  Kodi, and because a box mid-restore is not one to take a fresh backup of. And if
+  a backup, restore, or archive check sends you to Settings to choose a folder
+  first, the menu steps aside rather than reopening on top of it.
+- Nothing about backing up, restoring, or checking an archive changed. This is a
+  navigation fix only; no backup, setting, or custom menu is affected.
+
 v2026.07.19.7
 - "Verify backup archive" has moved into Backup/Restore. It is now the third and
   last choice there, after Backup and Restore. It used to live in a Tools folder,

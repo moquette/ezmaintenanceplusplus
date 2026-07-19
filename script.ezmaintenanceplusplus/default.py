@@ -339,6 +339,72 @@ def VERIFY_BACKUP_ARCHIVE():
     ui.done(format_backup_report(report, chosen))
 
 
+# --------------------------------------------------------------------------- #
+# Guards for the looping Backup/Restore menu (2026.07.19.8)
+#
+# The menu re-presents itself after each sub-action. These decide when it must NOT,
+# because a sub-action returns None whether it worked, cancelled, or fired an ASYNC
+# builtin that took the screen away from us.
+# --------------------------------------------------------------------------- #
+# Published by wiz.restore() (wiz.py:1769) on every path that got as far as touching
+# the box. Read as "a restore really ran", not as a verdict - any value counts.
+RESTORE_VERDICT_PROP = "ezm_restore_verdict"
+
+
+def _clear_restore_verdict():
+    """Drop a stale verdict from an earlier restore in this same Kodi session.
+
+    Without this, one restore would poison every later RESTORE pick in the same
+    session: the property would still be set, and the menu would exit on a restore
+    the user actually cancelled. Best-effort - a failure here only costs an early
+    exit from a menu, so it must never raise into the menu loop."""
+    try:
+        xbmcgui.Window(10000).clearProperty(RESTORE_VERDICT_PROP)
+    except Exception:
+        pass
+
+
+def _restore_verdict():
+    """True if wiz.restore() published a verdict since the last clear."""
+    try:
+        return bool(xbmcgui.Window(10000).getProperty(RESTORE_VERDICT_PROP))
+    except Exception:
+        # Unreadable means unknown. Return False so the menu stays open: the failure
+        # mode of a false True (ejecting her to the root) is the bug being fixed,
+        # while a false False is caught by _safe_to_re_present's abort check.
+        return False
+
+
+def _safe_to_re_present(monitor=None, settle=0.25):
+    """False when re-presenting the Backup/Restore menu would fight another window.
+
+    Two ASYNC builtins can take the screen between iterations, invisibly to a
+    sub-action's return value:
+
+      * `Quit` (ui.restart, from the post-restore ask_restart). executebuiltin is
+        called WITHOUT the wait flag, so Kodi's teardown runs while this script is
+        still alive. Monitor.waitForAbort is Kodi's own "we are shutting down" signal.
+      * `Addon.OpenSettings` (control.openSettings). ALL THREE sub-actions bail to it
+        when their path setting is unconfigured - wiz.backup on download.path
+        (wiz.py:337), wiz.restoreFolder (wiz.py:684) and VERIFY_BACKUP_ARCHIVE on
+        restore.path. Re-presenting would drop a modal select dialog on top of the
+        settings window the user was just sent to.
+
+    The short wait is load-bearing twice over: it IS the abort check, and it gives
+    the async OpenSettings time to actually become the active window before we look.
+    Best-effort by design - if the probes themselves fail we keep the menu open,
+    because staying is the behaviour the owner asked for and the abort check is the
+    backstop for the one case where leaving matters."""
+    try:
+        if monitor is None:
+            monitor = xbmc.Monitor()
+        if monitor.waitForAbort(settle):
+            return False  # Kodi is shutting down
+        return not xbmc.getCondVisibility("Window.IsActive(addonsettings)")
+    except Exception:
+        return True
+
+
 # ###########################################################################################
 # ###########################################################################################
 
@@ -599,18 +665,75 @@ elif action == "backup_restore":
     # "Read-only check of a backup zip: entry count, manifest, failed list, IPTV
     # data, top-level layout. Restores nothing."
     typeOfBackup = ["BACKUP", "RESTORE", "VERIFY BACKUP ARCHIVE"]
-    s_type = control.selectDialog(typeOfBackup)
-    if s_type == 0:
-        modes = ["Full Backup", "Addons Settings"]
-        select = control.selectDialog(modes)
-        if select == 0:
-            wiz.backup(mode="full")
-        elif select == 1:
-            wiz.backup(mode="userdata")
-    elif s_type == 1:
-        wiz.restoreFolder()
-    elif s_type == 2:
-        VERIFY_BACKUP_ARCHIVE()
+    # This menu LOOPS. Presented once, any sub-action that ended - a cancelled file
+    # picker, a dismissed verify report, a cancelled backup-mode dialog - fell off the
+    # end of this branch, the script exited, and Kodi dropped the user at the ROOT
+    # menu. To check a second archive she had to walk back in from the top. Now every
+    # sub-action returns HERE.
+    #
+    # There are THREE ways out, and the two beyond "she cancelled the menu" exist
+    # because a sub-action's return tells us nothing: every one of them returns None
+    # whether it worked, cancelled, or handed the screen to another window.
+    #
+    #   1. s_type is not 0/1/2 - she cancelled this menu (or an unexpected value came
+    #      back, which must never spin).
+    #   2. A restore actually RAN (see the RESTORE branch).
+    #   3. Kodi is shutting down, or a sub-action opened the Settings window
+    #      (see _safe_to_re_present).
+    #
+    # JUDGEMENT CALL - looping after a COMPLETED backup/restore, not just after a
+    # cancel. An earlier revision of this comment argued it was uniformly safe on the
+    # grounds that `Quit` tears the script down before the loop can act. THAT WAS
+    # FALSE and is corrected here: ui.restart() calls executebuiltin("Quit") WITHOUT
+    # the wait flag (this codebase documents the blocking form as
+    # `executebuiltin(..., True)`, wiz.py:867), so it returns immediately and this
+    # Python outlives it. That is not a theory - defect A is precisely a
+    # CApplication::Stop settings flush running after the add-on returned. So:
+    #   * after a BACKUP, looping is safe. wiz.backup() never calls ask_restart and
+    #     never quits; the box is unchanged and she may well want a second archive.
+    #   * after a RESTORE, it is NOT safe, and the branch below breaks instead.
+    while True:
+        s_type = control.selectDialog(typeOfBackup)
+        if s_type == 0:
+            modes = ["Full Backup", "Addons Settings"]
+            select = control.selectDialog(modes)
+            if select == 0:
+                wiz.backup(mode="full")
+            elif select == 1:
+                wiz.backup(mode="userdata")
+            # select == -1: she backed out of the mode dialog. Fall through to the
+            # top of the loop and re-present Backup/Restore - backing out of a
+            # sub-dialog must never eject her all the way to the root menu.
+        elif s_type == 1:
+            # A restore that REACHED THE BOX ends this menu. Cleared first, then read
+            # back: wiz.restore() publishes this Home-window property on every path
+            # that got as far as touching the box, so its presence afterwards is a
+            # reliable "a restore really ran here" - and there is no other signal,
+            # since restoreFolder() returns None either way and wiz.py is a frozen
+            # contract file this fix may not touch.
+            #
+            # Two independent reasons a restore must not come back to this menu:
+            #   * Every terminal path of restore() ends in ui.ask_restart()
+            #     (wiz.py:1725/1815/1818/1829). Accept it and Kodi is ALREADY tearing
+            #     down behind this line (the async `Quit` above), so re-presenting
+            #     would open a modal into a shutting-down message pump.
+            #   * Decline it ("Later") and the box now carries restored files whose
+            #     settings only land at the next clean shutdown. Offering BACKUP into
+            #     that half-applied state is how you archive the pre-restore values -
+            #     the kodi-settings-clobber class this project has four instances of.
+            # A cancel at the file picker, the how-dialog, or the missing-zip-location
+            # guard never reaches restore(), publishes nothing, and so DOES come back
+            # to this menu. That is the owner's reported case and it still works.
+            _clear_restore_verdict()
+            wiz.restoreFolder()
+            if _restore_verdict():
+                break
+        elif s_type == 2:
+            VERIFY_BACKUP_ARCHIVE()
+        else:
+            break
+        if not _safe_to_re_present():
+            break
 
 elif action == "speedtest":
     xbmc.executebuiltin(

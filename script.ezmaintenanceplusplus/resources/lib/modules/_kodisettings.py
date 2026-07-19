@@ -1,7 +1,8 @@
 """Re-apply Kodi settings through the JSON-RPC API after a restore.
 
 Why this exists: on iOS/tvOS, Kodi mirrors guisettings.xml in NSUserDefaults and
-rewrites the file from that mirror on boot - so a file-only restore of guisettings.xml
+SHADOWS the file with that key - Kodi NEVER copies a key back to disk (corrected
+2026-07-14, see nsud.py) - so a file-only restore of guisettings.xml
 is silently reverted, which is why a restored Apple TV came up "empty". The official
 Backup add-on (robweber/xbmcbackup) works around this by applying settings through
 Settings.SetSettingValue, which updates Kodi's LIVE store so the values persist. We do
@@ -104,7 +105,7 @@ def write_guisetting(guisettings_path, sid, value):
     The complement of apply_guisettings, for the OTHER persistence hazard. Settings.SetSettingValue
     updates only Kodi's in-memory store, which is flushed to guisettings.xml on a CLEAN shutdown;
     on Fire TV / Android an unclean kill (power pull, task-swipe) loses it. Writing the file too
-    means the value survives an unclean kill. On tvOS the file is rewritten from NSUserDefaults on
+    means the value survives an unclean kill. On tvOS the key SHADOWS the file on
     boot, so this write is same-value reinforcement there (SetSettingValue is the durable path), and
     on Fire TV/Android it is the durable one. Doing BOTH covers every platform.
 

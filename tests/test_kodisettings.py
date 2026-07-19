@@ -1,7 +1,7 @@
 """Unit tests for _kodisettings.apply_guisettings (the tvOS restore fix).
 
 Re-applying settings through JSON-RPC is what makes a restore survive on tvOS (where a
-file-only guisettings.xml is reverted from NSUserDefaults on boot). These tests run the
+file-only guisettings.xml is SHADOWED by the NSUserDefaults key). These tests run the
 parse + type-coerce + apply logic under a fake xbmc.executeJSONRPC.
 """
 

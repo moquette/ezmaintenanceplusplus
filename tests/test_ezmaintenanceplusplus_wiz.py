@@ -3586,3 +3586,129 @@ def test_crash_mid_prompt_is_not_an_answer(wiz, monkeypatch):
 
     assert tools.prompt_buffer_after_restore() is True
     assert tools.buffer_prompt_pending(), "a crash must not consume the marker"
+
+
+# --------------------------------------------------------------------------- #
+# Restore defect A: restored skin settings are clobbered on the way out.
+#
+# Restore writes addon_data/<skin>/settings.xml correctly, then ui.restart() ->
+# Quit -> CApplication::Stop() -> g_SkinInfo->SaveSettings() serializes the
+# PRE-RESTORE in-memory skin settings back over it (Application.cpp:2141). The
+# documented fix for this class is BOTH mechanisms reconciled: the file write is
+# the extract, the in-memory half is _apply_skin_settings.
+# --------------------------------------------------------------------------- #
+
+
+def _skin_settings_xml(tmp_path, skin, pairs):
+    d = tmp_path / "addon_data" / skin
+    d.mkdir(parents=True, exist_ok=True)
+    body = "".join(
+        '<setting id="%s" type="%s">%s</setting>' % (i, t, v) for i, t, v in pairs
+    )
+    p = d / "settings.xml"
+    p.write_text("<settings version='2'>%s</settings>" % body, encoding="utf-8")
+    return str(p)
+
+
+def test_read_skin_settings_parses_and_ignores_unknown_types(wiz, tmp_path):
+    """Mirror CSkinInfo::SettingsFromXML: keep bool/string, drop anything else."""
+    p = _skin_settings_xml(
+        tmp_path,
+        "skin.estuary7",
+        [
+            ("use_pov_search", "bool", "true"),
+            ("home_label", "string", "Movies"),
+            ("weird", "int", "5"),
+        ],
+    )
+    got = wiz._read_skin_settings(p)
+    assert ("use_pov_search", "bool", "true") in got
+    assert ("home_label", "string", "Movies") in got
+    assert not [g for g in got if g[0] == "weird"], "unknown types must be dropped"
+
+
+def test_read_skin_settings_never_raises(wiz, tmp_path):
+    assert wiz._read_skin_settings(str(tmp_path / "nope.xml")) == []
+    bad = tmp_path / "bad.xml"
+    bad.write_text("<not-xml", encoding="utf-8")
+    assert wiz._read_skin_settings(str(bad)) == []
+
+
+def test_apply_skin_settings_uses_two_argument_builtins(wiz, monkeypatch):
+    """The two-argument forms are mandatory.
+
+    Skin.SetBool(id) with ONE argument can only ever set true, and
+    Skin.SetString(id) with one argument opens a KEYBOARD, which would hang the
+    restore. A test that only asserted 'a Skin.SetString was issued' would pass
+    on the hanging form, so assert the exact commands."""
+    _record_window_props(wiz, monkeypatch)
+    builtins = []
+    monkeypatch.setattr(
+        wiz.xbmc, "executebuiltin", lambda cmd, *a: builtins.append(cmd), raising=False
+    )
+    monkeypatch.setattr(wiz.xbmc, "getSkinDir", lambda: "skin.estuary7", raising=False)
+
+    status = wiz._apply_skin_settings(
+        lambda *a, **k: None,
+        "skin.estuary7",
+        [("use_pov_search", "bool", "true"), ("hide_x", "bool", "false"),
+         ("home_label", "string", "Movies")],
+    )
+
+    assert "Skin.SetBool(use_pov_search,true)" in builtins
+    assert "Skin.SetBool(hide_x,false)" in builtins, "false must be set explicitly"
+    assert "Skin.SetString(home_label,Movies)" in builtins
+    assert status.startswith("applied:3/3")
+
+
+def test_apply_skin_settings_skipped_when_restored_skin_is_not_live(wiz, monkeypatch):
+    """g_SkinInfo is the LIVE skin and flushes to its OWN addon_data dir. If the
+    restored skin is not live, the flush cannot touch the restored file and the
+    builtins would write into the WRONG skin, so emit nothing."""
+    props = _record_window_props(wiz, monkeypatch)
+    builtins = []
+    monkeypatch.setattr(
+        wiz.xbmc, "executebuiltin", lambda cmd, *a: builtins.append(cmd), raising=False
+    )
+    monkeypatch.setattr(wiz.xbmc, "getSkinDir", lambda: "skin.estuary", raising=False)
+
+    status = wiz._apply_skin_settings(
+        lambda *a, **k: None, "skin.estuary7", [("x", "bool", "true")]
+    )
+
+    assert builtins == [], "must emit NOTHING when the restored skin is not live"
+    assert status == "skipped:not-live"
+    assert props.get("ezm_skin_reapply") == "skipped:not-live"
+
+
+def test_apply_skin_settings_never_breaks_a_restore(wiz, monkeypatch):
+    _record_window_props(wiz, monkeypatch)
+    monkeypatch.setattr(
+        wiz.xbmc,
+        "getSkinDir",
+        lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+        raising=False,
+    )
+    assert wiz._apply_skin_settings(lambda *a, **k: None, "skin.estuary7",
+                                   [("x", "bool", "true")]) is not None
+
+
+def test_no_test_probes_skin_settings_via_the_mutating_api(wiz):
+    """The JSON-RPC skin-setting probes are NOT read-only:
+    CSkinInfo::TranslateBool inserts a default-false bool AND schedules a save, so a
+    test built on them passes for the wrong reason and mutates the thing it measures."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    hits = []
+    for p in list((root / "tests").rglob("*.py")) + list((root / "tools").rglob("*.py")):
+        try:
+            t = p.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        # Build the needles from parts so this guard cannot match its OWN source,
+        # the same trick the fleet's banned-character hooks use.
+        needles = ("Skin." + "HasSetting", "GetInfo" + "Booleans")
+        if any(n in t for n in needles):
+            hits.append(p.name)
+    assert not hits, "mutating skin-setting probe used in: %s" % sorted(set(hits))

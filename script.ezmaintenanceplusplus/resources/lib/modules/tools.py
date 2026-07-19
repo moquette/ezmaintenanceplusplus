@@ -90,7 +90,8 @@ def _set_devicename(name):
 
     Two persistence hazards, opposite per platform, so we do BOTH writes:
       - Settings.SetSettingValue updates Kodi's LIVE store. On tvOS that is the durable path
-        (guisettings.xml is rewritten from NSUserDefaults on boot, so a file-only write reverts).
+        (on tvOS the NSUserDefaults key SHADOWS guisettings.xml, so a file-only write is
+        invisible to Kodi; nothing rewrites the file from the key).
       - write_guisetting() puts the value straight into guisettings.xml, which is what survives a
         Fire TV / Android UNCLEAN shutdown (there the live store only flushes to the file on a
         clean exit). On tvOS it is harmless same-value reinforcement.

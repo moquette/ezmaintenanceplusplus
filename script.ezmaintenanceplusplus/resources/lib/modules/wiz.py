@@ -750,13 +750,121 @@ def _read_target_skin(guisettings_path):
     return None
 
 
+def _read_skin_settings(settings_path):
+    """Read a restored addon_data/<skin>/settings.xml into [(id, type, value)].
+
+    Kodi writes this file as `<settings>` with per-setting `type="bool"|"string"`
+    (CSkinInfo::SettingsToXML). CSkinInfo::SettingsFromXML ignores unknown types, so
+    mirror that and drop anything else. Pure read; never raises; returns [] on a
+    missing / unparseable / empty file, which means "nothing to re-apply"."""
+    out = []
+    try:
+        root = ET.parse(settings_path).getroot()
+    except Exception:
+        return out
+    for node in root.iter("setting"):
+        sid = (node.get("id") or "").strip()
+        stype = (node.get("type") or "").strip()
+        if not sid or stype not in ("bool", "string"):
+            continue
+        out.append((sid, stype, (node.text or "").strip()))
+    return out
+
+
+def _apply_skin_settings(rlog, target_skin, settings):
+    """Re-apply restored skin settings IN MEMORY so the shutdown flush cannot undo them.
+
+    This is defect A. Restore writes addon_data/<skin>/settings.xml correctly, then
+    ui.restart() -> Quit -> CApplication::Stop() -> g_SkinInfo->SaveSettings()
+    serializes the PRE-RESTORE in-memory skin settings back over it
+    (Application.cpp:2141, unconditional but for a null check). The restored values are
+    destroyed on the way out. NOT tvOS-only: the flush goes through the VFS, so on
+    Apple TV it overwrites the NSUserDefaults key too, which is why nsud vectoring
+    gives no protection here.
+
+    The documented fix for this class is BOTH mechanisms, reconciled
+    (repo/docs/playbooks/kodi-settings-clobber.md): the file write is the extract, and
+    this is the in-memory half. Both derive from the same archive content.
+
+    ONE-SHOT, inside the restore. A recurring or per-boot re-assert was REJECTED by
+    unanimous adversarial review 2026-07-08 because it fights the user's own later
+    edits (repo/docs/plans/atv-every-boot-settings-reassert.md). Do not re-propose it.
+
+    Guarded on the live skin: g_SkinInfo is the CURRENTLY LOADED skin and it flushes to
+    its own addon_data dir, so when the restored skin is not the live one the flush
+    cannot touch the restored file and the builtins would write into the WRONG skin.
+
+    Never raises. Returns a short status string, also published as a window property
+    for tools/verify_device.py, since there is no read-only JSON-RPC way to read a skin
+    setting (Skin.HasSetting / GetInfoBooleans MUTATE: CSkinInfo::TranslateBool inserts
+    a default-false bool AND schedules a save)."""
+    status = "none"
+    try:
+        if not settings:
+            return status
+        try:
+            live = (xbmc.getSkinDir() or "").strip()
+        except Exception:
+            live = ""
+        if not target_skin or live != target_skin:
+            # Do NOT return here: fall through so the diagnostic window property is
+            # published on this path too. verify_device.py reads it, and "why did
+            # nothing get applied" is exactly the case worth being able to see.
+            status = "skipped:not-live"
+            rlog(
+                "skin settings: %s (live=%s target=%s)"
+                % (status, live or "?", target_skin or "?")
+            )
+            settings = []
+        applied = 0
+        for sid, stype, value in settings:
+            try:
+                if stype == "bool":
+                    # TWO-argument form. Skin.SetBool(id) alone can only set true.
+                    cmd = "Skin.SetBool(%s,%s)" % (
+                        sid,
+                        "true" if str(value).lower() == "true" else "false",
+                    )
+                else:
+                    # TWO-argument form is mandatory: Skin.SetString(id) with one
+                    # argument opens a KEYBOARD and would hang the restore.
+                    cmd = "Skin.SetString(%s,%s)" % (sid, value)
+                xbmc.executebuiltin(cmd, True)
+                applied += 1
+            except Exception:
+                continue
+        if status != "skipped:not-live":
+            status = "applied:%d/%d" % (applied, len(settings))
+            rlog(
+                "skin settings: re-applied %d of %d for %s"
+                % (applied, len(settings), target_skin)
+            )
+    except Exception as e:  # noqa: BLE001 - never break a restore over this
+        status = "failed:%s" % type(e).__name__
+        try:
+            rlog("skin settings: %s" % status)
+        except Exception:
+            pass
+    try:
+        xbmcgui.Window(10000).setProperty("ezm_skin_reapply", status)
+    except Exception:
+        pass
+    return status
+
+
 def _apply_boot_skin(rlog, target):
     """Persist the RESTORED skin so the post-restore force-quit reopens on it. No live
     switch, no keep-skin dialog - a pure persistence write.
 
     Why persistence, not a live switch: on the appliances (tvOS AND Fire TV) Kodi's
     "restart" is a FORCE-QUIT (RestartApp is desktop-only; ask_restart only quits), which
-    skips Kodi's clean-shutdown settings flush - so the reopen boots whatever value is LAST
+    RUNS CApplication::Stop() in full - RestartApp being desktop-only means Quit does not
+    RELAUNCH, NOT that it skips the flush. Stop() saves guisettings from live memory
+    (Application.cpp:2131) and then flushes the live skin's settings over
+    addon_data/<skin>/settings.xml (:2141), through the VFS, so on tvOS it overwrites
+    the NSUserDefaults key too. A disk-only write made before the quit is the value that
+    LOSES. This docstring previously claimed the opposite and armed defect A; the
+    in-memory half now lives in _apply_skin_settings. The reopen boots whatever was LAST
     on disk (and on tvOS, in its NSUserDefaults key). The old mechanism live-set
     lookandfeel.skin and tried to answer Kodi's "keep this skin?" dialog via SendClick /
     navigation; that was flaky on the Apple TV (worked 3 of 4 hardware runs) and, when the
@@ -1127,6 +1235,24 @@ def restore(
         except Exception:
             _boot_skin["target"] = None
 
+        # Capture the restored SKIN SETTINGS here too, for the same reason and one
+        # more: on tvOS nsud.rewrite_userdata_xml vectors this file into the
+        # NSUserDefaults key and DROPS the POSIX copy, so a later plain read would
+        # find nothing. Read once, now, while the extracted file is still on disk.
+        # Applied late (see _apply_skin_settings) so the in-memory state is correct
+        # for the shutdown flush that would otherwise destroy it. Defect A.
+        try:
+            _skin = _boot_skin.get("target")
+            _boot_skin["settings"] = (
+                _read_skin_settings(
+                    os.path.join(control.USERDATA, "addon_data", _skin, "settings.xml")
+                )
+                if _skin
+                else []
+            )
+        except Exception:
+            _boot_skin["settings"] = []
+
         # HARD failures: content from the backup that is not on the box. These are the
         # only findings allowed to call a restore a problem to the user.
         hard = []
@@ -1311,6 +1437,13 @@ def restore(
         #      finding gets. _apply_boot_skin is idempotent, so a one-off flaky
         #      read-back self-heals on the silent second pass and NEVER reaches the
         #      user. Only a failure that survives both passes is warned about.
+        # Defect A: re-apply the restored skin settings IN MEMORY, immediately before
+        # the boot-skin write and therefore before ui.restart(). The shutdown flush
+        # serializes whatever is in memory over addon_data/<skin>/settings.xml, so the
+        # extract alone loses them; this makes memory agree with the archive first.
+        _apply_skin_settings(
+            _rlog, _boot_skin.get("target"), _boot_skin.get("settings") or []
+        )
         boot_skin = _apply_boot_skin(_rlog, _boot_skin.get("target"))
         if str(boot_skin or "").startswith("unconfirmed:"):
             attention.append(

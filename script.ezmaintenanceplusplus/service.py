@@ -258,6 +258,25 @@ def _maybe_restore_check(monitor):
             )
         except Exception:
             pass
+        # Defect A3: the restore wrote the archive's skin to disk, then Kodi's
+        # shutdown flush serialized the PRE-restore skin from live memory over it,
+        # so the box can reopen on the wrong skin. This is the ONLY place it is
+        # observable - the restore itself finishes before the restart that decides
+        # the outcome. getSkinDir() is the read-only probe; Skin.HasSetting /
+        # GetInfoBooleans MUTATE (they insert a default-false setting and schedule
+        # a save) and must never be used to check skin state.
+        try:
+            expected = tools.restore_check_expected_skin()
+            if expected:
+                live = (xbmc.getSkinDir() or "").strip()
+                if live and live != expected:
+                    attention.append(
+                        "restored skin did not become live: expected %s, running %s "
+                        "(the restored skin and its settings are installed and intact; "
+                        "switch in Settings > Interface > Skin)" % (expected, live)
+                    )
+        except Exception:
+            pass
         if attention:
             for line in attention:
                 xbmc.log(

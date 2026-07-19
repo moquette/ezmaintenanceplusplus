@@ -365,17 +365,50 @@ RESTORE_CHECK_MARKER = translatePath(
 )
 
 
-def mark_restore_check_pending():
-    """Arm the post-restart restore self-check. Best-effort; never raises."""
+def mark_restore_check_pending(expected_skin=None):
+    """Arm the post-restart restore self-check. Best-effort; never raises.
+
+    ``expected_skin`` is the skin the ARCHIVE carries, recorded so the post-restart
+    check can tell whether the box actually came up on it (defect A3). Without it
+    the marker holds no expectation and the wrong-skin case is undetectable: the
+    restore's own report cannot see the outcome, because the outcome happens after
+    the restart.
+
+    A3, bench-confirmed 2026-07-19: `_apply_boot_skin` writes lookandfeel.skin to
+    disk, and Kodi's clean shutdown then serializes guisettings from LIVE memory
+    over it (Application.cpp:2131, "Saving settings"), so a restore that CHANGES
+    the skin reopens on the OLD one. Kodi offers no way to set the skin live
+    without arming its 10-second keep-skin countdown, and any non-Yes - including a
+    DESTROYED dialog - reverts (ApplicationSkinHandling.cpp:394-401), which is how
+    atv2 was corrupted to stock on 2026-07-17. So this records the expectation and
+    reports the mismatch; it does not attempt the switch."""
     try:
         d = os.path.dirname(RESTORE_CHECK_MARKER)
         if not os.path.isdir(d):
             os.makedirs(d)
         with open(RESTORE_CHECK_MARKER, "w") as f:
-            f.write("1")
+            # Legacy markers hold "1" and carry no expectation - see
+            # restore_check_expected_skin, which must keep reading those.
+            f.write(str(expected_skin or "1"))
         return True
     except Exception:
         return False
+
+
+def restore_check_expected_skin():
+    """The skin the restore expected the box to reopen on, or None.
+
+    None means "no expectation recorded": either a legacy "1" marker or no marker.
+    Callers MUST treat None as 'nothing to compare' and stay silent - never as a
+    mismatch, or every legacy marker would report a false finding."""
+    try:
+        with open(RESTORE_CHECK_MARKER) as f:
+            value = (f.read() or "").strip()
+    except Exception:
+        return None
+    if not value or value == "1":
+        return None
+    return value
 
 
 def restore_check_pending():

@@ -1,3 +1,13 @@
+v2026.07.19.0
+- A restore that switches to a different skin now tells you. Kodi only applies a
+  skin change when someone confirms it on screen, and that confirmation cannot be
+  answered safely from inside a restore, so the box reopens on the skin it was
+  already running. The restored skin and all of its settings are installed and
+  intact - nothing is lost - but the switch has to be finished by hand in
+  Settings > Interface > Skin. The next start now checks for this and says so
+  instead of leaving it to be noticed. Restores that do not change the skin, which
+  is the normal case, are unaffected and stay silent.
+
 v2026.07.18.2
 - Backing up to a location inside Kodi's own storage now warns first. On Apple
   TV everything Kodi owns lives in an area the system may clear to free space,

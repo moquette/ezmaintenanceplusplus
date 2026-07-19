@@ -954,8 +954,26 @@ def _apply_skin_settings(rlog, target_skin, settings):
 
 
 def _apply_boot_skin(rlog, target):
-    """Persist the RESTORED skin so the post-restore force-quit reopens on it. No live
-    switch, no keep-skin dialog - a pure persistence write.
+    """Write the RESTORED skin to disk. No live switch, no keep-skin dialog.
+
+    This does NOT guarantee the reopen boots that skin, and this docstring used to say
+    it did. Defect A3, bench-disproved 2026-07-19: Kodi's clean shutdown serializes
+    guisettings from LIVE memory over the file afterwards (Application.cpp:2131), so
+    when the restored skin differs from the live one this write LOSES and the box
+    reopens on the old skin. A negative control (SIGKILL, no flush) kept the written
+    value, isolating the cause to the flush.
+
+    It is still the right thing to do - it is the only half available. Kodi offers no
+    way to set the skin live without arming the 10-second keep-skin countdown, and any
+    non-Yes, INCLUDING a destroyed dialog, reverts (ApplicationSkinHandling.cpp:394-401);
+    that is how atv2 was corrupted to stock on 2026-07-17. The mismatch is therefore
+    DETECTED at the next boot and reported, not prevented (service._maybe_restore_check).
+    The accepted next-cycle fix is to terminate rather than Quit so the flush never runs.
+
+    Note the restored skin's own settings are NOT at risk on this path: the flush writes
+    into the LIVE skin's addon_data dir (Application.cpp:2141, Addon.cpp:375-396), so it
+    cannot reach the restored skin's file. That is why _apply_skin_settings correctly
+    returns skipped:not-live here.
 
     Why persistence, not a live switch: on the appliances (tvOS AND Fire TV) Kodi's
     "restart" is a FORCE-QUIT (RestartApp is desktop-only; ask_restart only quits), which
@@ -1041,7 +1059,15 @@ def _apply_boot_skin(rlog, target):
             )
         else:
             prop = "written:%s" % target
-            rlog("boot-skin: persisted restored skin %s (no live switch)" % target)
+            # "written", NOT "persisted": on a skin-CHANGING restore the shutdown
+            # flush overwrites this from live memory (A3), so claiming persistence
+            # here would assert a success the code cannot deliver - the same pattern
+            # that armed defect A. The boot check reports the actual outcome.
+            rlog(
+                "boot-skin: wrote restored skin %s to disk (no live switch); the "
+                "shutdown flush decides what actually boots - verified at next start"
+                % target
+            )
     except Exception as e:
         prop = "failed:%s" % type(e).__name__
         rlog("boot-skin: failed (%s: %s); restore stands" % (type(e).__name__, e))
@@ -1663,7 +1689,12 @@ def restore(
     # the boot service re-verify the restored state on the next start (silent on pass).
     try:
         tools.mark_buffer_prompt_pending()
-        tools.mark_restore_check_pending()
+        # Record the skin the ARCHIVE carries, so the boot check can tell whether the
+        # box actually reopened on it (defect A3 - the shutdown flush can overwrite
+        # the boot-skin write from live memory). None/"" records no expectation and
+        # the check stays silent, which is the correct behaviour for a restore that
+        # did not change the skin.
+        tools.mark_restore_check_pending(_boot_skin.get("target"))
     except Exception:
         pass
 

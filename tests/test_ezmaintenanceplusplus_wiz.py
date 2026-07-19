@@ -1926,7 +1926,7 @@ def test_restore_arms_both_boot_markers(wiz, monkeypatch, tmp_path):
         wiz.tools, "mark_buffer_prompt_pending", lambda: armed.append("buffer")
     )
     monkeypatch.setattr(
-        wiz.tools, "mark_restore_check_pending", lambda: armed.append("check")
+        wiz.tools, "mark_restore_check_pending", lambda *a, **k: armed.append("check")
     )
 
     src = tmp_path / "kodi_settings_x.zip"
@@ -1978,11 +1978,25 @@ def _no_skin_live_switch(monkeypatch, wiz):
 def test_boot_skin_persists_restored_skin_to_disk_no_live_switch(
     wiz, monkeypatch, tmp_path
 ):
-    """THE fix (atv2, 2026-07-17): the restored skin is PERSISTED, never live-switched.
+    """The restored skin is PERSISTED, never live-switched (atv2, 2026-07-17).
 
-    _apply_boot_skin writes the captured skin straight into guisettings.xml on disk (so a
-    force-quit reopen boots it) and does NOT live-set lookandfeel.skin or answer any
-    keep-skin dialog - the flaky mechanism that reverted the box to stock is gone."""
+    _apply_boot_skin writes the captured skin straight into guisettings.xml on disk and
+    does NOT live-set lookandfeel.skin or answer any keep-skin dialog - the flaky
+    mechanism that reverted the box to stock is gone. That invariant is what this test
+    pins, and it must not regress.
+
+    IT DOES NOT MEAN THE REOPEN BOOTS THAT SKIN. This docstring used to claim "so a
+    force-quit reopen boots it"; that is FALSE and was disproved on the bench
+    2026-07-19 (defect A3). Kodi's clean shutdown serializes guisettings from LIVE
+    memory over the file afterwards (Application.cpp:2131, log line "Saving settings"),
+    so the disk write LOSES and a restore that CHANGES the skin reopens on the old one.
+    A negative control (SIGKILL, no flush) kept the written value, isolating the cause
+    to the flush.
+
+    This test stops at the write and is structurally incapable of detecting A3 - do not
+    read a pass here as evidence the skin survives. The outcome is only observable
+    after the restart, which is why it is checked at boot instead (see
+    test_boot_check_reports_a_wrong_skin in test_service_restore_check.py)."""
     home = _prep_restore(wiz, monkeypatch, tmp_path)
     gp = home / "userdata" / "guisettings.xml"
     # Simulate the post-apply_guisettings state: the on-disk file carries STOCK.
@@ -2432,7 +2446,7 @@ def test_merge_cancel_after_completed_pass_still_arms(wiz, monkeypatch, tmp_path
         wiz.tools, "mark_buffer_prompt_pending", lambda: armed.append("buffer")
     )
     monkeypatch.setattr(
-        wiz.tools, "mark_restore_check_pending", lambda: armed.append("check")
+        wiz.tools, "mark_restore_check_pending", lambda *a, **k: armed.append("check")
     )
     skinned = []
     monkeypatch.setattr(
@@ -3885,10 +3899,16 @@ def test_purgeable_destination_flags_the_tvos_caches_tree(wiz, monkeypatch):
     evict that under storage pressure, and Apple excludes it from iCloud and Finder
     backups. Storing a backup there means losing it in the same event that makes it
     necessary - and the browse dialog offers exactly that location as its home."""
-    monkeypatch.setattr(wiz, "translatePath", lambda p: "/var/mobile/Containers/Data/"
-                        "Application/ABC/Library/Caches/Kodi/", raising=False)
-    caches = ("/var/mobile/Containers/Data/Application/ABC/Library/Caches/Kodi/"
-              "backups/my_backup.zip")
+    monkeypatch.setattr(
+        wiz,
+        "translatePath",
+        lambda p: "/var/mobile/Containers/Data/Application/ABC/Library/Caches/Kodi/",
+        raising=False,
+    )
+    caches = (
+        "/var/mobile/Containers/Data/Application/ABC/Library/Caches/Kodi/"
+        "backups/my_backup.zip"
+    )
     assert wiz._purgeable_destination(caches) is True
 
 
@@ -3897,8 +3917,12 @@ def test_purgeable_destination_allows_safe_locations(wiz, monkeypatch):
 
     A guard that cries wolf on a correct choice trains the user to dismiss it, which
     costs more than it saves."""
-    monkeypatch.setattr(wiz, "translatePath", lambda p: "/var/mobile/Containers/Data/"
-                        "Application/ABC/Library/Caches/Kodi/", raising=False)
+    monkeypatch.setattr(
+        wiz,
+        "translatePath",
+        lambda p: "/var/mobile/Containers/Data/Application/ABC/Library/Caches/Kodi/",
+        raising=False,
+    )
     for safe in (
         "/private/var/mobile/Media/backups/my_backup.zip",
         "nfs://192.168.7.10/vol/backups/my_backup.zip",
@@ -3913,9 +3937,15 @@ def test_backup_warns_but_still_lets_the_user_proceed(wiz, monkeypatch):
     """Warn, do not refuse - and never block a backup because the guard itself failed."""
     monkeypatch.setattr(wiz, "_purgeable_destination", lambda p: True)
     monkeypatch.setattr(wiz.ui, "confirm", lambda *a, **k: True, raising=False)
-    assert wiz._confirm_destination_survives_a_purge("/x/Library/Caches/Kodi/b.zip") is True
+    assert (
+        wiz._confirm_destination_survives_a_purge("/x/Library/Caches/Kodi/b.zip")
+        is True
+    )
     monkeypatch.setattr(wiz.ui, "confirm", lambda *a, **k: False, raising=False)
-    assert wiz._confirm_destination_survives_a_purge("/x/Library/Caches/Kodi/b.zip") is False
+    assert (
+        wiz._confirm_destination_survives_a_purge("/x/Library/Caches/Kodi/b.zip")
+        is False
+    )
 
     def boom(*a, **k):
         raise RuntimeError("guard broke")
@@ -3924,7 +3954,9 @@ def test_backup_warns_but_still_lets_the_user_proceed(wiz, monkeypatch):
     assert wiz._confirm_destination_survives_a_purge("/anything.zip") is True
 
 
-def test_backup_consults_the_purge_guard_before_building_the_zip(wiz, monkeypatch, tmp_path):
+def test_backup_consults_the_purge_guard_before_building_the_zip(
+    wiz, monkeypatch, tmp_path
+):
     """backup() must CALL the guard and honour 'Pick another'.
 
     Testing _confirm_destination_survives_a_purge directly does not cover the call
@@ -3953,3 +3985,86 @@ def test_backup_consults_the_purge_guard_before_building_the_zip(wiz, monkeypatc
         "declining the destination must abort BEFORE any zip is built - otherwise the "
         "warning is cosmetic and the backup still lands somewhere it cannot survive"
     )
+
+
+def test_caches_is_detected_even_when_special_home_is_unresolvable(wiz, monkeypatch):
+    """The literal Library/Caches check must stand on its own.
+
+    The other purge test lets translatePath resolve to the Caches home, so the
+    special://home fallback catches the path and the explicit check is never
+    exercised - deleting it leaves that test green (verified by mutation with the
+    fingerprint gate ignored). On a real box translatePath can fail or resolve
+    elsewhere, and then the literal check is the ONLY protection."""
+
+    def _boom(_p):
+        raise RuntimeError("special:// unavailable")
+
+    monkeypatch.setattr(wiz, "translatePath", _boom, raising=False)
+    caches = (
+        "/var/mobile/Containers/Data/Application/ABC/Library/Caches/Kodi/"
+        "backups/my_backup.zip"
+    )
+    assert wiz._purgeable_destination(caches) is True, (
+        "a Caches destination must be flagged without depending on special://home"
+    )
+    assert wiz._purgeable_destination("/Volumes/USB/backups/my_backup.zip") is False
+
+
+def test_restore_records_the_archives_skin_in_the_check_marker(
+    wiz, monkeypatch, tmp_path
+):
+    """The restore must PASS the archive's skin to the marker, not just arm it.
+
+    Arming with no expectation leaves defect A3 undetectable: the shutdown flush can
+    overwrite the boot-skin write, the box reopens on the old skin, and the boot check
+    has nothing to compare against so it stays silent. Asserting only that the marker
+    was armed (as the sibling test does) passes against that exact regression."""
+    _prep_restore(wiz, monkeypatch, tmp_path)
+    _record_restore_report(wiz, monkeypatch)
+    got = {}
+    monkeypatch.setattr(wiz.tools, "mark_buffer_prompt_pending", lambda *a, **k: None)
+    monkeypatch.setattr(
+        wiz.tools,
+        "mark_restore_check_pending",
+        lambda expected_skin=None: got.update(skin=expected_skin),
+    )
+    monkeypatch.setattr(wiz, "_read_target_skin", lambda *a, **k: "skin.estuary7")
+
+    src = tmp_path / "kodi_settings_x.zip"
+    _make_valid_zip(src, [("guisettings.xml", "<s/>")])
+    wiz.restore(str(src), confirm=False)
+
+    assert "skin" in got, "the restore must call the marker with the expected skin"
+    assert got["skin"] == "skin.estuary7", (
+        "the ARCHIVE's skin must be recorded, got %r - without it the boot check "
+        "cannot detect a wrong-skin reopen" % (got["skin"],)
+    )
+
+
+def test_kodi_home_is_flagged_on_a_platform_whose_home_is_not_in_caches(wiz, monkeypatch):
+    """The special://home fallback must stand on its own, on Android.
+
+    Every other purge test lets translatePath resolve INSIDE Library/Caches, so the
+    literal Caches check absorbs the case and this fallback is never the sole
+    detector - replacing it with `return False` passed the whole suite. That left the
+    entire Android arm of the documented claim ("any destination under the Kodi home
+    is self-defeating on every platform") untested. Fire OS home is /sdcard/..., which
+    is NOT under Caches, so only this branch can catch it there."""
+    home = "/sdcard/Android/data/org.xbmc.kodi/files/.kodi/"
+    monkeypatch.setattr(wiz, "translatePath", lambda p: home, raising=False)
+
+    inside = home + "backups/my_backup.zip"
+    assert wiz._purgeable_destination(inside) is True, (
+        "a backup under the Kodi home is taken by a wipe or reinstall - the fallback "
+        "must flag it even where the home is not inside Library/Caches"
+    )
+    # Safe destinations on the same platform must NOT be flagged.
+    for safe in (
+        "/storage/usb/backups/my_backup.zip",
+        "/sdcard/Backups/my_backup.zip",
+        "/sdcard/Android/data/org.xbmc.kodi/files/.kodi-evil/my_backup.zip",
+    ):
+        assert wiz._purgeable_destination(safe) is False, (
+            "must not flag %s - a sibling that merely shares a name prefix is not "
+            "inside the home" % safe
+        )

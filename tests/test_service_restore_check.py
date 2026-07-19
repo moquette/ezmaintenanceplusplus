@@ -131,6 +131,15 @@ def _load_service(monkeypatch, env):
 
     tools.clear_restore_check_marker = _clear
 
+    def _expected_skin():
+        try:
+            v = env.marker.read_text().strip()
+        except OSError:
+            return None
+        return None if v in ("", "1") else v
+
+    tools.restore_check_expected_skin = _expected_skin
+
     restorecheck = types.ModuleType("resources.lib.modules.restorecheck")
     restorecheck.duplicate_listing_hits = lambda: list(env.dup_hits)
 
@@ -348,3 +357,93 @@ def test_wait_skin_settled_honours_skinshortcuts_isrunning(env, monkeypatch):
     assert svc._wait_skin_settled(mon) is True
     assert len(calls) >= 4, "it must poll until the build flag clears"
     assert len(mon.waits) >= 4, "each busy poll must be an interruptible wait"
+
+
+def test_boot_check_reports_a_wrong_skin(env, monkeypatch):
+    """A3: the box reopened on a different skin than the archive carried.
+
+    This is the ONLY place A3 is observable - the restore finishes before the
+    restart that decides the outcome, so its own report cannot see it."""
+    env.marker.parent.mkdir(parents=True, exist_ok=True)
+    env.marker.write_text("skin.estuary7")
+    svc = env.load()
+    monkeypatch.setattr(svc.xbmc, "getSkinDir", lambda: "skin.estuary", raising=False)
+    svc._maybe_restore_check(_Mon())
+    assert len(env.notifications) == 1, "a wrong-skin reopen must report"
+    assert any("did not become live" in m for m in env.log_lines(LOGWARNING))
+    assert not env.marker.exists()
+
+
+def test_boot_check_is_silent_when_the_skin_matches(env, monkeypatch):
+    """The fleet's normal path is same-skin. A check that always reports would fire
+    on every restore - worse than the defect it detects. Both directions must be
+    pinned, or a hardcoded 'report' passes the mismatch test alone."""
+    env.marker.parent.mkdir(parents=True, exist_ok=True)
+    env.marker.write_text("skin.estuary7")
+    svc = env.load()
+    monkeypatch.setattr(svc.xbmc, "getSkinDir", lambda: "skin.estuary7", raising=False)
+    svc._maybe_restore_check(_Mon())
+    assert env.notifications == [], "a correct reopen must stay silent"
+    assert not env.marker.exists()
+
+
+def test_legacy_marker_records_no_expectation_and_never_reports(env, monkeypatch):
+    """A legacy "1" marker carries no expectation. Reading it as a mismatch would
+    make every pre-existing marker report a false finding on upgrade."""
+    env.arm()  # writes "1"
+    svc = env.load()
+    monkeypatch.setattr(svc.xbmc, "getSkinDir", lambda: "anything", raising=False)
+    svc._maybe_restore_check(_Mon())
+    assert env.notifications == [], "no recorded expectation must never report"
+
+
+def test_boot_check_uses_the_read_only_skin_probe():
+    """The mutating skin-setting probes change the state they claim to inspect.
+
+    CSkinInfo::TranslateBool inserts a default-false setting AND schedules a save, so
+    a check built on one passes for the wrong reason. getSkinDir is the read-only
+    probe. The forbidden names are BUILT here rather than written literally, because
+    this repo has a separate guard that scans test files for them - a test naming the
+    trap would trip it."""
+    # Strip comments and docstrings: this guards what the code CALLS, not what the
+    # prose warns about. Naming the trap in a comment is how the next agent avoids
+    # it, so a guard that punishes the warning is the wrong guard.
+    import io
+    import tokenize
+
+    banned = ("Has" + "Setting", "GetInfo" + "Booleans")
+    src = SERVICE_PY.read_text()
+    code = []
+    for tok in tokenize.generate_tokens(io.StringIO(src).readline):
+        if tok.type in (tokenize.COMMENT, tokenize.STRING):
+            continue
+        code.append(tok.string)
+    code = " ".join(code)
+    for name in banned:
+        assert name not in code, "skin state must not be probed with a mutating API"
+    assert "getSkinDir" in code, "the read-only probe must actually be used"
+
+
+def test_boot_check_stays_silent_when_the_live_skin_is_unreadable(env, monkeypatch):
+    """An empty or unavailable getSkinDir() must NOT be read as a mismatch.
+
+    The `live and` guard is what prevents that. Dropping it passed the whole suite,
+    because nothing covered an unreadable probe - and a box that simply could not
+    report its skin would then be told its restore needs attention on every boot."""
+    env.marker.parent.mkdir(parents=True, exist_ok=True)
+    env.marker.write_text("skin.estuary7")
+    svc = env.load()
+    monkeypatch.setattr(svc.xbmc, "getSkinDir", lambda: "", raising=False)
+    svc._maybe_restore_check(_Mon())
+    assert env.notifications == [], "an unreadable live skin must not report a mismatch"
+
+    env.marker.parent.mkdir(parents=True, exist_ok=True)
+    env.marker.write_text("skin.estuary7")
+    svc = env.load()
+
+    def _boom():
+        raise RuntimeError("no skin")
+
+    monkeypatch.setattr(svc.xbmc, "getSkinDir", _boom, raising=False)
+    svc._maybe_restore_check(_Mon())
+    assert env.notifications == [], "a raising probe must not report a mismatch"

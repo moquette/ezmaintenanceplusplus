@@ -172,3 +172,36 @@ def test_first_run_never_clears_a_pending_restore_marker(tools):
     tools.mod.mark_buffer_prompt_pending()
     tools.mod.arm_first_run_tuneup()
     assert tools.mod.buffer_prompt_pending() is True
+
+
+def test_restore_check_marker_round_trips_the_expected_skin(tools):
+    """The marker must carry the archive's skin so the boot check has an expectation.
+
+    Defect A3: the restore writes the archive's skin to disk and Kodi's shutdown flush
+    then serializes the PRE-restore skin from live memory over it, so the box can
+    reopen on the wrong one. The restore finishes BEFORE that restart, so the boot
+    check is the only place the outcome is observable - and it can only report a
+    mismatch if the expectation was recorded here."""
+    t = tools.mod
+    assert t.mark_restore_check_pending("skin.estuary7") is True
+    assert t.restore_check_pending() is True
+    assert t.restore_check_expected_skin() == "skin.estuary7"
+    t.clear_restore_check_marker()
+    assert t.restore_check_pending() is False
+    assert t.restore_check_expected_skin() is None
+
+
+def test_legacy_marker_carries_no_expectation(tools):
+    """Markers written before A3 hold "1". Reading that as a skin name would make
+    every pre-existing marker report a false wrong-skin finding on upgrade."""
+    t = tools.mod
+    assert t.mark_restore_check_pending() is True
+    assert t.restore_check_pending() is True
+    assert t.restore_check_expected_skin() is None, (
+        'a legacy "1" marker must record NO expectation, never a skin named "1"'
+    )
+    t.clear_restore_check_marker()
+    assert t.mark_restore_check_pending("") is True
+    assert t.restore_check_expected_skin() is None, (
+        "an empty skin (a restore that did not change the skin) records no expectation"
+    )

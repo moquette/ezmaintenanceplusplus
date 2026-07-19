@@ -329,18 +329,51 @@ over adding guard number three.
 Correct `wiz.py:753-764`. The claim that `Quit` skips the clean-shutdown flush
 is false and is what caused this defect. Align it with `_kodisettings.py:104-105`.
 
-### A3. Decide on `lookandfeel.skin`
+### A3. `lookandfeel.skin` - RESOLVED 2026-07-19, shipped as detect-and-report
 
-`_BOOT_STATE_ONLY` excludes it from the live re-apply, which by the same
-mechanism would mean the restored skin choice is clobbered.
+**The contest is settled, in favour of the flush.** `kodi-settings-clobber.md:90-93`
+attributed the skin reverting to the "Keep this skin?" safety timeout and NOT to
+this bug class. That is not the mechanism operating here. A three-arm bench
+experiment on the local macOS Kodi (2026-07-19) proved it:
 
-**CONTESTED - settle this before acting.** `kodi-settings-clobber.md:90-93`
-states that `lookandfeel.skin` reverting is NOT this bug class, but the "Keep
-this skin?" safety timeout (`kodi-install-mechanics.md` section 13). This
-session's source reading argued `CSettings::Save()` stamps the live skin over
-the restored value. Both mechanisms could operate, or one analysis is wrong.
-Resolve with evidence (a post-restore `kodi.log` showing which one fires),
-then either bring it into the re-apply or document why it stays excluded.
+| Arm | What ran | Disk value after |
+| --- | --- | --- |
+| Clean quit (the restore path) | full `CApplication::Stop` | **pre-restore skin** - the write was destroyed |
+| `SIGKILL` (negative control) | no flush | restored skin survived |
+| Relaunch | boot reads disk | booted whatever disk held |
+
+Log evidence from the clean quit: `Stopping the application...` then
+`Saving settings` (`CSettings::Save`, guisettings from LIVE memory,
+`Application.cpp:2131`) then `Saving skin settings` (`:2141`), with
+`guisettings.xml`'s mtime matching `Saving settings` to the second. The negative
+control rules out "the write never landed". Both mechanisms may exist, but the
+flush alone is sufficient and is what fires here.
+
+**Why it is not FIXED.** There is no add-on-reachable way to change the live skin
+without arming the countdown: `OnSettingChanged` for `lookandfeel.skin` posts
+`ReloadSkin` and appends `(confirm)` whenever `m_confirmSkinChange` is true
+(`ApplicationSkinHandling.cpp:502-504`), which a Python service cannot clear. Any
+outcome that is not an explicit Yes within 10 seconds reverts to the old skin
+(`:394-401`) - and a DESTROYED dialog is one of those outcomes, which is exactly
+defect B's proven mechanism. That is how atv2 was corrupted to stock on
+2026-07-17. A one-shot next-boot re-assert was evaluated and REJECTED: it escapes
+the 2026-07-08 every-boot objection but raises the same countdown on a boot
+screen, where dialogs are demonstrably torn down.
+
+**Shipped (2026.07.19.0): C2, detect and report.** `mark_restore_check_pending`
+records the archive's skin; the first boot after a restore compares it to
+`xbmc.getSkinDir()` (the read-only probe - `Skin.HasSetting`/`GetInfoBooleans`
+MUTATE) and reports a mismatch through the existing needs-attention line.
+
+**`_BOOT_STATE_ONLY` correctly continues to exclude `lookandfeel.skin`.** On the
+mismatch path the flush writes into the LIVE skin's `addon_data` dir
+(`Application.cpp:2141`, `Addon.cpp:375-396`), so it cannot reach the restored
+skin's settings file - they survive intact on disk. This is also why
+`_apply_skin_settings` returning `skipped:not-live` is correct rather than a hole.
+
+**Accepted next-cycle design: C4** - terminate the process instead of `Quit` so
+the flush never runs, closing this class outright. NOT implemented. Its hazard is
+sqlite journal/WAL state at kill time and must be closed by proof.
 
 ### A4. Regression test
 

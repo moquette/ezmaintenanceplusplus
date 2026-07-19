@@ -44,12 +44,38 @@ serializes the archive's values rather than the pre-restore ones. Captured early
 builtins only. The five false docstrings that armed this defect are corrected.
 Six tests, two mutation-checked.
 
-STILL OPEN in this area: A3, `lookandfeel.skin` itself. `_apply_boot_skin`
-writes it to disk only, which puts it in this same clobber class, so it is
-probably defeated whenever the restored skin differs from the live one. That
-needs one device run to settle before any code changes: restore an image whose
-skin differs, then read `Window(10000).Property(ezm_boot_skin)` and see which
-skin actually loads.
+A3, `lookandfeel.skin` itself: **OPEN BY DESIGN, root cause CONFIRMED.** The
+device run this entry used to ask for is no longer owed - the local macOS bench
+settled it on 2026-07-19 with a three-arm experiment (clean quit loses the
+written value; SIGKILL with no flush keeps it; a boot honors whatever is on
+disk), isolating the cause to `CSettings::Save()` at
+`Application.cpp:2131`. `_apply_boot_skin` writes the skin to disk and the
+shutdown flush overwrites it from live memory, so a restore that CHANGES the
+skin reopens on the old one.
+
+It is not FIXED because Kodi offers no way to set the skin live without arming
+the 10-second keep-skin countdown, and any non-Yes - including a DESTROYED
+dialog - reverts (`ApplicationSkinHandling.cpp:394-401`). That is the mechanism
+that corrupted atv2 to stock on 2026-07-17. A boot-time re-assert was evaluated
+and REJECTED for the same reason: it moves an unanswerable dialog to a boot
+screen, where defect B proves dialogs get torn down.
+
+Shipped in 2026.07.19.0: **detect and report.** The restore records the
+archive's skin in the restore-check marker and the first boot after a restore
+compares it to `xbmc.getSkinDir()`, reporting a mismatch. The restored skin's
+own settings are NOT at risk on this path - the flush writes into the LIVE
+skin's `addon_data` dir, so it cannot reach the restored skin's file.
+
+**Accepted next-cycle design: terminate instead of `Quit`** so the shutdown
+flush never runs at all, which closes this whole clobber class rather than
+adding a fourth guard. Not implemented. Its one real hazard is sqlite journal
+state at kill time and must be closed by proof, not argument.
+
+**OPEN OWNER QUESTION:** the wrong-skin finding currently rides the locked
+notification ("Something from the restore needs attention - open EZ
+Maintenance++"), but the remedy is in Kodi's own Settings > Interface > Skin,
+not in the add-on. Giving this finding its own on-screen line means adding to
+the locked restore vocabulary, which is an owner decision.
 
 ### Historical record of the defect follows
 

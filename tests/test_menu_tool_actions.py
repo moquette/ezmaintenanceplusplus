@@ -596,3 +596,82 @@ def test_freshstart_wipe_runs_and_restarts_not_false_failed(dmod, monkeypatch):
     assert wiped["v"] is True, "the wipe must actually run"
     assert not any("FAILED" in m for m in dmod.ui.done_calls), dmod.ui.done_calls
     assert restarts == [True], "a wiped box MUST be driven to restart"
+
+
+# --------------------------------------------------------------------------- #
+# CreateDir art keys. Regression test for the py2 -> py3 port bug found
+# 2026-07-18 by looking at an actual screen: every menu row rendered Kodi's
+# DefaultVideo.png (the old reel-to-reel movie camera) instead of the add-on's
+# own shield icon.
+#
+# The PY2 branch passes thumbnailImage= as a ListItem CONSTRUCTOR kwarg, which
+# really does set the thumbnail. The py3 rewrite turned that kwarg NAME into a
+# setArt KEY, and there is no "thumbnailImage" art key, so it was silently
+# dropped. With no thumb and setInfo(type="Video"), Kodi fell back to the video
+# default. Every setArt fake in this suite is `lambda *a, **k: None`, which is
+# precisely why nothing caught it.
+# --------------------------------------------------------------------------- #
+
+_VALID_ART_KEYS = {
+    "thumb",
+    "poster",
+    "banner",
+    "fanart",
+    "clearart",
+    "clearlogo",
+    "landscape",
+    "icon",
+}
+
+
+def _capture_art(dmod):
+    """Call CreateDir with a recording ListItem and return the merged art dict."""
+    import sys as _sys
+
+    calls = []
+    real = _sys.modules["xbmcgui"].ListItem
+
+    class _Recording(real):
+        def setArt(self, d):
+            calls.append(dict(d))
+
+    _sys.modules["xbmcgui"].ListItem = _Recording
+    try:
+        dmod.mod.CreateDir("Tools", "url", "tools", "ICON.png", "FAN.jpg", "")
+    finally:
+        _sys.modules["xbmcgui"].ListItem = real
+    merged = {}
+    for d in calls:
+        merged.update(d)
+    return merged
+
+
+def test_createdir_sets_poster_without_clobbering_folder_glyphs(dmod):
+    """The add-on icon must land on 'poster', NOT 'thumb'.
+
+    poster feeds the skin's left info panel (View_50_List.xml:302 binds
+    $VAR[IconWallPosterVar], whose chain is poster -> thumb, with a hardcoded
+    fallback="DefaultVideo.png"). thumb would ALSO satisfy that panel, but the list
+    view prefers thumb over icon, so setting thumb wipes out the per-row folder
+    glyphs. Both halves matter: shield in the panel, folders in the list."""
+    art = _capture_art(dmod)
+    assert "poster" in art, (
+        "no 'poster' art key set, so the left info panel falls back to "
+        "DefaultVideo.png (the reel-to-reel camera): %r" % (art,)
+    )
+    assert art["poster"] == "ICON.png"
+    assert "thumb" not in art, (
+        "do NOT set thumb here: the list view prefers thumb over icon, so setting it "
+        "replaces the per-row FOLDER glyphs with the add-on icon. Regression 2026-07-18."
+    )
+    assert art["icon"] == "DefaultFolder.png", "the per-row folder glyph must survive"
+
+
+def test_createdir_uses_no_invalid_art_keys(dmod):
+    """'thumbnailImage' is a constructor kwarg, never an art key. Kodi ignores it
+    silently, which is how the wrong icon shipped unnoticed."""
+    art = _capture_art(dmod)
+    bogus = set(art) - _VALID_ART_KEYS
+    assert not bogus, "invalid setArt keys are silently ignored by Kodi: %s" % (
+        sorted(bogus),
+    )

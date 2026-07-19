@@ -536,8 +536,14 @@ def CreateDir(
         liz = xbmcgui.ListItem(name, iconImage=iconImage, thumbnailImage=icon)
     else:
         liz = xbmcgui.ListItem(name)
-        liz.setArt({"icon": iconImage})
-        liz.setArt({"thumbnailImage": icon})
+        # "thumb", NOT "thumbnailImage". The PY2 branch above passes
+        # thumbnailImage= as a ListItem CONSTRUCTOR kwarg, which really did set
+        # the thumbnail; the py3 port turned that kwarg name into a setArt KEY,
+        # and there is no such art key, so it was silently dropped. With no
+        # thumb and setInfo(type="Video") below, Kodi fell back to
+        # DefaultVideo.png - the reel-to-reel movie camera that has been showing
+        # in place of the add-on's own icon on every menu since the py3 port.
+        liz.setArt({"icon": iconImage, "poster": icon})
     liz.setInfo(type="Video", infoLabels={"Title": name, "Plot": description})
     liz.setProperty("Fanart_Image", fanart)
     ok = xbmcplugin.addDirectoryItem(

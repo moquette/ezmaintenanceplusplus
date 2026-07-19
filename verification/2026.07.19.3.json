@@ -69,6 +69,11 @@
       "skinshortcuts_duplicates": [],
       "skinshortcuts_vfs_entries": 26,
       "storage_fingerprint": "cb24e203b17e1de726b24394ea9736c34167b9c1aba22f7454609aa0a6d3b20b"
+    },
+    "tvos": {
+      "class": "tvos",
+      "waived": "tvOS deploy blocked 2026-07-19: xcrun devicectl 'copy to' writes NEW files but SILENTLY REFUSES to overwrite existing ones, reporting success either way. Proven: a probe under a new name landed as 2026.07.19.3 while addon.xml stayed 2026.07.19.2 across nine attempts (single-file and directory forms, Kodi stopped, and after a reboot). atv2 is therefore stuck at 2026.07.19.2 and no available tool can update it. This release IS the delivery mechanism that unblocks it: once atv2 updates from the repository, the real tvOS verification runs and REPLACES this waiver with device evidence. Owner decision, 2026-07-19.",
+      "waived_at_version_on_box": "2026.07.19.2"
     }
   },
   "storage_fingerprint": "cb24e203b17e1de726b24394ea9736c34167b9c1aba22f7454609aa0a6d3b20b",

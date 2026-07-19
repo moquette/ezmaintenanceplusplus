@@ -256,9 +256,50 @@ GUISETTINGS = "special://profile/guisettings.xml"
 DUPLICATE_SCAN_DIRS = (ADDON_DATA_DIR, IPTV_DIR, SKINSHORTCUTS_DIR)
 
 
-def find_duplicates(names):
-    """Names appearing more than once in a single VFS listing = a key/disk split."""
-    return sorted(n for n, k in Counter(names).items() if k > 1)
+# Mirrors nsud._is_skin_menu_sidecar. It CANNOT be imported here: nsud imports
+# xbmcvfs at module scope, which does not exist outside Kodi, and this tool runs
+# on a workstation. tests/test_verify_device_sidecar_parity.py asserts the two
+# agree case-for-case, so the copy cannot drift unnoticed - the same drift that
+# made the add-on's own probe alarm about keys the purge deliberately keeps.
+_SIDECAR_PREFIX = "addon_data/script.skinshortcuts/"
+_SIDECAR_SUFFIX = ".data.xml"
+
+
+def is_skin_menu_sidecar(rel):
+    """True iff `rel` (userdata-relative) is a skinshortcuts menu file whose
+    NSUserDefaults key is skin.estuary7 1.0.66+'s own durability sidecar.
+
+    The skin re-registers a byte-identical key for each menu file on every Home
+    load so the owner's custom menu survives a Library/Caches purge, and
+    CTVOSDirectory::GetDirectory appends key names to POSIX names WITHOUT
+    dedupe - so a HEALTHY Apple TV lists each of these twice, by design."""
+    r = (rel or "").replace("\\", "/").lstrip("/").lower()
+    if not r.endswith(_SIDECAR_SUFFIX):
+        return False
+    if r.startswith(_SIDECAR_PREFIX):
+        return True
+    if r.startswith("profiles/"):
+        parts = r.split("/", 2)
+        return len(parts) == 3 and parts[2].startswith(_SIDECAR_PREFIX)
+    return False
+
+
+def find_duplicates(names, directory=None):
+    """Names appearing more than once in a single VFS listing = a key/disk split.
+
+    The skin's deliberate menu sidecars are NOT a split: they are dual-layered on
+    purpose and `nsud.purge_stale_keys` keeps them, so reporting them made
+    `clean_single_layer` false on every healthy Apple TV (atv2 recorded 23 such
+    names in verification/2026.07.19.4.json while the single-layer Fire TV was
+    clean). Excluded ONLY for the skinshortcuts directory and ONLY for the
+    `*.DATA.xml` pattern: `settings.xml` in that same directory, and every
+    duplicate anywhere else, still reports - a real stale key shadowing a
+    restored file is what this check exists to catch."""
+    dupes = sorted(n for n, k in Counter(names).items() if k > 1)
+    if not directory:
+        return dupes
+    rel = directory.split("special://profile/", 1)[-1]
+    return [n for n in dupes if not is_skin_menu_sidecar(rel + n)]
 
 
 def labelled_names(files):
@@ -338,7 +379,7 @@ def check_duplicate_listing(listings_by_dir):
         if isinstance(names, Exception):
             errors[directory] = _error_string(names)
             continue
-        duplicates[directory] = find_duplicates(names)
+        duplicates[directory] = find_duplicates(names, directory)
     out = {
         "duplicates": duplicates,
         "clean": not any(duplicates.values()),
@@ -527,7 +568,7 @@ def pull(host, device_class):
         # Pull it directly so a genuine failure is loud, exactly as it was before.
         files = list_directory(call, SKINSHORTCUTS_DIR)
     names, unlabelled = labelled_names(files)
-    dupes = find_duplicates(names)
+    dupes = find_duplicates(names, SKINSHORTCUTS_DIR)
 
     evidence = {
         "class": device_class,

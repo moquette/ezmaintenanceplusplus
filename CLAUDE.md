@@ -216,9 +216,9 @@ not a spec):
   one thing that probe exists to catch.
 - **Verification widened, gate unchanged.** `tools/verify_device.py` gains
   restore_contract checks (IPTV inventory, profile fingerprint, duplicate-listing,
-  shadow probe) and a `--diff` mode. Hardware verification stays owner-gated and
-  REQUIRED before release; this contract widens what the gate checks, it does not
-  weaken the gate.
+  shadow probe) and a `--diff` mode. Hardware verification is REQUIRED for
+  backup/restore/wipe changes (narrowed 2026-07-20 from every release); this
+  contract widens what the gate checks when it applies.
 
 The tvOS storage facts above remain true and load-bearing under this contract: a
 key SHADOWS the disk file, Kodi never re-materializes a disk file from a key, and
@@ -227,9 +227,23 @@ two-layer wipe and the purge exist BECAUSE of those facts.
 
 ## House rules (inherited from the fleet's workflow)
 
-- implement -> TEST -> gate (pytest + ruff green) -> adversarial QA -> REAL-DEVICE
-  verify (for any `nsud.py`/`boxsetup.py`/storage-adjacent change) -> document ->
-  only then commit/release. No "fixed in code" claims without hardware proof.
+- implement -> TEST -> gate (pytest + ruff green) -> commit/release.
+- **Independent QA + architecture review is required ONLY for changes to backup,
+  restore, or wipe code.** Everything else ships on a green suite. (Narrowed
+  2026-07-20 from "every phase, no exceptions".)
+- **Device verification is required ONLY for backup/restore/wipe changes.**
+  Routine releases do not need a `verification/<version>.json`. (Narrowed
+  2026-07-20.)
+- **Routine changes get a one-line commit message.** Long-form records
+  (acceptance logs, multi-paragraph commits) are for genuine incidents only.
+- Approval is needed for DESTRUCTIVE or OUTWARD-FACING actions only: wiping a
+  box, restoring onto a box, publishing, pushing. Reading logs, listing files,
+  read-only JSON-RPC queries and inspecting archives need no approval. The
+  office Fire TV at `192.168.7.162` stays HANDS-OFF for everything, reads
+  included.
+- Safety core, unchanged: a backup must contain what it claims (one
+  archive-contents inspection when backup/restore code changes); CI green before
+  deploy; skins install from the Kodi repo, never adb/devicectl push.
 - No AI attribution anywhere; no em dashes in written deliverables.
 - Never edit `addons/script.ezmaintenanceplusplus/` in the proxy repo - that
   directory no longer exists (deleted 2026-07-14) and nothing reads it.

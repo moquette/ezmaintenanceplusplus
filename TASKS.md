@@ -4,30 +4,38 @@ Tracking for EZ Maintenance++ (`script.ezmaintenanceplusplus`).
 Project rules + backup/restore contract: `CLAUDE.md`. Repo/build/release notes:
 `RESUME.md`.
 
+**The LIVE open-item list is `~/Code/moquette/kodi/TASKS.md` (2026-07-20).**
+This file is now mostly historical record plus the workflow below. Its bodies
+are kept deliberately.
+
 > This file did not exist until 2026-07-18. Work was previously tracked only in
 > `repo/TASKS.md` (the hub) and in scattered plan documents, which is why an
-> investigation on 2026-07-18 initially missed established project doctrine. If
-> you are an agent picking this project up, **this file is the index. Start
-> here.**
+> investigation on 2026-07-18 initially missed established project doctrine.
 
 ---
 
-## ⛔ WORKFLOW - non-negotiable (do NOT skip or reorder)
+## WORKFLOW
 
 > **implement -> TEST -> GATE (`/opt/homebrew/bin/python3 -m pytest tests/ -q` +
-> `ruff check tests/ tools/` green) -> adversarial QA + architecture review ->
-> REAL-DEVICE verification -> DOCUMENT -> only THEN commit/release.**
+> `ruff check tests/ tools/` green) -> commit/release.**
 
-1. **Self-verification is never sufficient.** The owner requires independent QA
-   agent AND architecture agent review before any phase is declared done.
-2. **"Fixed in code" is not a claim this add-on may make.** Any change touching
-   `nsud.py` / `boxsetup.py` / restore / storage behavior requires a fresh
-   `verification/<version>.json` pulled live over JSON-RPC from a real box
-   (`tests/test_storage_change_requires_device_verification.py`). This gate is
-   owner-gated.
-3. **System `python3` is 3.9 and too old for this suite.** Use
+1. **Independent QA + architecture review is required ONLY for changes to
+   backup, restore, or wipe code.** Everything else ships on a green suite.
+   (Narrowed 2026-07-20 from "every phase, self-verification never sufficient".)
+2. **Device verification is required ONLY for backup/restore/wipe changes**,
+   via a fresh `verification/<version>.json` pulled over JSON-RPC from a real
+   box. Routine releases do not need one. (Narrowed 2026-07-20.)
+   **Note:** `tests/test_storage_change_requires_device_verification.py` still
+   enforces this on ALL `nsud.py`/`boxsetup.py` storage changes. The test was
+   deliberately left untouched; it may want narrowing to match this policy.
+3. **Routine changes get a one-line commit message.** Long-form records are for
+   genuine incidents only.
+4. Safety core, unchanged: a backup must contain what it claims (inspect the
+   archive contents when backup/restore code changes), CI green before deploy,
+   and skins install from the Kodi repo, never adb/devicectl push.
+5. **System `python3` is 3.9 and too old for this suite.** Use
    `/opt/homebrew/bin/python3`.
-4. **A release here is only half.** After `tools/release.sh`, bump the hosted
+6. **A release here is only half.** After `tools/release.sh`, bump the hosted
    `addon.xml` in `tony7bones.github.io` and ship via
    `python3 _tools/release.py --proxy`. A version bumped here alone is live on
    no box.
@@ -278,7 +286,14 @@ Full record: **`docs/restore-defects-2026-07-18.md`**
 
 ---
 
-## 🔴 OPEN - release blocker held in the SIBLING hub repo
+## 🟢 CLOSED 2026-07-20 - release blocker held in the SIBLING hub repo
+
+**RETIRED 2026-07-20 (`6b60962`). The two owner-gated hardware runs below were
+retired UNRUN: they specified cross-OS restore, which is not the operational
+model, and the real question (does the archive contain the IPTV payload?) was
+answered by inspecting both archives. Replacement check: when backup code
+changes, inspect the two archives for the userdata payload. The related
+release-checklist process gate is DELETED, not deferred. History follows.**
 
 **Flagged 2026-07-18. Not previously restated here.**
 
@@ -299,15 +314,9 @@ unreleasable until the owner runs these.** The incident also carries a
 "verify the mem0 memory write of the NSUD rules landed" item; those rules do
 appear in the session memory store, so that one is likely done but unticked.
 
-**Related process gap, also unclosed:** a hardware-verification gate on this
-add-on's RELEASE CHECKLIST is requested by three separate incident writeups in
-the hub repo (`incident-2026-07-08-ezmpp-repeated-hardware-burns.md:100`,
-`incident-2026-07-08-ezmpp-atv-settings-nsuserdefaults.md:65`, and implicitly
-the 2026-07-17 Estuary 7 menu-refresh incident). This repo has a MECHANICAL
-gate (`tests/test_storage_change_requires_device_verification.py`). The
-CHECKLIST/process half appears never to have landed. Roughly ten older EZM++
-incident writeups in the hub each end with an uncaptured "verify on real
-hardware" step; the two runs above would satisfy most of them at once.
+**Related process gap: DELETED 2026-07-20.** The requested release-checklist
+hardware-verification gate is struck outright; its parent incident was retired
+and the mechanical gate already covers backup/restore/wipe changes.
 
 ---
 

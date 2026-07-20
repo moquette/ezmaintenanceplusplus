@@ -184,12 +184,20 @@ def _wait_kodi_ready(monitor, timeout=120):
     return True
 
 
-def _folder_size_and_count(top):
+def _folder_size_and_count(top, monitor=None):
     """Total byte size and file count of a tree. Per-file errors (a file deleted
-    mid-scan) are skipped, never raised - this runs unattended at every boot."""
+    mid-scan) are skipped, never raised - this runs unattended at every boot.
+
+    Abandons the walk on abort. packagesdir and Thumbnails are unbounded (a box
+    that has never been cleaned is exactly the box this alert exists for), so an
+    uninterruptible walk here is a second way to overrun Kodi's 5 second budget.
+    A partial total is fine: the caller only ever compares it to a threshold, and
+    an abandoned scan means the shutdown, not the alert, is what matters now."""
     total = 0
     count = 0
     for dirpath, dirnames, filenames in os.walk(top):
+        if monitor is not None and monitor.abortRequested():
+            break
         for f in filenames:
             try:
                 total += os.path.getsize(os.path.join(dirpath, f))
@@ -206,15 +214,57 @@ def _int_setting(setting, sid, default):
         return default
 
 
-def _startup_checks():
-    """The one-shot boot checks: packages/thumbnails size alerts (each offering a
-    clean-now), the status notification, and the optional startup cache clean.
+def _aborting(monitor):
+    """True once Kodi has asked this service to stop. Never raises."""
+    if monitor is None:
+        return False
+    try:
+        return bool(monitor.abortRequested())
+    except Exception:
+        return False
+
+
+def _alert(message, seconds=8):
+    """Non-blocking boot notification. Never blocks the service thread."""
+    try:
+        xbmc.executebuiltin(
+            "Notification(%s, %s, %s, %s)"
+            % ("EZ Maintenance++", message, seconds * 1000, iconpath)
+        )
+    except Exception:
+        pass
+
+
+def _startup_checks(monitor=None):
+    """The one-shot boot checks: packages/thumbnails size alerts, the status
+    notification, and the optional startup cache clean.
 
     Runs INSIDE the service after _wait_kodi_ready - NOT at import. At import time
     (Kodi startup) the two full-tree walks delayed every boot, and the modal yesno
     prompts could park a black boot screen; a "yes" then ran deleteThumbnails()
     synchronously in the boot path. Settings are read here, not at module scope, so
-    a fresh boot sees current values."""
+    a fresh boot sees current values.
+
+    The two size alerts are NOTIFICATIONS, not prompts. They used to be modal
+    Dialog().yesno() offers to clean now, and a modal opened on the service thread
+    is the one thing in this file that Kodi's shutdown cannot survive: doModal()
+    blocks the service thread, so the abort flag can never be polled, and Kodi
+    kills the script 5 seconds later ("script didn't stop in 5 seconds - let's
+    kill it"). Reproduced on the macOS bench 2026-07-20 with a 257 MB packages
+    folder: abort 04:39:42.478, kill 04:39:47.490.
+
+    A watchdog thread that closes the dialog on abort was tried and PROVEN not to
+    work (bench, 2026-07-20). xbmc.executebuiltin("Dialog.Close(all, true)")
+    queues a message to the application thread, and the application thread is the
+    very thread blocked inside CPythonInvoker::stop() waiting for this script. The
+    watchdog logged that it fired and that executebuiltin returned, and the kill
+    still landed 5 seconds later. Do not re-propose it: it is a deadlock, not a
+    tuning problem.
+
+    So the alert reports the size and names where to clean it. This is the rule
+    the file already states above about boot dialogs, applied to the one boot step
+    that still escaped it. Every other step is gated on abort so an unbounded walk
+    cannot overrun the budget either."""
     setting = xbmcaddon.Addon().getSetting
     notify_mode = setting("notify_mode")
     auto_clean = setting("startup.cache")
@@ -222,46 +272,32 @@ def _startup_checks():
     filesize = _int_setting(setting, "filesize_alert", 200)
     filesize_thumb = _int_setting(setting, "filesizethumb_alert", 500)
 
-    total_size, count = _folder_size_and_count(packagesdir)
+    total_size, count = _folder_size_and_count(packagesdir, monitor)
     total_sizetext = "%.0f" % (total_size / 1024000.0)
 
+    if _aborting(monitor):
+        return
     if int(total_sizetext) > filesize:
-        choice2 = xbmcgui.Dialog().yesno(
-            "[COLOR=red]Autocleaner[/COLOR]",
-            "The packages folder is [COLOR red]"
-            + str(total_sizetext)
-            + " MB [/COLOR] - [COLOR red]"
-            + str(count)
-            + "[/COLOR] zip files"
-            + "\n"
-            + "The folder can be cleaned up without issues to save space..."
-            + "\n"
-            + "Do you want to clean it now?",
-            yeslabel="Yes",
-            nolabel="No",
+        _alert(
+            "Packages folder: %s MB in %s zip files. Clean it from "
+            "EZ Maintenance++ > Maintenance." % (total_sizetext, count)
         )
-        if choice2 == 1:
-            maintenance.purgePackages()
 
-    total_size2, _ = _folder_size_and_count(thumbnails)
+    if _aborting(monitor):
+        return
+    total_size2, _ = _folder_size_and_count(thumbnails, monitor)
     total_sizetext2 = "%.0f" % (total_size2 / 1024000.0)
 
+    if _aborting(monitor):
+        return
     if int(total_sizetext2) > filesize_thumb:
-        choice2 = xbmcgui.Dialog().yesno(
-            "[COLOR=red]Autocleaner[/COLOR]",
-            "The images folder is [COLOR red]"
-            + str(total_sizetext2)
-            + " MB   [/COLOR]"
-            + "\n"
-            + "The folder can be cleaned up without issues to save space..."
-            + "\n"
-            + "Do you want to clean it now?",
-            yeslabel="Yes",
-            nolabel="No",
+        _alert(
+            "Images folder: %s MB. Clean it from EZ Maintenance++ > Maintenance."
+            % total_sizetext2
         )
-        if choice2 == 1:
-            maintenance.deleteThumbnails()
 
+    if _aborting(monitor):
+        return
     if notify_mode == "true":
         xbmc.executebuiltin(
             "Notification(%s, %s, %s, %s)"
@@ -273,7 +309,7 @@ def _startup_checks():
                 iconpath,
             )
         )
-    if auto_clean == "true":
+    if auto_clean == "true" and not _aborting(monitor):
         maintenance.clearCache()
 
 
@@ -552,7 +588,7 @@ if __name__ == "__main__":
 
     if _wait_kodi_ready(monitor):
         try:
-            _startup_checks()
+            _startup_checks(monitor)
         except Exception as e:
             # The alerts are best-effort; the maintenance loop below must start anyway.
             xbmc.log(
@@ -568,7 +604,11 @@ if __name__ == "__main__":
             break
         if not xbmc.Player().isPlayingVideo():
             nextMaintenance = maintenance.getNextMaintenance()
-            if nextMaintenance > 0 and time.time() >= nextMaintenance:
+            if (
+                nextMaintenance > 0
+                and time.time() >= nextMaintenance
+                and not monitor.abortRequested()
+            ):
                 xbmc.log("ezmaintenanceplus: AutoClean started", level=loglevel)
                 maintenance.clearCache()
                 xbmc.log("ezmaintenanceplus: AutoClean done", level=loglevel)

@@ -421,9 +421,16 @@ def test_folder_size_and_count_totals_across_subfolders(service, tmp_path):
     assert total == 5 + 3 + 1 + 2
 
 
-def test_startup_checks_prompts_and_purges_over_threshold(service, tmp_path):
+def test_startup_checks_alerts_over_threshold_without_a_modal(service, tmp_path):
+    """The packages alert NOTIFIES; it must never open a modal.
+
+    A modal opened on the service thread cannot be closed during shutdown: Kodi's
+    application thread is blocked inside CPythonInvoker::stop() waiting for this
+    very script, so it can never process the Dialog.Close message a watchdog would
+    post. Kodi then kills the script after 5 seconds. Both halves were reproduced
+    on the macOS bench 2026-07-20."""
     # Three zips split across TWO subfolders: the old per-folder `count = 0`
-    # reset would have reported 1 in the prompt; the total is 3.
+    # reset would have reported 1; the total is 3.
     packages = tmp_path / "home" / "addons" / "packages"
     _mktree(
         packages,
@@ -441,7 +448,6 @@ def test_startup_checks_prompts_and_purges_over_threshold(service, tmp_path):
             "filesizethumb_alert": "999999",
         }
     )
-    service._rec.yesno_answer = 1
     purged = []
     maint_mod = sys.modules["resources.lib.modules.maintenance"]
     orig = maint_mod.purgePackages
@@ -450,11 +456,13 @@ def test_startup_checks_prompts_and_purges_over_threshold(service, tmp_path):
         service._startup_checks()
     finally:
         maint_mod.purgePackages = orig
-    assert len(service._rec.yesno_calls) == 1
-    assert purged == [True]
-    # The prompt must report the TOTAL zip count across subfolders.
-    msg = service._rec.yesno_calls[0][1]
-    assert "3[/COLOR] zip files" in msg
+    assert service._rec.yesno_calls == []
+    # Boot never cleans by itself; the user cleans from the menu.
+    assert purged == []
+    alerts = [b for b in service._rec.builtins if "Notification" in b]
+    assert len(alerts) == 1
+    # The alert must report the TOTAL zip count across subfolders.
+    assert "3 zip files" in alerts[0]
 
 
 def test_startup_checks_quiet_under_thresholds(service, tmp_path):
@@ -497,7 +505,7 @@ def test_int_setting_falls_back_on_unset(service):
     assert service._int_setting(lambda k: "42", "filesize_alert", 200) == 42
 
 
-def test_startup_checks_thumbnails_prompt_branch(service, tmp_path):
+def test_startup_checks_thumbnails_alert_branch(service, tmp_path):
     thumbs = tmp_path / "home" / "userdata" / "Thumbnails"
     _mktree(thumbs, {"0/a.jpg": b"x" * (2 * 1024000)})
     service._rec.settings.update(
@@ -508,7 +516,6 @@ def test_startup_checks_thumbnails_prompt_branch(service, tmp_path):
             "filesizethumb_alert": "1",
         }
     )
-    service._rec.yesno_answer = 1
     wiped = []
     maint_mod = sys.modules["resources.lib.modules.maintenance"]
     orig = maint_mod.deleteThumbnails
@@ -517,8 +524,11 @@ def test_startup_checks_thumbnails_prompt_branch(service, tmp_path):
         service._startup_checks()
     finally:
         maint_mod.deleteThumbnails = orig
-    assert len(service._rec.yesno_calls) == 1
-    assert wiped == [True]
+    assert service._rec.yesno_calls == []
+    assert wiped == []
+    alerts = [b for b in service._rec.builtins if "Notification" in b]
+    assert len(alerts) == 1
+    assert "Images folder" in alerts[0]
 
 
 def test_wait_kodi_ready_returns_true_when_home_visible(service):

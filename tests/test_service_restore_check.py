@@ -300,6 +300,15 @@ def test_service_knows_nothing_about_any_skin():
         )
 
 
+MODAL_TOKENS = (
+    "dialog.select",
+    "Dialog().select",
+    "Keyboard(",
+    "doModal",
+    ".yesno(",
+)
+
+
 def test_boot_sequence_opens_no_dialog():
     """No boot step may open a modal. A dialog nobody is watching cannot be answered,
     and Kodi's API cannot tell a destroyed dialog from a cancelled one, so an
@@ -309,16 +318,42 @@ def test_boot_sequence_opens_no_dialog():
     start = src.index("def _startup_sequence(")
     end = src.index("def _folder_size_and_count(")
     sequence_region = src[start:end]
-    for token in (
-        "dialog.select",
-        "Dialog().select",
-        "Keyboard(",
-        "doModal",
-        ".yesno(",
-    ):
+    for token in MODAL_TOKENS:
         assert token not in sequence_region, (
             "the boot sequence must not open %r - boot work is silent and completes "
             "on its own" % token
+        )
+
+
+def test_startup_checks_opens_no_dialog():
+    """_startup_checks is a boot step too, and it must obey the same rule.
+
+    It escaped test_boot_sequence_opens_no_dialog only because it is called from
+    __main__ rather than from _startup_sequence, and it carried two modal yesno
+    size alerts. That is a SHUTDOWN defect, not just a boot one: doModal() blocks
+    the service thread, so monitor.abortRequested() can never be polled, and Kodi
+    kills the script 5 seconds after asking it to stop. Reproduced on the macOS
+    bench 2026-07-20 with a 257 MB packages folder (abort 04:39:42.478, kill
+    04:39:47.490).
+
+    A watchdog that closes the dialog on abort does NOT fix this and must not be
+    re-proposed: xbmc.executebuiltin("Dialog.Close(all, true)") posts to the
+    application thread, which is itself blocked in CPythonInvoker::stop() waiting
+    for this script. Proven on the same bench - the watchdog fired, executebuiltin
+    returned, the kill still landed. The only fix is not to block here at all."""
+    src = SERVICE_PY.read_text(encoding="utf-8")
+    start = src.index("def _startup_checks(")
+    end = src.index("def _maybe_restore_check(")
+    region = src[start:end]
+    body = "\n".join(
+        line for line in region.splitlines() if not line.strip().startswith("#")
+    )
+    # Drop the docstring, which names the tokens in order to explain the ban.
+    body = body.split('"""', 2)[-1]
+    for token in MODAL_TOKENS:
+        assert token not in body, (
+            "_startup_checks must not open %r - a modal on the service thread "
+            "cannot be closed during shutdown and Kodi kills the script" % token
         )
 
 

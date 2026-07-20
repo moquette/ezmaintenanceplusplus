@@ -77,9 +77,16 @@ case deterministic builds produce. That false claim is the stated reason an
 earlier session declared tvOS verification blocked. Read-back-and-hash is still
 right; only the impossibility claim is wrong.
 
-## 🟢 FIXED IN CODE - Restore defect A: restored skin settings are clobbered
+## 🟢 CLOSED - Restore defect A: restored skin settings are clobbered
 
-**FIXED 2026-07-18 (`be31322`), awaiting the same device gate as defect B.**
+**~~FIXED 2026-07-18 (`be31322`), awaiting the same device gate as defect B.~~
+CLOSED 2026-07-20. The device gate is met, not awaited.**
+`verification/2026.07.19.4.json` carries REAL entries for BOTH classes (`tvos`,
+atv2; `android`, office Fire TV), and `be31322` is contained in tags
+`v2026.07.19.3`, `v2026.07.19.5`, `v2026.07.19.6`, `v2026.07.19.7` and
+`v2026.07.19.8`, so the fix is shipped in every release since. This line
+previously contradicted the "Hardware gate: BOTH CLASSES DONE" statement above;
+that statement was the correct one.
 `_apply_skin_settings` in `wiz.py` re-applies the restored skin settings IN
 MEMORY, one-shot, immediately before the restart, so the shutdown flush
 serializes the archive's values rather than the pre-restore ones. Captured early
@@ -152,10 +159,15 @@ Full record, fix plan, task breakdown, acceptance criteria and references:
 
 ---
 
-## 🟢 FIXED IN CODE, AWAITING DEVICE RUN - Restore defect B
+## 🟢 CLOSED - Restore defect B
 
-**2026-07-18: trigger identified, REPRODUCED TWICE on the local Kodi bench, and
-fixed. Code + tests are in; only the hardware gate remains.**
+**~~FIXED IN CODE, AWAITING DEVICE RUN.~~ CLOSED 2026-07-20. The hardware gate
+is met.** `verification/2026.07.19.4.json` and `verification/2026.07.19.6.json`
+each carry REAL entries for both classes (`tvos`, atv2; `android`, office Fire
+TV), with `addon_version_on_box` matching the release under test in both files.
+
+Historical status line: 2026-07-18, trigger identified, REPRODUCED TWICE on the
+local Kodi bench, and fixed. Code + tests are in.
 
 The trigger was never in EZM++. `skin.estuary7`'s `Home.xml:9` arms
 `AlarmClock(t7bbuild,...,00:15)` on the first Home load of every boot; when the
@@ -185,7 +197,9 @@ deferred build before any prompt opens.
 `18:00:53.713` (9.8 s later, safely after), and survived 80 s until a scripted
 quit. Full record: `docs/restore-defect-b-reproduced-2026-07-18.md`.
 
-Remaining: the device-verification gate below.
+~~Remaining: the device-verification gate below.~~ **CLOSED 2026-07-20.** Nothing
+remains: `verification/2026.07.19.4.json` and `verification/2026.07.19.6.json`
+both carry real `tvos` and `android` runs.
 
 ---
 
@@ -207,12 +221,21 @@ class cannot launder the other.
 
 **The live gate is now on the CURRENT version, not 18.0.** Check
 `addon.xml` against `verification/<version>.json` before assuming anything.
-`verification/2026.07.19.3.json` carries a real `android` run and an owner-signed
-`tvos` WAIVER: `xcrun devicectl` silently refuses to overwrite existing files, so
-atv2 is stuck at `2026.07.19.2` and that release is itself the delivery mechanism
-that unblocks it. **That waiver is explicitly temporary** - once atv2 updates from
-the repository, run the real tvOS verification and REPLACE it with device
-evidence. A waiver left in place after the box can be reached is a lie.
+~~`verification/2026.07.19.3.json` carries a real `android` run and an
+owner-signed `tvos` WAIVER: `xcrun devicectl` silently refuses to overwrite
+existing files, so atv2 is stuck at `2026.07.19.2` and that release is itself the
+delivery mechanism that unblocks it. That waiver is explicitly temporary - once
+atv2 updates from the repository, run the real tvOS verification and REPLACE it
+with device evidence.~~
+
+**CLOSED / SUPERSEDED 2026-07-20. The waiver's exit condition is met and the
+waiver is no longer the current record.** `verification/2026.07.19.4.json` and
+`verification/2026.07.19.6.json` each carry a REAL `tvos` entry for atv2 (full
+`restore_contract`, `storage_fingerprint`, `clean_single_layer`), with
+`addon_version_on_box` matching that file's version in both cases. The waiver in
+`2026.07.19.3.json` stands only as history for that one version. A waiver left in
+place after the box can be reached is a lie, and this one was replaced with
+device evidence exactly as required.
 
 ---
 
@@ -304,16 +327,26 @@ hardware" step; the two runs above would satisfy most of them at once.
    16/20/24/32/48/64/96/128/192/256/384/512/768/1024). They ARE honored - Kodi
    skips validation when a dynamic options filler is present, verified in
    `Setting.cpp` - so the retune works. But opening that setting in Kodi's own
-   GUI may snap it to a listed value. Candidate: snap `_recommended_mb()` to the
-   nearest listed value. NOT agreed.
+   GUI may snap it to a listed value. ~~Candidate: snap `_recommended_mb()` to
+   the nearest listed value. NOT agreed.~~ **CLOSED 2026-07-20: implemented and
+   shipped.** `resources/lib/modules/tools.py:171` defines `_KODI_CACHE_SIZES`
+   and `:174-182` defines `_snap_to_kodi_size`, which snaps down to the nearest
+   listed value; `:209` routes the recommendation through it. Commit `76a0dd4`,
+   "Video cache buffer: one name everywhere, and a size Kodi actually offers".
 3. **Credentials in cleartext inside the backup zips - OWNER DECISION OPEN.**
    Both current base images carry live Real-Debrid, Easynews, Trakt, mdblist and
    TMDB secrets in `addon_data/plugin.video.pov/settings.xml`. Those zips sit
    under `~/Kodi/Backup/` on the mini, NFS-exported to every box. Not a coding
    error - a consequence of "full means full" plus POV's cleartext storage plus
    the export. Raised 2026-07-18, no action taken, export scope not verified.
-4. **Stage D deferral** - `buildInstaller` / `BUILDS` / `install_build` removal,
-   deferred to a separate PR (`docs/ui-consistency-plan.md:4-5, 18, 242`).
+4. ~~**Stage D deferral** - `buildInstaller` / `BUILDS` / `install_build`
+   removal, deferred to a separate PR (`docs/ui-consistency-plan.md:4-5, 18,
+   242`).~~ **CLOSED 2026-07-20: already removed, nothing deferred.** The removal
+   landed in commit `aef9bea` ("Sync standalone to live 2026.07.13.0"). A
+   `git grep` for `buildInstaller`, `install_build` and `BUILDS` across `*.py`
+   and `*.xml` at `HEAD` returns nothing; the only surviving hits are prose
+   references in `TASKS.md`, `docs/next-update-candidates.md` and
+   `docs/ui-consistency-plan.md`, which are stale text, not code.
 
 ---
 

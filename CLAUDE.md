@@ -99,7 +99,7 @@ Until 2026-07-14 this add-on's source was hand-synced between two repos (a copy 
 a copy in the proxy repo), and the copies drifted - the proxy repo's copy had the
 full test suite and got the real fixes; this repo's copy went stale for weeks. That
 duplication is gone. Fix bugs and add tests **here**. The proxy repo's
-`.claude/skills/ezm-backup-doctor/SKILL.md` is the accurate triage/procedure guide
+`~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md` is the accurate triage/procedure guide
 for backup/restore failures and cross-references back to this repo.
 
 ## The build/test/release contract
@@ -131,8 +131,8 @@ for backup/restore failures and cross-references back to this repo.
 Apple TV shadows certain userdata `.xml` files into NSUserDefaults; a key SHADOWS the
 disk file, it does not mirror it, and Kodi never copies a key back to disk. Getting
 this wrong has destroyed real user data twice (2026-07-08, 2026-07-14). The
-authoritative model (with exact Kodi source citations) lives in the sibling proxy
-repo: `tony7bones.github.io/.claude/skills/kodi-storage-map/SKILL.md`. Three
+authoritative model (with exact Kodi source citations) lives in the fleet meta
+repo: `~/Code/moquette/kodi/.claude/skills/kodi-storage-map/SKILL.md`. Three
 mechanical guards in this repo enforce the lessons - do not remove or route around
 them without understanding why they exist:
 

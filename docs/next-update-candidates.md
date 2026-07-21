@@ -229,8 +229,8 @@ deferred EZM++ item found in the tree.
 | `repo/docs/plans/atv-every-boot-settings-reassert.md` | REJECTED every-boot re-assert design (do not re-propose) plus the corrected fix that became `nsud.rewrite_userdata_xml`, with its open caveats. |
 | `repo/docs/playbooks/ezm-restore-hardening.md` | The 2026.07.07.x restore hardening and the Fire OS 8 progress-text SIGSEGV lesson. |
 | `repo/docs/playbooks/kodi-vfs-cannot-read-foreign-local-files.md` | Why stash/marker I/O uses plain Python, not `xbmcvfs`. |
-| `repo/.claude/skills/kodi-storage-map/SKILL.md` | Exhaustive per-OS file map. |
-| `repo/.claude/skills/ezm-backup-doctor/SKILL.md` | Backup/restore triage guide. |
+| `~/Code/moquette/kodi/.claude/skills/kodi-storage-map/SKILL.md` | Exhaustive per-OS file map. |
+| `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md` | Backup/restore triage guide. |
 | `repo/docs/agent-postmortem-do-not-repeat.md` | Process failures not to repeat. |
 | `ezmpp/CLAUDE.md` | Backup/restore contract, tvOS storage rules, the three mechanical guards. |
 | `ezmpp/docs/restore-defects-2026-07-18.md` | The two open defects, root cause, fix plan, task breakdown. |

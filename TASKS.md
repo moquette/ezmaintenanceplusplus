@@ -446,8 +446,8 @@ checkout `~/Code/moquette/kodi/repo`), NOT in this repo. A standalone clone of
 - `repo/docs/plans/atv-every-boot-settings-reassert.md` - REJECTED design + the
   corrected fix
 - `repo/docs/incident-2026-07-*-ezmpp-*.md` - fifteen incident writeups
-- `repo/.claude/skills/ezm-backup-doctor/SKILL.md` - triage guide
-- `repo/.claude/skills/kodi-storage-map/SKILL.md` - per-OS file map
+- `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md` - triage guide
+- `~/Code/moquette/kodi/.claude/skills/kodi-storage-map/SKILL.md` - per-OS file map
 - `repo/TASKS.md` - the hub tracker (EZM++ sections there are historical: the
   repo extraction that already happened)
 

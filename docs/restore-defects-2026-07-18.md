@@ -511,8 +511,8 @@ Do these in order. Do not skip the gates.
 | `repo/docs/playbooks/kodi-settings-clobber.md` | **Names the bug class.** Instance 1 (lines 20-24) is this exact file and owner. Mechanism A + decision guide, lines 26-76. Lines 90-93 contest blast-radius item 2. Lines 95-111 cover the tvOS NSUserDefaults model. |
 | `repo/docs/plans/atv-every-boot-settings-reassert.md` | **REJECTED design, do not re-propose** (verdict lines 133-160). Kill 1 (lines 137-146) constrains any re-apply proposal. The corrected fix that became `nsud.rewrite_userdata_xml` is at lines 171-199, with open caveats at 187-199 (500 KB NSUserDefaults budget, PVR clobber orthogonality, hardware verification still owed). |
 | `repo/docs/playbooks/ezm-restore-hardening.md` | The 2026.07.07.x restore hardening, incl. the Fire OS 8 text-renderer SIGSEGV caused by per-file progress text. Any change to restore progress UI must respect it. |
-| `repo/.claude/skills/kodi-storage-map/SKILL.md` | Exhaustive per-OS file map; section 5 covers the key-is-only-copy state. |
-| `repo/.claude/skills/ezm-backup-doctor/SKILL.md` | Triage guide for backup/restore failures. |
+| `~/Code/moquette/kodi/.claude/skills/kodi-storage-map/SKILL.md` | Exhaustive per-OS file map; section 5 covers the key-is-only-copy state. |
+| `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md` | Triage guide for backup/restore failures. |
 | `ezmpp/CLAUDE.md` | The backup/restore contract, tvOS storage rules, and the three mechanical guards (chokepoint lint, two-layer fake, device-verification gate). |
 | `ezmpp/docs/next-update-candidates.md` | The forward queue: cache/readfactor investigation, memorysize GUI-list hazard, the credential-exposure decision. |
 

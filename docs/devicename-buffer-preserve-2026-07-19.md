@@ -136,7 +136,7 @@ With both classes present the suite is GREEN.
 
 ## Correction to a documented fleet fact
 
-`repo/.claude/skills/atv-log-pull/SKILL.md` §7 states that
+`~/Code/moquette/kodi/.claude/skills/atv-log-pull/SKILL.md` §7 states that
 `devicectl device copy to` "silently refuses to OVERWRITE an existing file,
 reporting success either way", proven "across nine attempts", and concludes the
 only route for replacing files is a Kodi repository update.

@@ -15,7 +15,7 @@ source) and points its `repository.json` at this repo's GitHub Release assets, t
 same "own repo + release asset" pattern already proven for `skin.estuary7`
 (`moquette/estuary7`). Fix bugs and add tests here; only bump the hosted metadata and
 re-release the proxy over there. Triage guide for backup/restore failures:
-`tony7bones.github.io/.claude/skills/ezm-backup-doctor/SKILL.md`.
+`~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md`.
 
 ## Why this fork exists
 
@@ -69,7 +69,7 @@ a 2026-07-14 incident where an overly broad vectoring rule deleted the POSIX cop
 skin's customized main-menu data, which the skin then couldn't read back (fixed in
 `nsud.py`'s `_should_vector`, scoped to exactly what Kodi's VFS actually reads). The full
 storage model (with exact Kodi source citations) lives in the sibling proxy repo's
-`.claude/skills/kodi-storage-map/SKILL.md` - read it before touching `nsud.py`,
+`~/Code/moquette/kodi/.claude/skills/kodi-storage-map/SKILL.md` - read it before touching `nsud.py`,
 `nsub.py`, or `boxsetup.py`.
 
 Three things in this repo exist specifically to keep that class of bug from shipping
@@ -176,7 +176,7 @@ is a hard failure, not a warning.
 After cutting a release here, the Tony.7.Bones proxy repo's hosted metadata mirror
 (`addons/hosted/script.ezmaintenanceplusplus/addon.xml`) needs its version bumped to
 match and a proxy release (`python3 _tools/release.py --proxy`) to actually ship it -
-see that repo's `CLAUDE.md` and `.claude/skills/ezm-backup-doctor/SKILL.md` for the
+see that repo's `CLAUDE.md` and `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md` for the
 exact steps and the current gap between "committed" and "released" if one exists.
 
 ## Install / use it with a network share

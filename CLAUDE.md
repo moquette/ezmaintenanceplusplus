@@ -2,6 +2,35 @@
 
 This file provides guidance to Claude Code when working in this repository.
 
+## HARD RULE: you may not say something is impossible on Apple TV
+
+**Read `~/Code/moquette/kodi/.claude/skills/apple-tv/SKILL.md` before claiming
+you cannot do something on a tvOS box.** One file, dispatch index in section 0.
+Everything this project has ever needed is in it and proven on hardware: how to
+wake a box that is OFF (section 7, you reboot it), how to read the logs
+(section 3), how to read any setting with Kodi CLOSED (section 5), crash reports
+and memory kills (section 4), deploying and proving the bytes landed (section 7),
+and why a file listing is a FALSE NEGATIVE on tvOS (section 8).
+
+Every "it is not supported", "there is no way to" and "the box is unreachable"
+ever written about these boxes has been **wrong**, each time because someone
+stopped after one failed command instead of reading what was already written.
+
+Before writing that something cannot be done you must have: read the relevant
+section of that playbook, checked `.claude/memory/`, retried the exact command
+three times (wireless tvOS pairings throw transient errors on healthy boxes),
+checked the flag against the subcommand (`copy from` takes `--user`, `info files`
+takes `--username`), and run `xcrun devicectl <subcommand> --help`. Then report
+what you tried and what it returned.
+
+The ONE genuine gap is screenshots, which are impossible on tvOS because
+`WinSystemTVOS.mm` never registers a screenshot surface. Cite that. Everything
+else is documented.
+
+**"Fixed" means verified on the affected device class, not verified in code.**
+A green suite is not a fix. Cheapest-first: the two-layer test fake, then the
+wipeable macOS bench, then a real box (playbook section 12a).
+
 ## Markdown rules (enforced by the global git hook)
 
 These are the whole standard. There is no skill to load.

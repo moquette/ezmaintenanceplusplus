@@ -45,6 +45,7 @@ class _Recorder:
         self.yesno_answer = 0
         self.dialogs_created = 0
         self.builtins = []
+        self.logs = []  # (message, level) - the purge warning is only visible here
         self.window_props = {}
         self.settings = {}
 
@@ -61,7 +62,10 @@ def _install_fakes(monkeypatch, tmp_path, rec):
     xbmc.getInfoLabel = lambda s: ""
     xbmc.getCondVisibility = lambda s: True  # GUI is "up" for _wait_kodi_ready
     xbmc.getSkinDir = lambda: "skin.estuary"
-    xbmc.log = lambda *a, **k: None
+    # RECORD, do not discard: _purge_texture_cache's "incomplete" warning is the only
+    # thing a human ever sees from a failed purge, and a discarding fake made it
+    # untestable. (QA finding, 2026-07-21 sign-off.)
+    xbmc.log = lambda msg, level=None, *a, **k: rec.logs.append((msg, level))
     xbmc.executebuiltin = lambda cmd: rec.builtins.append(cmd)
     xbmc.executeJSONRPC = lambda cmd: "{}"
     xbmc.LOGERROR = 1
@@ -338,7 +342,8 @@ def test_purgePackages_cleans_dir_only_packages(maint, tmp_path):
 def test_deleteThumbnails_distinct_legacy_dir_fully_removed(maint, tmp_path):
     # The fixture maps special://thumbnails and userdata/Thumbnails to DIFFERENT
     # dirs - the legacy/split layout. Skeleton kept in the live cache, the
-    # separate legacy dir removed whole, Textures13.db unlinked.
+    # separate legacy dir removed whole. Textures13.db is NOT touched on disk;
+    # see test_deleteThumbnails_never_unlinks_the_live_texture_database.
     thumbs_special = Path(maint.thumbnailPath)
     thumbs_userdata = Path(maint.THUMBS)
     db = Path(maint.databasePath)
@@ -349,7 +354,109 @@ def test_deleteThumbnails_distinct_legacy_dir_fully_removed(maint, tmp_path):
     assert (thumbs_special / "0").is_dir()  # skeleton kept
     assert not (thumbs_special / "0" / "a.jpg").exists()
     assert list(thumbs_userdata.iterdir()) == []  # separate legacy dir emptied
-    assert not (db / "Textures13.db").exists()
+
+
+def _fake_texture_rpc(monkeypatch, maint, textures, removable=None, vanished=()):
+    """Fake just Textures.GetTextures/RemoveTexture; record every method called.
+
+    `vanished` ids answer -32602 ("Invalid params."), which is what Kodi really
+    returns for an id that was re-cached away between the enumerate and the remove.
+    """
+    calls = []
+
+    def _rpc(method, params):
+        calls.append((method, params))
+        if method == "Textures.GetTextures":
+            return {"result": {"textures": textures}}
+        if method == "Textures.RemoveTexture":
+            tid = params["textureid"]
+            if tid in vanished:
+                return {"error": {"code": -32602, "message": "Invalid params."}}
+            if removable is None or tid in removable:
+                return {"result": "OK"}
+            return {"error": {"code": -32603}}
+        return {}
+
+    monkeypatch.setattr(maint, "_jsonrpc", _rpc)
+    return calls
+
+
+def test_deleteThumbnails_never_unlinks_the_live_texture_database(
+    maint, tmp_path, monkeypatch
+):
+    # REGRESSION, office Fire TV SIGABRT 2026-07-21. deleteThumbnails() used to end
+    # with os.unlink(Textures13.db). Kodi holds that database OPEN: the unlink leaves
+    # the running process on an unlinked inode, the next texture write fails
+    # SQLITE_READONLY_DBMOVED, and the SQLITE_MISUSE storm after it aborts Kodi on
+    # Android. The box survived the 09:55 backup that did the unlink and died at
+    # 10:01:13, at the first skin change to touch the texture cache. Reproduced on the
+    # macOS bench with the unlink as the only action. The file must SURVIVE this call.
+    db = Path(maint.databasePath)
+    _mktree(db, {"Textures13.db": b"db"})
+    _fake_texture_rpc(monkeypatch, maint, [])
+    maint.deleteThumbnails(mode="silent")
+    assert (db / "Textures13.db").read_bytes() == b"db"
+
+
+def test_deleteThumbnails_empties_the_texture_cache_through_kodi(
+    maint, tmp_path, monkeypatch
+):
+    # The rows still have to go, or the cache keeps pointing at images we deleted.
+    # Textures.RemoveTexture is the sanctioned emptier: Kodi drops the row and the
+    # cached file together, and the database stays its own.
+    calls = _fake_texture_rpc(monkeypatch, maint, [{"textureid": 4}, {"textureid": 9}])
+    maint.deleteThumbnails(mode="silent")
+    assert calls[0][0] == "Textures.GetTextures"
+    assert [p["textureid"] for m, p in calls if m == "Textures.RemoveTexture"] == [4, 9]
+
+
+def test_purge_texture_cache_counts_rows_that_refused_to_go(maint, monkeypatch):
+    # No silent partial: a row Kodi refused to remove is counted as failed, never
+    # folded into the removed total and reported as a clean sweep.
+    _fake_texture_rpc(
+        monkeypatch, maint, [{"textureid": 1}, {"textureid": 2}], removable={1}
+    )
+    assert maint._purge_texture_cache() == (1, 1)
+
+
+def test_purge_texture_cache_survives_an_enumerate_failure(maint, monkeypatch):
+    # A texture DB that cannot be read must not raise out of a backup's first step.
+    monkeypatch.setattr(maint, "_jsonrpc", lambda m, p: {"error": {"code": -32603}})
+    assert maint._purge_texture_cache() == (0, 0)
+
+
+def test_purge_texture_cache_survives_a_null_result(maint, monkeypatch):
+    # `{"result": null}` used to raise AttributeError out of deleteThumbnails, and the
+    # backup path swallows that with a bare except - silently skipping the rest of the
+    # pre-backup clean. Pin the `(x or {})` form that makes it a no-op instead.
+    monkeypatch.setattr(maint, "_jsonrpc", lambda m, p: {"result": None})
+    assert maint._purge_texture_cache() == (0, 0)
+
+
+def test_purge_texture_cache_warns_when_a_row_genuinely_refused(maint, monkeypatch):
+    # The (removed, failed) tuple is read by NO production caller - deleteThumbnails
+    # calls this for effect. The log line is the only thing a human ever sees, so it is
+    # the thing worth pinning. (QA finding, 2026-07-21 sign-off.)
+    _fake_texture_rpc(
+        monkeypatch, maint, [{"textureid": 1}, {"textureid": 2}], removable={1}
+    )
+    maint._purge_texture_cache()
+    warnings = [m for m, lvl in maint._rec.logs if "purge incomplete" in m]
+    assert len(warnings) == 1
+    assert "1 removed, 1 failed" in warnings[0]
+
+
+def test_purge_texture_cache_does_not_cry_wolf_over_a_vanished_row(maint, monkeypatch):
+    # MEASURED on the bench: purging 5007 rows reported "3 failed" purely because Kodi
+    # re-cached rows away mid-loop, and logged a warning nobody should act on. A row
+    # that is already gone is the outcome we wanted, so it counts as removed and must
+    # produce NO warning - a warning that fires on success trains the reader to ignore
+    # it, which is the same failure mode as no warning at all.
+    _fake_texture_rpc(
+        monkeypatch, maint, [{"textureid": 1}, {"textureid": 2}], vanished={2}
+    )
+    assert maint._purge_texture_cache() == (2, 0)
+    assert [m for m, lvl in maint._rec.logs if "purge incomplete" in m] == []
 
 
 def test_deleteThumbnails_aliased_paths_preserve_bucket_skeleton(maint, tmp_path):

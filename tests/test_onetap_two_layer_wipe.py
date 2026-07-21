@@ -400,3 +400,74 @@ def test_keep_sources_survives_when_the_file_is_key_only_on_tvos(env, monkeypatc
     assert "sources.xml" in left, "the sources key must survive when keeping sources"
     assert "passwords.xml" in left, "the saved credentials key must survive with it"
     assert "guisettings.xml" not in left, "an unrelated key must still be wiped"
+
+
+# --------------------------------------------------------------------------- #
+# Live databases: the office Fire TV SIGABRT of 2026-07-21                     #
+# --------------------------------------------------------------------------- #
+
+
+def test_fresh_start_wipe_still_removes_the_databases(env):
+    """A clean slate must be CLEAN. Owner decision 2026-07-21.
+
+    Fresh Start deletes every userdata/Database file - library, EPG, watched state,
+    view modes - because a wipe that silently preserved them would be lying about what
+    it did. That is only safe because Fresh Start ALWAYS hard-exits afterwards
+    (ui.ask_terminate -> ui.terminate -> os._exit); Kodi never survives to write to a
+    database it no longer has. The counterpart is test_restore_wipe_preserves_the_live
+    _databases below, for the path that CANNOT exit.
+    """
+    live = [
+        "userdata/Database/Textures13.db",
+        "userdata/Database/MyVideos131.db",
+        "userdata/Database/Epg16.db",
+    ]
+    for rel in live:
+        _w(env.home, rel, b"sqlite")
+
+    files_removed, _keys, failed, leftovers = env.onetap._wipe(
+        str(env.home), env.onetap._wipe_excludes()
+    )
+
+    for rel in live:
+        assert not (env.home / rel).exists(), "%s survived a Fresh Start wipe" % rel
+    assert failed == 0 and list(leftovers) == []
+    assert files_removed == 3
+
+
+def test_restore_wipe_preserves_the_live_databases(env):
+    """REGRESSION, office Fire TV SIGABRT 2026-07-21, for the path that keeps Kodi UP.
+
+    Kodi holds a persistent connection on every userdata/Database/*.db. Unlinking one
+    leaves it writing to an unlinked inode: SQLITE_READONLY_DBMOVED, then a
+    SQLITE_MISUSE storm, then SIGABRT on Android. ONE unlinked database killed the
+    office box. Restore's wipe unlinked seven and then deliberately kept Kodi alive for
+    the entire zip extract, so it must use the database-preserving exclude set. Nothing
+    is lost: the archive re-supplies them.
+    """
+    live = [
+        "userdata/Database/Textures13.db",
+        "userdata/Database/MyVideos131.db",
+        "userdata/Database/Epg16.db",
+        "userdata/Database/TV46.db",
+        "userdata/Database/MyMusic83.db",
+        "userdata/Database/ViewModes6.db",
+        "userdata/Database/Addons33.db",
+    ]
+    for rel in live:
+        _w(env.home, rel, b"sqlite")
+    # A non-database file still goes, so this is an exclusion of the Database
+    # directory and not a wipe that quietly stopped working.
+    _w(env.home, "userdata/sources.xml", b"<sources/>")
+
+    files_removed, _keys, failed, leftovers = env.onetap._wipe(
+        str(env.home),
+        env.onetap.wipe_excludes_keeping_databases(),
+        env.onetap.keep_addon_db(),
+    )
+
+    for rel in live:
+        assert (env.home / rel).exists(), "%s was unlinked under a live Kodi" % rel
+    assert not (env.home / "userdata" / "sources.xml").exists()
+    assert failed == 0 and list(leftovers) == []
+    assert files_removed == 1

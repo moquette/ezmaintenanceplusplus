@@ -1051,10 +1051,12 @@ def test_freshstart_wipe_runs_and_prompts_shutdown_not_false_failed(dmod, monkey
     swallowed, and falsely told the user 'the wipe did not run' WITHOUT restarting -
     a wiped box left stranded. Let the wipe run and assert honest completion + the exit.
 
-    2026-07-21: Fresh Start requires stock Estuary (so post-wipe dialogs still render),
-    ends with ui.ask_terminate() (a Shut down / Later prompt), and 'Shut down' hard-exits
-    via ui.terminate() (os._exit) so the exit flush cannot re-dirty the slate. The
-    completion copy must say the box will close/reopen, never 'restart'."""
+    2026-07-21: Fresh Start requires stock Estuary (so post-wipe dialogs still render)
+    and ends with ui.ask_terminate(), which is now an acknowledge-then-exit NOTICE, not
+    a Shut down / Later choice - it always hard-exits via ui.terminate() (os._exit), so
+    the exit flush cannot re-dirty the slate and Kodi can never outlive the wipe that
+    deleted the databases it holds open. The completion copy must say the box will
+    close/reopen, never 'restart'."""
     import sys
     import types as _t
 

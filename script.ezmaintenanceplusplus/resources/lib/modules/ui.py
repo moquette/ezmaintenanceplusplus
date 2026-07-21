@@ -578,30 +578,38 @@ def terminate():
 
 
 def ask_terminate(status="", heading=None):
-    """Fresh Start completion prompt: advise the user Kodi must close, and offer
-    'Shut down' (hard-exit now via terminate(), which keeps the clean slate) or 'Later'
-    (defer - Kodi stays up, still wiped, so the user can finish first and close it
-    themselves).
+    """Fresh Start completion notice. ACKNOWLEDGE, then Kodi closes. NOT a choice.
+
+    This used to be a yesno with 'Shut down' / 'Later', and 'Later' left Kodi RUNNING
+    on a freshly wiped tree. That is unsurvivable, and the reason is the same one that
+    killed the office Fire TV on 2026-07-21: the wipe deletes every userdata/Database
+    file, Kodi holds an open connection on each, and the first write to any of them
+    fails SQLITE_READONLY_DBMOVED and then storms SQLITE_MISUSE until the process
+    aborts. The wipe also removes every cached texture, so the very next artwork draw
+    IS such a write - 'Later' bought seconds, not convenience. A Back/ESC dismissal
+    returned falsy too, so the most dangerous branch was also the one you got by
+    pressing the wrong button.
+
+    The databases are deleted deliberately (a clean slate has to be clean, owner
+    decision 2026-07-21); the safety comes from this process not outliving them. So
+    there is exactly one outcome here and terminate() is unconditional.
 
     This renders only because Fresh Start REQUIRES the stock Estuary skin, which is
     bundled read-only in the APK (outside special://home) and therefore survives the
     wipe. From a wiped custom skin the dialog XML would be gone and nothing could draw.
 
-    `status` is an optional line shown above the prompt (e.g. "Clean slate ready."). On
-    tvOS / Fire TV Kodi cannot relaunch itself, so the wording is close-and-reopen.
-    Returns True and exits on 'Shut down', False on 'Later'.
+    `status` is an optional line shown above the notice. On tvOS / Fire TV Kodi cannot
+    relaunch itself, so the wording is close-and-reopen. Never returns.
     """
-    prompt = "Kodi needs to close to finish. Shut down now, then reopen Kodi."
+    prompt = "Kodi will now close. Reopen it to finish."
     message = (status + "\n\n" + prompt) if status else prompt
-    if xbmcgui.Dialog().yesno(
-        heading if heading is not None else HEADING,
-        message,
-        yeslabel="Shut down",
-        nolabel="Later",
-    ):
-        terminate()
-        return True
-    return False
+    try:
+        xbmcgui.Dialog().ok(heading if heading is not None else HEADING, message)
+    except Exception:
+        # A dialog failure must NEVER leave Kodi alive on a wiped tree - that is the
+        # crash this function exists to prevent. Exit anyway.
+        pass
+    terminate()
 
 
 def ask_restart(status="", heading=None):

@@ -1,3 +1,21 @@
+v2026.07.21.3
+- Fixes a crash. Taking a backup could kill Kodi several minutes later, with no
+  warning and nothing on screen: the box just vanished to the launcher. Clearing
+  thumbnails deleted a database file that Kodi still had open, and Kodi kept running
+  until the next time it needed that file. Thumbnails are now cleared through Kodi
+  itself, so nothing is pulled out from under it.
+- The same mistake was in two other places, and both are fixed. A Restore no longer
+  deletes the databases while Kodi is running (the backup being restored puts them
+  back anyway). Fresh Start still clears them, because a clean slate has to be clean,
+  but it now always closes Kodi when it finishes.
+- Fresh Start's Later button is gone. It left the box running on a freshly wiped
+  install, where it would crash within seconds. The finishing message now just tells
+  you the box is closing.
+- A Restore also no longer removes the file that keeps EZ Maintenance++ enabled, so
+  the add-on comes back switched on rather than looking like it disappeared.
+- Backups no longer carry the thumbnail database. It is rebuilt automatically and
+  never shrank once it had grown, so it was pure dead weight in every archive.
+
 v2026.07.21.2
 - One-Tap Restore has been removed. The pinned-backup shortcut is gone from the main
   menu, and its hidden pin slots are gone from Settings. Your actual backup files are

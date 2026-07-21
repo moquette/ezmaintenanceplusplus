@@ -50,6 +50,10 @@ KEEP_FILES = (
 )
 KEEP_DIRS = ("archive_cache", "temp")
 
+# JSON-RPC "Invalid params." Kodi returns this for Textures.RemoveTexture against an
+# id that no longer exists, which is the benign enumerate/remove race, not a failure.
+_RPC_INVALID_PARAMS = -32602
+
 
 def _clean_tree(path, keep_files=(), keep_dirs=(), remove_dirs=True):
     """Empty a directory in one top-level pass: unlink files, rmtree subdirs.
@@ -87,7 +91,75 @@ def clearCache(mode="verbose"):
         ui.notify("Clean Completed", icon=iconpath, time_ms=3000)
 
 
+def _purge_texture_cache():
+    """Empty Kodi's texture cache THROUGH Kodi. Never by unlinking Textures13.db.
+
+    `os.unlink(Textures13.db)` under a live Kodi is a delayed-action crash, not a
+    clean. Kodi keeps an open handle on the now-unlinked inode and carries on; the
+    NEXT texture-cache write fails `SQLITE_READONLY_DBMOVED`, and every write after
+    that fails `SQLITE_MISUSE` on the poisoned handle. On Android that storm aborts
+    the process. It killed the office Fire TV on 2026-07-21: a backup at 09:55 did
+    the unlink (this function runs first in every backup), the box ran on happily,
+    and it took SIGABRT at 10:01:13 the moment a skin change touched the texture DB
+    six minutes later. Reproduced on the macOS bench with the unlink as the sole
+    action - no skin change, no add-on code - so the trigger is any texture write,
+    not anything specific to that session.
+
+    `Textures.RemoveTexture` is the sanctioned emptier: Kodi deletes the row AND the
+    cached image file it points at, with the database still its own. Returns
+    (removed, failed); (0, 0) when the cache is already empty or cannot be
+    enumerated.
+
+    KNOWN LIMIT, measured on the macOS bench 2026-07-21: `Textures.GetTextures`
+    enumerates a JOIN against the `sizes` table, not the `texture` table. With 200
+    texture rows and 0 sizes rows it returned 0 textures; adding one sizes row per
+    texture and changing nothing else returned all 200. So a row whose caching began
+    and never finished is invisible here and survives the purge. That is acceptable
+    only because Kodi evicts such a row itself the next time it is used: a cached
+    file that is gone logs "Direct texture file loading failed" and Kodi's very next
+    statement is "DELETE FROM texture WHERE url=..." (observed on the office Fire TV,
+    2026-07-21 10:01:09). Do NOT "fix" this by going back to unlinking the file.
+    """
+    got = _jsonrpc("Textures.GetTextures", {})
+    # `(x or {})`, never `x.get("result", {})`: a "result": null reply would make the
+    # second .get() raise, and in the backup path wiz.py swallows it with a bare
+    # except, silently skipping the rest of the pre-backup clean.
+    textures = (got.get("result") or {}).get("textures") or []
+    removed = 0
+    failed = 0
+    for texture in textures:
+        tid = texture.get("textureid")
+        if tid is None:
+            continue
+        result = _jsonrpc("Textures.RemoveTexture", {"textureid": tid})
+        if result.get("result") == "OK":
+            removed += 1
+        elif result.get("error", {}).get("code") == _RPC_INVALID_PARAMS:
+            # The row went away between the enumerate and the remove - Kodi re-caches
+            # constantly, so this is routine on a live box and is NOT a failure. It
+            # was counted as one at first, which made a fully successful purge of
+            # 5007 rows report "3 failed" and log a warning nobody should act on.
+            removed += 1
+        else:
+            failed += 1
+    # No silent partial: rows that genuinely refused to go, or a cache that could not
+    # be enumerated at all, are stated in the log rather than reported as a clean sweep.
+    if failed or (not textures and got.get("error")):
+        xbmc.log(
+            "EZ Maintenance++ : texture cache purge incomplete - %d removed, %d "
+            "failed, enumerate error %r" % (removed, failed, got.get("error")),
+            level=xbmc.LOGWARNING,
+        )
+    return removed, failed
+
+
 def deleteThumbnails(mode="verbose"):
+    # Drop the cached rows through Kodi FIRST (it deletes each cached file with its
+    # row), then sweep the disk for orphans the database never knew about - the bench
+    # held 8 thumbnail files against 4 rows, so the disk pass is load-bearing and runs
+    # unconditionally. A row left behind by a failed purge is self-healing (see
+    # _purge_texture_cache), so a partial purge is not a reason to skip the sweep.
+    _purge_texture_cache()
     # special://thumbnails: keep Kodi's 0-f/ bucket skeleton, drop the images.
     _clean_tree(thumbnailPath, remove_dirs=False)
     # On a real box special://thumbnails ALIASES userdata/Thumbnails - the two
@@ -103,11 +175,6 @@ def deleteThumbnails(mode="verbose"):
     if not aliased:
         _clean_tree(THUMBS)
 
-    try:
-        text13 = os.path.join(databasePath, "Textures13.db")
-        os.unlink(text13)
-    except OSError:
-        pass
     if mode == "verbose":
         ui.notify("Clean Thumbs Completed", icon=iconpath, time_ms=3000)
 

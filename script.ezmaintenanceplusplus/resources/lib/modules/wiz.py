@@ -73,6 +73,30 @@ def _is_secret_arc(arc):
     return a.endswith(_SECRET_TAIL)
 
 
+def _is_regenerable_cache_arc(arc):
+    """True iff `arc` is Kodi's texture-cache database, which a backup must never carry.
+
+    It used to be absent by accident: maintenance.deleteThumbnails() ran first in every
+    backup and UNLINKED the file, so the walk never saw it. That unlink crashed the
+    office Fire TV on 2026-07-21 (see maintenance._purge_texture_cache) and is gone, so
+    the file is now present at walk time and has to be excluded on purpose.
+
+    Excluding it is right on its own merits, not just to hold the old archive size.
+    SQLite never returns freed space: measured on the bench, a Textures13.db emptied of
+    all 5007 rows still occupied 1.2 MB with 286 of 295 pages on the freelist and
+    auto_vacuum off, and the freed pages keep their old contents, so it does not
+    compress away either (225 KB deflated of pure dead weight). It is also a live
+    database being copied with no quiesce. Nothing is lost by dropping it: the archive
+    already carries an emptied Thumbnails tree, so a restored box rebuilds its texture
+    cache from scratch exactly as it does today.
+    """
+    a = (arc or "").replace("\\", "/").lstrip("/")
+    base = a.rsplit("/", 1)[-1]
+    return (
+        "/Database/" in "/" + a and base.startswith("Textures") and base.endswith(".db")
+    )
+
+
 def _source_os():
     """'tvos' | 'android' | 'other', via Kodi's own platform conditions (the same
     detection nsud._is_tvos uses). Defaults to 'other' on any error."""
@@ -1312,9 +1336,18 @@ def restore(
         from resources.lib.modules import onetap
 
         with ui.Progress("Wiping the device clean...", heading="Restoring") as wp:
+            # wipe_excludes_keeping_databases(), NOT _wipe_excludes(): unlike Fresh
+            # Start, restore keeps Kodi ALIVE for the whole extract that follows, so
+            # it must not unlink a database Kodi holds open (that is the crash in
+            # maintenance._purge_texture_cache, and this path armed it for minutes).
+            # Nothing is lost - the archive re-supplies the databases. keep_addon_db()
+            # was also MISSING here while Fresh Start passed it, so this path unlinked
+            # Addons*.db too, the one database whose loss brings EZ Maintenance++ back
+            # DISABLED. Kept as belt and braces if the exclude set ever changes.
             _wres = onetap._wipe(
                 translatePath("special://home/"),
-                onetap._wipe_excludes(),
+                onetap.wipe_excludes_keeping_databases(),
+                onetap.keep_addon_db(),
                 progress=lambda done, total: wp.items(
                     done, total, note="Removing old files"
                 ),
@@ -1931,7 +1964,7 @@ def CreateZip(
                         # walk (Fire TV / on-disk copy) must exclude it too. Matched by suffix
                         # so a per-profile copy is covered. (Caught on real hardware 2026-07-16
                         # by tools/backup_lint.py's secret check.)
-                        if _is_secret_arc(arc):
+                        if _is_secret_arc(arc) or _is_regenerable_cache_arc(arc):
                             continue
                         # PER-FILE error handling: one unreadable file must never
                         # silently drop the rest of its directory (the old

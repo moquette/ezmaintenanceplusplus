@@ -68,6 +68,33 @@ def _wipe_excludes():
     return keep
 
 
+# Kodi holds a persistent CDatabase connection on every userdata/Database/*.db for as
+# long as it runs. Unlinking one leaves Kodi writing to an unlinked inode: the next
+# write fails SQLITE_READONLY_DBMOVED, every write after that fails SQLITE_MISUSE, and
+# on Android the storm aborts the process. A SINGLE unlinked Textures13.db is what
+# killed the office Fire TV on 2026-07-21 (see maintenance._purge_texture_cache).
+#
+# So the rule is NOT "never delete a database" - it is: delete them only if this
+# process will not survive the deletion.
+#
+#   Fresh Start   deletes them, then ALWAYS hard-exits (ui.terminate, os._exit). The
+#                 slate has to be genuinely clean, so the databases must go; safety
+#                 comes from the process not outliving them. There is deliberately no
+#                 "do it later" path - see default.py FRESHSTART.
+#   restore       CANNOT exit: it keeps Kodi alive for the whole zip extract. It must
+#                 therefore PRESERVE the databases, which costs nothing because the
+#                 archive re-supplies them. wiz.py _wipe_pass adds DB_DIR_NAME.
+DB_DIR_NAME = "Database"
+
+
+def wipe_excludes_keeping_databases():
+    """`_wipe_excludes()` plus userdata/Database, for the callers that keep Kodi alive.
+
+    Directory-name pruning, matching how _wipe filters dirnames at any depth.
+    """
+    return _wipe_excludes() | {DB_DIR_NAME}
+
+
 def _wipe(home, excludes, keep_files=None, progress=None):
     """Remove everything under `home` except any entry named in `excludes` (matched at any
     depth - protects addons/<this add-on> and temp/) and any absolute path in `keep_files`

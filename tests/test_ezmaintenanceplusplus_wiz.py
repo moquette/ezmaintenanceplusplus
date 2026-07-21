@@ -3803,3 +3803,31 @@ def test_kodi_home_is_flagged_on_a_platform_whose_home_is_not_in_caches(
             "must not flag %s - a sibling that merely shares a name prefix is not "
             "inside the home" % safe
         )
+
+
+def test_texture_cache_db_is_never_captured_in_a_backup(wiz):
+    """Kodi's texture cache must not ride along in a backup archive.
+
+    It used to be absent by ACCIDENT: maintenance.deleteThumbnails() ran first in
+    every backup and unlinked the file, so the walk never saw it. That unlink is what
+    crashed the office Fire TV on 2026-07-21 (SIGABRT after SQLITE_READONLY_DBMOVED on
+    an open handle) and has been removed, so without this exclusion the file is now
+    present at walk time and every archive grows by its lifetime high-water mark -
+    SQLite never returns freed pages, so an emptied 1.2 MB cache stays 1.2 MB.
+    """
+    for captured in (
+        "userdata/Database/Textures13.db",
+        "Database/Textures13.db",
+        "userdata/Database/Textures99.db",
+    ):
+        assert wiz._is_regenerable_cache_arc(captured) is True, captured
+    # Precision: only the texture cache. Every other database is real user state and
+    # a backup that quietly dropped one would be lying about being full.
+    for kept in (
+        "userdata/Database/MyVideos131.db",
+        "userdata/Database/Addons33.db",
+        "userdata/Database/Epg16.db",
+        "userdata/Textures13.db",
+        "addons/plugin.video.x/Database/Textures13.db.bak",
+    ):
+        assert wiz._is_regenerable_cache_arc(kept) is False, kept

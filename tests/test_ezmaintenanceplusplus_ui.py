@@ -954,3 +954,53 @@ def test_progress_drives_a_real_copy_cancel(ui, monkeypatch):
     assert "nfs://dst" not in store
     assert "nfs://dst.ezmpart" not in store
     assert dp.polls == 1
+
+
+def test_ask_terminate_always_exits_and_offers_no_way_out(ui, monkeypatch):
+    """Fresh Start's completion prompt must be a NOTICE, never a choice.
+
+    It used to be a yesno with 'Shut down' / 'Later', and 'Later' left Kodi RUNNING on
+    a freshly wiped tree - with every userdata/Database file deleted out from under the
+    connections Kodi still holds open. The first write to any of them fails
+    SQLITE_READONLY_DBMOVED and then storms SQLITE_MISUSE until the process aborts,
+    which is exactly how the office Fire TV died on 2026-07-21 from a single unlinked
+    database. The wipe also drops every cached texture, so the next artwork draw IS
+    such a write. A Back/ESC dismissal was falsy too, so the most dangerous branch was
+    also the accidental one.
+    """
+    exits = []
+    monkeypatch.setattr(ui, "terminate", lambda: exits.append(True))
+    used = {}
+
+    class _D:
+        def ok(self, heading, message):
+            used["ok"] = message
+            return True
+
+        def yesno(self, *a, **k):  # pragma: no cover - must never be reached
+            raise AssertionError(
+                "ask_terminate must not ask - 'Later' left Kodi alive on a wiped tree"
+            )
+
+    monkeypatch.setattr(ui.xbmcgui, "Dialog", _D)
+    ui.ask_terminate("Clean slate ready.")
+    assert exits == [True]
+    assert "close" in used["ok"].lower()
+
+
+def test_ask_terminate_exits_even_if_the_dialog_blows_up(ui, monkeypatch):
+    """A dialog failure must not become the 'Later' branch by another name.
+
+    Post-wipe the skin's dialog XML is the likeliest thing to be missing, so this is
+    the realistic failure - and leaving Kodi alive is precisely the unsurvivable state.
+    """
+    exits = []
+    monkeypatch.setattr(ui, "terminate", lambda: exits.append(True))
+
+    class _D:
+        def ok(self, *a, **k):
+            raise RuntimeError("no dialog XML after the wipe")
+
+    monkeypatch.setattr(ui.xbmcgui, "Dialog", _D)
+    ui.ask_terminate("Clean slate ready.")
+    assert exits == [True]

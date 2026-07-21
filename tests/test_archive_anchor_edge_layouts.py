@@ -512,3 +512,87 @@ def test_manifest_entries_exceeding_extraction_are_reported(wiz, monkeypatch, tm
         "CONTRACT VIOLATION: a manifest-short restore must be reported as "
         "PARTIAL, never an unqualified 'Restore Complete'; user saw: %r" % text
     )
+
+
+# --------------------------------------------------------------------------- #
+# (f) ROUND-TRIP SYMMETRY: backup refuses to EMBED EZM's own settings.xml
+# (_is_secret_arc), so the extract must refuse to WRITE one. Every archive built
+# before 2026-07-16, and any archive from another box or an older build, still
+# carries that member; restoring one handed THIS box the SOURCE box's
+# download/restore paths and its dropbox_refresh_token - exactly the leak the
+# backup-side exclusion exists to prevent. An exclusion enforced on one side of a
+# round trip is not an exclusion.
+# --------------------------------------------------------------------------- #
+def test_restore_never_writes_ezm_own_settings_over_this_box(
+    wiz, monkeypatch, tmp_path
+):
+    home, rep = _prep_restore(wiz, monkeypatch, tmp_path)
+    secret_rel = "userdata/addon_data/script.ezmaintenanceplusplus/settings.xml"
+
+    # This box's OWN settings, as they exist before the restore.
+    mine = home / secret_rel
+    mine.parent.mkdir(parents=True, exist_ok=True)
+    mine.write_text("<settings><mine/></settings>")
+
+    src = _make_valid_zip(
+        tmp_path / "kodi_backup_202607161200.zip",
+        [
+            ("userdata/guisettings.xml", "<settings/>"),
+            (secret_rel, "<settings><FOREIGN_BOX_TOKEN/></settings>"),
+        ],
+    )
+
+    rep.result = wiz.restore(str(src), confirm=False)
+
+    assert mine.read_text() == "<settings><mine/></settings>", (
+        "CONTRACT VIOLATION: restore overwrote this box's own EZM settings.xml "
+        "with the archive's copy, importing the source box's paths and token"
+    )
+    assert "FOREIGN_BOX_TOKEN" not in mine.read_text()
+    # Real content still lands.
+    assert (home / "userdata" / "guisettings.xml").is_file()
+    # The skip is POLICY, not unplaceable content: it must not be reported as a
+    # failed/unmapped member, or a clean restore screams at the owner.
+    assert not _skips_surfaced(rep, 1), (
+        "a deliberate secret-skip must not be reported as a skipped member; "
+        "report was: %r" % _report_text(rep)
+    )
+
+
+# --------------------------------------------------------------------------- #
+# (g) SELF-DOWNGRADE: a restore must never write EZM's own add-on tree. The
+# extract would replace the RUNNING add-on with whatever version the archive
+# carries, so restoring last week's backup silently boots the older EZ
+# Maintenance++ and undoes every fix shipped since. The installed copy comes
+# from the Kodi repo; there is nothing to recover from the zip.
+# --------------------------------------------------------------------------- #
+def test_restore_never_overwrites_the_running_addon(wiz, monkeypatch, tmp_path):
+    home, rep = _prep_restore(wiz, monkeypatch, tmp_path)
+    self_rel = "addons/script.ezmaintenanceplusplus/addon.xml"
+
+    installed = home / self_rel
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    installed.write_text('<addon version="2026.07.21.4"/>')
+
+    src = _make_valid_zip(
+        tmp_path / "kodi_backup_202607161200.zip",
+        [
+            ("userdata/guisettings.xml", "<settings/>"),
+            (self_rel, '<addon version="2026.07.01.1"/>'),
+            ("addons/plugin.other/addon.xml", "<a/>"),
+        ],
+    )
+
+    rep.result = wiz.restore(str(src), confirm=False)
+
+    assert '2026.07.21.4' in installed.read_text(), (
+        "CONTRACT VIOLATION: restore downgraded the running add-on to the "
+        "archived copy; the box would boot the older EZM++ after restart"
+    )
+    # Other add-ons and userdata are unaffected by the self-skip.
+    assert (home / "addons/plugin.other/addon.xml").is_file()
+    assert (home / "userdata" / "guisettings.xml").is_file()
+    assert not _skips_surfaced(rep, 1), (
+        "a deliberate self-skip must not be reported as a skipped member; "
+        "report was: %r" % _report_text(rep)
+    )

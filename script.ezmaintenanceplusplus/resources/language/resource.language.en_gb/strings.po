@@ -114,9 +114,9 @@ msgid "Fresh Start"
 msgstr ""
 
 msgctxt "#30061"
-msgid "Keep file manager sources (NFS/SMB mounts and their saved credentials)"
+msgid "Keep file manager sources"
 msgstr ""
 
 msgctxt "#30062"
-msgid "Keep repositories (so you can reinstall add-ons afterward)"
+msgid "Keep repositories"
 msgstr ""

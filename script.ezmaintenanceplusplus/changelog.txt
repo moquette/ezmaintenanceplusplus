@@ -1,3 +1,14 @@
+v2026.07.21.5
+- Restore no longer overwrites this box's own EZ Maintenance++ settings with the copy
+  stored in the backup. Restoring another box's archive, or an older one from this box,
+  used to hand this box the other box's backup folder and device name. Your own settings
+  now always survive a restore.
+- Restore no longer replaces EZ Maintenance++ itself with the copy inside the backup.
+  Restoring an older archive put the older add-on back, so the next start silently ran
+  it and undid every fix released since. The installed version now stays put.
+- The two Fresh Start options are now called "Keep file manager sources" and
+  "Keep repositories".
+
 v2026.07.21.4
 - Follow-up to 2026.07.21.3, from an independent review of that release.
 - Fresh Start had one path left where a wipe that failed part way through left Kodi

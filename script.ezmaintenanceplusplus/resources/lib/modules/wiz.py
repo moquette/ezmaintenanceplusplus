@@ -65,6 +65,14 @@ MANIFEST_NAME = "backup_manifest.json"
 # covered too. Kept in lockstep with nsub._SECRET_TAIL (the tvOS capture path).
 _SECRET_TAIL = "addon_data/%s/settings.xml" % AddonID
 
+# EZM's own add-on tree inside a HOME-anchored archive. A restore must never write
+# this: the extract would overwrite the RUNNING add-on with whatever version the
+# archive happens to carry, so a box restoring last week's backup silently boots the
+# older EZ Maintenance++ and quietly undoes every fix shipped since. The add-on the
+# box already has is by definition the one that just ran the restore, and it comes
+# from the Kodi repo, so there is nothing to recover here.
+_SELF_ADDON_PREFIX = "addons/%s/" % AddonID
+
 
 def _is_secret_arc(arc):
     """True iff `arc` (a home- OR userdata-anchored zip arcname) is EZM's own
@@ -1524,20 +1532,29 @@ def restore(
             hard.append("%d item(s) did NOT restore" % len(result.failed))
             for line in _failed_lines(result.failed):
                 _rlog("failed member: %s" % line)
+
         # Members the anchor rules refused to map are surfaced, never silently dropped:
         # on a HOME anchor a member outside the allowed top-level dirs is real content
         # from a foreign/legacy layout the restore cannot place - the owner must know it
         # did not land (dropping it silently while saying "Complete" is the old lie).
-        unmapped = [
-            n
-            for n in _names
-            if _skip_fn(n)
-            and (n or "").lstrip("/").replace("\\", "/") != MANIFEST_NAME
-            and not (
-                skip_prefix
-                and (n or "").lstrip("/").replace("\\", "/").startswith(skip_prefix)
-            )
-        ]
+        def _skipped_on_purpose(name):
+            """True for members _skip_fn drops as POLICY rather than as unplaceable
+            content. These must not reach `unmapped`: reporting a deliberate skip as
+            "did NOT restore" turns a clean restore into a hard failure on screen, which
+            is the same cry-wolf lie in the opposite direction."""
+            rel = (name or "").lstrip("/").replace("\\", "/")
+            if rel == MANIFEST_NAME:
+                return True
+            if skip_prefix and rel.startswith(skip_prefix):
+                return True
+            # EZM's own settings.xml and its own add-on tree: never restored BY DESIGN
+            # (see _is_secret_arc and _SELF_ADDON_PREFIX). Their absence is the fix
+            # working, not content the restore failed to place.
+            if _is_secret_arc(rel) or rel.startswith(_SELF_ADDON_PREFIX):
+                return True
+            return False
+
+        unmapped = [n for n in _names if _skip_fn(n) and not _skipped_on_purpose(n)]
         if unmapped:
             hard.append(
                 "%d member(s) outside the recognized layout were NOT restored: %s"
@@ -2160,8 +2177,12 @@ def _extract_skip(anchor, skip_prefix):
     self-reference, and on a HOME anchor drops any member whose first segment is not an
     allowed home-level dir (stray userdata pollution - the on-disk residue of the historical
     userdata-restore-to-HOME bug). This only CHOOSES what to extract; it never deletes an
-    existing file. Inert on a USERDATA anchor, where addon_data/ and guisettings.xml ARE the
-    real content."""
+    existing file.
+
+    The ANCHOR rule above is inert on a USERDATA anchor, where addon_data/ and
+    guisettings.xml ARE the real content. The two POLICY skips - EZM's own settings.xml
+    (_is_secret_arc) and its own add-on tree (_SELF_ADDON_PREFIX) - fire on BOTH anchors,
+    because a userdata-anchored archive carries addon_data/<id>/settings.xml too."""
 
     def _skip(name):
         rel = (name or "").lstrip("/").replace("\\", "/")
@@ -2170,6 +2191,19 @@ def _extract_skip(anchor, skip_prefix):
                 True  # backup metadata (verified separately), never a file to restore
             )
         if skip_prefix and rel.startswith(skip_prefix):
+            return True
+        # SYMMETRY with backup. backup() refuses to EMBED EZM's own settings.xml
+        # (_is_secret_arc), but the extract used to happily write one back if the archive
+        # contained it, which every archive made before 2026-07-16 does, as does any
+        # archive built by a fork or an older build. Restoring one of those handed THIS
+        # box the SOURCE box's download/restore paths and its dropbox_refresh_token -
+        # precisely the leak the backup-side exclusion exists to prevent. An exclusion
+        # enforced on only one side of a round trip is not an exclusion.
+        if _is_secret_arc(rel):
+            return True
+        # Never restore EZM over the running EZM. See _SELF_ADDON_PREFIX: this is what
+        # stops an older archive from silently downgrading the add-on that is mid-restore.
+        if rel.startswith(_SELF_ADDON_PREFIX):
             return True
         if anchor == "home" and _first_seg(rel) not in _HOME_ALLOWED_TOP:
             return True

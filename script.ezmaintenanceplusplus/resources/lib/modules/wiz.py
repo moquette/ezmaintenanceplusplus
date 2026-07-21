@@ -91,10 +91,17 @@ def _is_regenerable_cache_arc(arc):
     cache from scratch exactly as it does today.
     """
     a = (arc or "").replace("\\", "/").lstrip("/")
+    # ANCHORED to the real database directory. A bare "/Database/" match at any depth
+    # also swallowed userdata/addon_data/<add-on>/Database/TexturesAnything.db - real
+    # third-party user data, dropped from a backup that promises "full means full",
+    # with nothing in the manifest to say so. Both anchors, because the walk root is
+    # special://home for a full backup and userdata itself for a userdata-only one.
+    if not (a.startswith("userdata/Database/") or a.startswith("Database/")):
+        return False
     base = a.rsplit("/", 1)[-1]
-    return (
-        "/Database/" in "/" + a and base.startswith("Textures") and base.endswith(".db")
-    )
+    # `.db*`, not `.db`: a stray Textures13.db-journal restored beside a surviving
+    # database is the silent-rollback hazard keep_live_databases() exists to avoid.
+    return base.startswith("Textures") and ".db" in base
 
 
 def _source_os():
@@ -1346,8 +1353,8 @@ def restore(
             # DISABLED. Kept as belt and braces if the exclude set ever changes.
             _wres = onetap._wipe(
                 translatePath("special://home/"),
-                onetap.wipe_excludes_keeping_databases(),
-                onetap.keep_addon_db(),
+                onetap._wipe_excludes(),
+                onetap.keep_addon_db() | onetap.keep_live_databases(),
                 progress=lambda done, total: wp.items(
                     done, total, note="Removing old files"
                 ),

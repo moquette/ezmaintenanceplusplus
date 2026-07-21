@@ -1093,6 +1093,92 @@ def test_freshstart_wipe_runs_and_prompts_shutdown_not_false_failed(dmod, monkey
     assert "restart" not in prompts[0].lower(), prompts[0]
 
 
+def test_freshstart_that_dies_mid_wipe_still_exits_and_says_so(dmod, monkeypatch):
+    """QA finding 2026-07-21. The one Fresh Start path that still left Kodi ALIVE on a
+    wiped tree, and lied about it.
+
+    _wipe deletes the POSIX tree first and sweeps NSUserDefaults keys LAST, so a raise
+    from the key pass (tvOS) arrives with every file - including the databases Kodi
+    holds open - ALREADY GONE. The old code swallowed it, left wipe_failed at None,
+    printed "the wipe did not run. Nothing was removed." and RETURNED without
+    terminating. Both halves are wrong: the message is false, and staying up on a tree
+    whose open databases were just unlinked is exactly the SIGABRT this release exists
+    to prevent (the office Fire TV, 2026-07-21).
+    """
+    import sys
+    import types as _t
+
+    onetap = _t.ModuleType("resources.lib.modules.onetap")
+    reached = {"v": False}
+
+    def _wipe(home, excludes, keep=None, progress=None):
+        reached["v"] = True  # the destructive pass BEGAN
+        raise RuntimeError("NSUserDefaults key sweep blew up after the POSIX delete")
+
+    onetap._wipe = _wipe
+    onetap._wipe_excludes = lambda: set()
+    onetap.keep_addon_db = lambda: set()
+    monkeypatch.setitem(sys.modules, "resources.lib.modules.onetap", onetap)
+    setattr(sys.modules["resources.lib.modules"], "onetap", onetap)
+
+    dmod.mod.HOME = "/home/.kodi"
+    dmod.mod.translatePath = lambda p: (
+        "/apk/assets/skin.estuary" if p == "special://skin/" else p
+    )
+    dmod.ui.confirm_wipe = lambda *a, **k: True
+    prompts = []
+    dmod.ui.ask_terminate = lambda status="", **k: prompts.append(status) or False
+
+    dmod.mod.FRESHSTART()
+
+    assert reached["v"] is True
+    assert len(prompts) == 1, (
+        "a box whose wipe BEGAN must be driven to terminate - it cannot be left "
+        "running on unlinked databases"
+    )
+    assert not any("did not run" in m.lower() for m in dmod.ui.done_calls), (
+        "must not claim nothing was removed when the wipe had already started: %s"
+        % dmod.ui.done_calls
+    )
+    assert not any("nothing was removed" in m.lower() for m in prompts), prompts
+
+
+def test_freshstart_that_never_started_stays_up_and_says_nothing_was_removed(
+    dmod, monkeypatch
+):
+    """The counterpart. If the wipe genuinely never began (import error, or a raise
+    before the first delete) Kodi is untouched, so it is SAFE to stay up - and killing
+    the app there would be a gratuitous shutdown over a no-op."""
+    import sys
+    import types as _t
+
+    onetap = _t.ModuleType("resources.lib.modules.onetap")
+
+    def _excludes():
+        raise RuntimeError("failed before any delete")
+
+    onetap._wipe = lambda *a, **k: (0, 0, 0, [])
+    onetap._wipe_excludes = _excludes
+    onetap.keep_addon_db = lambda: set()
+    monkeypatch.setitem(sys.modules, "resources.lib.modules.onetap", onetap)
+    setattr(sys.modules["resources.lib.modules"], "onetap", onetap)
+
+    dmod.mod.HOME = "/home/.kodi"
+    dmod.mod.translatePath = lambda p: (
+        "/apk/assets/skin.estuary" if p == "special://skin/" else p
+    )
+    dmod.ui.confirm_wipe = lambda *a, **k: True
+    prompts = []
+    dmod.ui.ask_terminate = lambda status="", **k: prompts.append(status) or False
+
+    dmod.mod.FRESHSTART()
+
+    assert prompts == [], "nothing was destroyed, so do not kill Kodi"
+    assert any("did not run" in m.lower() for m in dmod.ui.done_calls), (
+        dmod.ui.done_calls
+    )
+
+
 def test_freshstart_requires_stock_estuary_skin(dmod, monkeypatch):
     """Fresh Start deletes the ACTIVE skin's files; only stock Estuary survives the wipe
     (it is APK-resident, outside special://home), so from any other skin the post-wipe

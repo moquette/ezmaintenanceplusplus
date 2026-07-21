@@ -67,3 +67,56 @@ def test_every_wipe_call_passes_a_keep_list():
         "these calls run the wipe engine with no keep-list, so they will unlink "
         "databases Kodi holds open and can abort the process: %s" % ", ".join(offenders)
     )
+
+
+def test_restore_wipe_keeps_the_live_databases():
+    """CALL-SITE gate. The unit tests for keep_live_databases() cannot see this wiring.
+
+    QA mutation, 2026-07-21: reverting wiz.py's restore wipe to a bare _wipe_excludes()
+    keep-list left the whole suite GREEN at the exact baseline, because every test that
+    covers this behaviour passes the keep-list in by hand. The restore path is the one
+    that CANNOT terminate - it holds Kodi up for the entire zip extract - so losing this
+    wiring silently reinstates the SIGABRT for the longest possible window.
+    """
+    src = (ADDON_ROOT / "resources" / "lib" / "modules" / "wiz.py").read_text(
+        encoding="utf-8"
+    )
+    tree = ast.parse(src)
+    calls = [c for c in _wipe_calls(tree)]
+    assert len(calls) == 1, "expected exactly one restore wipe call site, got %d" % len(
+        calls
+    )
+    keep_arg = calls[0].args[2] if len(calls[0].args) >= 3 else None
+    assert keep_arg is not None, "restore wipe passes no keep-list at all"
+    names = {
+        n.func.attr
+        for n in ast.walk(keep_arg)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+    }
+    assert "keep_live_databases" in names, (
+        "restore's wipe must preserve userdata/Database - Kodi holds every one of those "
+        "files open and stays up for the whole extract. Found: %s" % sorted(names)
+    )
+    assert "keep_addon_db" in names, (
+        "restore's wipe must also keep Addons*.db, or this add-on comes back DISABLED. "
+        "Found: %s" % sorted(names)
+    )
+
+
+def test_backup_walk_skips_the_texture_cache():
+    """CALL-SITE gate. Deleting the _is_regenerable_cache_arc() call from CreateZip's
+    walk also left the suite green at baseline: the predicate had a unit test, the
+    wiring had nothing."""
+    src = (ADDON_ROOT / "resources" / "lib" / "modules" / "wiz.py").read_text(
+        encoding="utf-8"
+    )
+    tree = ast.parse(src)
+    called = {
+        n.func.id
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+    }
+    assert "_is_regenerable_cache_arc" in called, (
+        "CreateZip no longer consults _is_regenerable_cache_arc, so every backup "
+        "archive carries Textures13.db again"
+    )

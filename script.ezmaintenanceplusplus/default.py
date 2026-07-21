@@ -440,6 +440,14 @@ def FRESHSTART(mode="verbose"):
     keep_sources = control.setting("freshstart.keep_sources") == "true"
     keep_repos = control.setting("freshstart.keep_repos") == "true"
     wipe_failed = None  # None = the wipe itself never ran (import failure / raise)
+    # Did the destructive pass BEGIN? Distinct from wipe_failed, which only says whether
+    # it ran to completion. _wipe deletes files first and sweeps NSUserDefaults keys last
+    # (onetap._wipe_nsud_keys), so a raise from the key pass lands here with the POSIX
+    # tree - including every userdata/Database file - ALREADY GONE. Treating that as
+    # "the wipe did not run" both told the owner a falsehood and, worse, returned without
+    # terminating: Kodi then stayed alive on a tree whose open databases had been
+    # unlinked, which is precisely the SIGABRT this release exists to prevent.
+    wipe_started = False
     with ui.Progress("Wiping install...", heading=AddonTitle) as p:
         try:
             from resources.lib.modules import onetap
@@ -456,6 +464,9 @@ def FRESHSTART(mode="verbose"):
             keep = onetap.keep_addon_db()
             if keep_sources:
                 keep = keep | onetap.keep_source_files()
+            wipe_started = (
+                True  # set BEFORE the call: anything after this may have deleted
+            )
             _f, _k, wipe_failed, _leftovers = onetap._wipe(
                 HOME, excludes, keep, progress=p.items
             )
@@ -476,10 +487,22 @@ def FRESHSTART(mode="verbose"):
         # ran AND removed everything it was asked to. A wipe that never ran, or that
         # left survivors (on tvOS: NSUserDefaults keys that resurrect old settings),
         # says so plainly instead of pretending.
-        if wipe_failed is None:
+        if wipe_failed is None and not wipe_started:
+            # Genuinely nothing happened (import error, or a raise before the first
+            # delete). Kodi is untouched, so it is safe to stay up.
             ui.done(
                 "Fresh Start FAILED: the wipe did not run. Nothing was removed. "
                 "See the log."
+            )
+            return
+        if wipe_failed is None:
+            # The wipe BEGAN and then raised. Files are gone - including databases Kodi
+            # holds open - so staying up is the one thing we must not do. Terminate, and
+            # say what actually happened instead of "nothing was removed".
+            ui.ask_terminate(
+                "Fresh Start did not finish: it stopped part way through, so some "
+                "items were removed and others were not (see the log).",
+                heading=AddonTitle,
             )
             return
         # Name what the opt-in keeps preserved, so a non-empty "clean" slate is honest.
@@ -489,7 +512,7 @@ def FRESHSTART(mode="verbose"):
         if keep_repos:
             kept.append("repositories")
         kept_line = ("\n\nKept: " + ", ".join(kept) + ".") if kept else ""
-        # Completion prompt: advise the box must close, offer Shut down / Later. It
+        # Completion notice: the box MUST close, so ask_terminate always exits. It
         # renders because Fresh Start required stock Estuary, which survived the wipe.
         if wipe_failed:
             ui.ask_terminate(

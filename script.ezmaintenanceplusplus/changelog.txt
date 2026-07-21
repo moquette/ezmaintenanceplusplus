@@ -1,3 +1,16 @@
+v2026.07.21.4
+- Follow-up to 2026.07.21.3, from an independent review of that release.
+- Fresh Start had one path left where a wipe that failed part way through left Kodi
+  running on a half-erased install, and told you "nothing was removed" when in fact
+  most of it had been. That is the same crash 2026.07.21.3 fixed everywhere else. It
+  now closes the box and reports honestly that the wipe did not finish.
+- A Restore was keeping any folder named Database from the old install, at any depth,
+  including add-ons' own. It now keeps only Kodi's real database folder, which is the
+  one it has to keep, and the leftovers go as they always did.
+- A backup was skipping any file starting with Textures inside any folder named
+  Database, which could quietly drop an add-on's own data from a full backup. It now
+  only skips Kodi's own texture cache.
+
 v2026.07.21.3
 - Fixes a crash. Taking a backup could kill Kodi several minutes later, with no
   warning and nothing on screen: the box just vanished to the launcher. Clearing

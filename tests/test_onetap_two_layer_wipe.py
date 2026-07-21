@@ -462,8 +462,8 @@ def test_restore_wipe_preserves_the_live_databases(env):
 
     files_removed, _keys, failed, leftovers = env.onetap._wipe(
         str(env.home),
-        env.onetap.wipe_excludes_keeping_databases(),
-        env.onetap.keep_addon_db(),
+        env.onetap._wipe_excludes(),
+        env.onetap.keep_addon_db() | env.onetap.keep_live_databases(),
     )
 
     for rel in live:

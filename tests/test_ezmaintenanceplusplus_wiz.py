@@ -3831,3 +3831,24 @@ def test_texture_cache_db_is_never_captured_in_a_backup(wiz):
         "addons/plugin.video.x/Database/Textures13.db.bak",
     ):
         assert wiz._is_regenerable_cache_arc(kept) is False, kept
+
+
+def test_texture_exclusion_does_not_eat_third_party_addon_data(wiz):
+    """QA finding 2026-07-21: the exclusion matched "/Database/" at ANY depth.
+
+    "Full means full" is this project's backup contract. An add-on that keeps its own
+    Database/ folder with a file named Textures* was being silently dropped from the
+    archive, with nothing in the manifest to say so - a backup quietly lying about
+    being complete. Anchor to the real userdata database directory instead.
+    """
+    assert (
+        wiz._is_regenerable_cache_arc(
+            "userdata/addon_data/plugin.foo/Database/TexturesOfMyVacation.db"
+        )
+        is False
+    )
+    assert wiz._is_regenerable_cache_arc("addons/x/Database/Textures13.db") is False
+    # The sidecars go WITH the cache: a Textures13.db-journal restored beside a
+    # surviving database is a silent rollback of state the user did not ask to lose.
+    assert wiz._is_regenerable_cache_arc("userdata/Database/Textures13.db-journal")
+    assert wiz._is_regenerable_cache_arc("userdata/Database/Textures13.db-wal")

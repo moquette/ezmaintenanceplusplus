@@ -84,15 +84,28 @@ def _wipe_excludes():
 #   restore       CANNOT exit: it keeps Kodi alive for the whole zip extract. It must
 #                 therefore PRESERVE the databases, which costs nothing because the
 #                 archive re-supplies them. wiz.py _wipe_pass adds DB_DIR_NAME.
-DB_DIR_NAME = "Database"
+def keep_live_databases():
+    """Absolute paths of everything in userdata/Database, for callers that keep Kodi UP.
 
+    A KEEP-LIST, deliberately, not a name added to the exclude set. _wipe prunes
+    excluded directory NAMES at ANY depth, so excluding "Database" would also preserve
+    `addon_data/<any add-on>/Database/` from the OLD install - files the archive does
+    not carry, surviving a clean-clone restore that exists precisely to make the box
+    equal the archive. This anchors to the one real directory instead.
 
-def wipe_excludes_keeping_databases():
-    """`_wipe_excludes()` plus userdata/Database, for the callers that keep Kodi alive.
-
-    Directory-name pruning, matching how _wipe filters dirnames at any depth.
+    The glob is deliberately `*`, not `*.db`: a `-journal`/`-wal` sidecar must stay with
+    its database. Preserving the .db while deleting its hot journal leaves SQLite to
+    roll back - or to find a stale journal beside a freshly restored database and roll
+    THAT back, silently corrupting restored state.
     """
-    return _wipe_excludes() | {DB_DIR_NAME}
+    import glob
+    import os
+
+    try:
+        db_dir = xbmcvfs.translatePath("special://home/userdata/Database")
+        return set(glob.glob(os.path.join(db_dir, "*")))
+    except Exception:
+        return set()
 
 
 def _wipe(home, excludes, keep_files=None, progress=None):

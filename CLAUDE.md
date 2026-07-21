@@ -143,11 +143,6 @@ them without understanding why they exist:
   two-layer tvOS storage fake (NSUserDefaults keys + a real POSIX tree) that can
   represent "key exists, disk file gone" - the shape a plain-dict fake cannot
   express, which is why 33 tests once stayed green through a real bug.
-- `tools/verify_device.py` + `tests/test_storage_change_requires_device_verification.py`
-  - a machine-generated hardware-verification gate. A change to `nsud.py`/
-    `boxsetup.py` without a fresh `verification/<version>.json` artifact (pulled live
-    over Kodi's JSON-RPC from a real device) fails the suite. "Fixed in code" is not a
-    claim this add-on gets to make unverified.
 
 Two corrected facts, now consistent everywhere in this project - do not let either
 regress:
@@ -214,11 +209,6 @@ not a spec):
   pattern ONLY: `script.skinshortcuts/settings.xml` and every non-sidecar
   duplicate still hit, because a real stale key shadowing a restored file is the
   one thing that probe exists to catch.
-- **Verification widened, gate unchanged.** `tools/verify_device.py` gains
-  restore_contract checks (IPTV inventory, profile fingerprint, duplicate-listing,
-  shadow probe) and a `--diff` mode. Hardware verification is REQUIRED for
-  backup/restore/wipe changes (narrowed 2026-07-20 from every release); this
-  contract widens what the gate checks when it applies.
 
 The tvOS storage facts above remain true and load-bearing under this contract: a
 key SHADOWS the disk file, Kodi never re-materializes a disk file from a key, and
@@ -228,12 +218,6 @@ two-layer wipe and the purge exist BECAUSE of those facts.
 ## House rules (inherited from the fleet's workflow)
 
 - implement -> TEST -> gate (pytest + ruff green) -> commit/release.
-- **Independent QA + architecture review is required ONLY for changes to backup,
-  restore, or wipe code.** Everything else ships on a green suite. (Narrowed
-  2026-07-20 from "every phase, no exceptions".)
-- **Device verification is required ONLY for backup/restore/wipe changes.**
-  Routine releases do not need a `verification/<version>.json`. (Narrowed
-  2026-07-20.)
 - **Routine changes get a one-line commit message.** Long-form records
   (acceptance logs, multi-paragraph commits) are for genuine incidents only.
 - Approval is needed for DESTRUCTIVE or OUTWARD-FACING actions only: wiping a

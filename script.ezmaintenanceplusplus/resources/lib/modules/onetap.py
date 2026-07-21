@@ -305,9 +305,18 @@ def keep_source_files():
     credentials). Keeping sources.xml WITHOUT passwords.xml is a half-fix: Kodi stores
     NFS/SMB credentials as path-substitution entries in passwords.xml, so without it the
     sources come back but cannot authenticate. Per-profile copies are included for
-    multi-profile setups (a no-op on the single-default-profile appliances). Passing the
-    absolute path also spares the file's NSUserDefaults key on tvOS (_wipe twin-matches
-    keep_files against the vectored key)."""
+    multi-profile setups (a no-op on the single-default-profile appliances).
+
+    TWO-LAYER, and this is load-bearing on tvOS: `_wipe` protects a vectored
+    NSUserDefaults key by twin-matching `_key_excluded`'s reconstructed absolute path
+    against this set, so the path must be emitted even when NO POSIX file exists. On
+    tvOS both of these files are routinely vectored into NSUserDefaults with the POSIX
+    copy dropped (nsud._should_vector covers every top-level userdata/*.xml, and
+    rewrite_userdata_xml drops the POSIX twin), which is the normal state after any
+    restore. A POSIX-only existence test therefore returned an empty set exactly there,
+    the twin-match had nothing to match, and the key was wiped: "Keep file manager
+    sources" silently destroyed the sources and their saved credentials on the one
+    platform the option matters most. So the key layer is enumerated too."""
     import glob
     import os
 
@@ -319,6 +328,13 @@ def keep_source_files():
             if os.path.exists(p):
                 keep.add(p)
             keep.update(glob.glob(os.path.join(ud, "profiles", "*", name)))
+        # Key-only copies (tvOS). _nsud_userdata_rels() is [] off tvOS, so this whole
+        # block is a strict no-op on Fire TV / desktop. The path is built exactly as
+        # _key_excluded rebuilds its twin, so the match cannot drift.
+        for rel in _nsud_userdata_rels():
+            parts = [seg for seg in rel.replace("\\", "/").split("/") if seg]
+            if parts and parts[-1] in ("sources.xml", "passwords.xml"):
+                keep.add(os.path.normpath(os.path.join(ud, *parts)))
     except Exception:
         pass
     return keep

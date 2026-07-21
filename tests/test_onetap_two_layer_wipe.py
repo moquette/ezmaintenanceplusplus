@@ -364,3 +364,39 @@ def test_wipe_logs_summary_counts(env, monkeypatch):
         "1 files removed" in m and "1 NSUserDefaults keys removed" in m
         for m in env.logs
     )
+
+
+def test_keep_sources_survives_when_the_file_is_key_only_on_tvos(env, monkeypatch):
+    """REGRESSION (QA 2026-07-21): "Keep file manager sources" silently DESTROYED the
+    sources on tvOS, the one platform the option matters most.
+
+    keep_source_files() gated on os.path.exists, a POSIX test. On tvOS both files are
+    routinely vectored into NSUserDefaults with the POSIX copy dropped (nsud vectors
+    every top-level userdata/*.xml and rewrite_userdata_xml drops the twin), which is
+    the normal state after any restore. The POSIX test therefore returned an EMPTY set
+    exactly there, _key_excluded had no twin to match, and _wipe_nsud_keys deleted the
+    keys - while Fresh Start still reported "file manager sources" as kept.
+
+    The keep set must therefore carry the absolute path even with NO POSIX file, so the
+    twin-match protects the key."""
+    _tvos(monkeypatch, env)
+    # Key-only: no POSIX twin at all. This is the post-restore tvOS shape.
+    env.set_keys(
+        {
+            "sources.xml": b"<sources/>",
+            "passwords.xml": b"<passwords/>",
+            "guisettings.xml": b"<gui/>",
+        }
+    )
+
+    keep = env.onetap.keep_source_files()
+    assert keep, "keep_source_files() must see the key-only copies on tvOS"
+    assert any(p.endswith("sources.xml") for p in keep), keep
+    assert any(p.endswith("passwords.xml") for p in keep), keep
+
+    env.onetap._wipe(str(env.home), env.onetap._wipe_excludes(), keep)
+
+    left = env.keys()
+    assert "sources.xml" in left, "the sources key must survive when keeping sources"
+    assert "passwords.xml" in left, "the saved credentials key must survive with it"
+    assert "guisettings.xml" not in left, "an unrelated key must still be wiped"

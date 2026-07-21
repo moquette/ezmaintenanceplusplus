@@ -70,12 +70,16 @@ jobs:
         run: python3 tools/build.py
 
   # Publishing is CI's job, not a hand-run script. This publishes the GitHub Release
-  # asset automatically once `test` is green on main - and that is SAFE precisely
-  # because `test` includes the hardware-verification gate
-  # (test_storage_change_requires_device_verification): CI cannot go green on a
-  # storage-contract change unless verification/<version>.json (pulled live from a real
-  # Fire TV AND Apple TV) is committed alongside it. So auto-publish can never ship an
-  # unverified storage change - the gate blocks the green this job depends on.
+  # asset automatically once `test` is green on main.
+  #
+  # NOTE (2026-07-21): this used to claim auto-publish "can never ship an unverified
+  # storage change", because `test` included a hardware-verification gate that required
+  # a committed verification/<version>.json pulled live from a real Fire TV and Apple TV.
+  # THAT GATE IS DELETED. Publishing is now gated on a green suite and nothing else.
+  # That is deliberate: the gate was expensive enough that it got routed around by hand
+  # (two versions shipped past it in one day), and a control people bypass is worse than
+  # no control because everyone believes it is holding. Do not restore it without
+  # deciding first what makes it cheap enough to actually satisfy.
   #
   # Idempotent: if the tag for addon.xml's current version already exists, this is a
   # no-op (a re-push of the same version publishes nothing). A release therefore happens

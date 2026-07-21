@@ -320,6 +320,31 @@ and the mechanical gate already covers backup/restore/wipe changes.
 
 ---
 
+## 🔴 OPEN - three two-layer follow-ups, fix together next time the storage gate re-triggers
+
+Raised by QA on 2026-07-21 while signing off 2026.07.21.2. None blocks that release.
+The first two touch a CONTRACT_FILE, so doing them re-triggers the device-verification
+gate and forces a fresh two-class pull. Batch them into one release rather than paying
+that cost three times.
+
+1. **`onetap.py` `keep_source_files()` has no `_is_tvos()` gate** on its key-layer
+   enumeration, unlike `_wipe_nsud_keys`. It is inert off tvOS only because
+   `nsub._find_nsud_plist()` cannot resolve the plist there, which is an incidental
+   guarantee, not the hard platform gate the docstring claims. Failure direction is
+   fail-safe (over-keeping, never over-deleting) and it is opt-in, so it is not urgent.
+2. **The `profiles/*/` key-only case is untested.** `tests/test_onetap_two_layer_wipe.py`
+   only exercises top-level keys, so a mutant that flattens the emitted path to the
+   basename survives the suite. The shipped code IS correct there (probe-verified), but
+   a future path drift under `profiles/` would ship green. Two lines in that harness.
+3. **`boxsetup._write_weather_settings()` repeats the POSIX-only read.** It gates on
+   `os.path.exists` then `ET.parse`s the POSIX copy before merging, so on tvOS, where
+   `weather.multi/settings.xml` can be vectored key-only, the read misses, a fresh
+   `<settings>` root is built, and `nsud.persist_one` then overwrites the key with the
+   truncated document. Out of the wipe path (only caller is the "Set up this box"
+   weather action) and the blast radius is the user's other Multi Weather settings, so
+   it is deferrable, but it is the same defect class as the sources bug fixed in
+   2026.07.21.2.
+
 ## 🟡 QUEUE - investigated, unshipped
 
 **`docs/next-update-candidates.md`** is the forward queue. Summary:

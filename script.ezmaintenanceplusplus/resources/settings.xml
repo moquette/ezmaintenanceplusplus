@@ -181,60 +181,6 @@
 					<visible>false</visible>
 					<control type="edit" format="string" />
 				</setting>
-				<!-- One-Tap Restore pin storage: hidden slots managed by the ONE-TAP RESTORE
-				     menu (onetap.py), not shown in this dialog. Kept here so getSetting/
-				     setSetting("pin%d_%s") persists. Relocated verbatim from the retired
-				     onetap_restore category so no empty tab renders. -->
-				<setting id="pin1_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin1_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin1_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin1_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin1_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin2_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin2_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin2_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin2_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin2_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin3_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin3_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin3_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin3_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin3_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin4_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin4_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin4_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin4_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin4_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin5_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin5_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin5_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin5_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin5_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin6_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin6_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin6_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin6_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin6_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin7_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin7_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin7_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin7_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin7_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin8_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin8_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin8_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin8_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin8_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin9_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin9_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin9_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin9_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin9_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin10_name" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin10_kind" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin10_src" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin10_type" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
-				<setting id="pin10_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
 			</group>
 		</category>
 		<category id="freshstart" label="30003">

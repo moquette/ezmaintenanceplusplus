@@ -45,14 +45,6 @@ def CATEGORIES():
         "",
     )
     CreateDir(
-        "One-Tap Restore",
-        "ur",
-        "onetap_menu",
-        ADDON_ICON,
-        ADDON_FANART,
-        "",
-    )
-    CreateDir(
         "Backup/Restore",
         "ur",
         "backup_restore",
@@ -413,8 +405,8 @@ def FRESHSTART(mode="verbose"):
     # Wipe to a clean Kodi, then hard-exit via ui.terminate() (os._exit, NOT a graceful
     # Quit). Skipping CApplication::Stop() skips its save-skin-settings-on-exit flush,
     # which used to re-write the wiped custom skin's addon_data AFTER the wipe and
-    # re-dirty the slate. No pre-wipe skin-swap (that step used to hang). Uses the same
-    # hardened wipe as One-Tap Restore (preserves this add-on, its runtime deps, temp/,
+    # re-dirty the slate. No pre-wipe skin-swap (that step used to hang). Uses the shared
+    # hardened wipe engine in onetap.py (preserves this add-on, its runtime deps, temp/,
     # and backupdir); the two Fresh Start settings can also keep the user's file-manager
     # sources (+ credentials) and repositories. mode="silent" wipes with no prompts, no exit.
     if mode != "silent":
@@ -613,22 +605,6 @@ if _script_arg in ("authorize", "dbtest"):
         _dbtest(dropbox_remote)
     sys.exit(0)
 
-# One-Tap Restore config actions from the settings tab:
-#   RunScript(script.ezmaintenanceplusplus,onetap,<pick|verify>,<slot>)
-if _script_arg == "onetap":
-    from resources.lib.modules import onetap
-
-    _verb = sys.argv[2] if len(sys.argv) > 2 else ""
-    _slot = int(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3].isdigit() else 0
-    if _slot:
-        if _verb == "pick":
-            onetap.pick(_slot)
-        elif _verb == "verify":
-            onetap.verify(_slot)
-        elif _verb == "apply":
-            onetap.apply(_slot)
-    sys.exit(0)
-
 params = dict(parse_qsl(sys.argv[2].replace("?", "")))
 action = params.get("action")
 
@@ -641,11 +617,6 @@ elif action == "settings":
     # resources/language/.../strings.po, so it renders correctly (the old custom
     # in-app screen was a workaround for a mis-labelled settings.xml, now removed).
     control.openSettings()
-
-elif action == "onetap_menu":
-    from resources.lib.modules import onetap
-
-    onetap.menu()
 
 elif action == "fresh_start":
     FRESHSTART()

@@ -105,9 +105,11 @@ def test_no_duplicate_or_empty_strings():
     assert not empty, f"ids with empty msgid (still render blank): {empty}"
 
 
-def test_onetap_category_removed_but_pins_preserved():
-    """The empty One-Tap Restore tab is gone, but all 50 hidden pin storage keys
-    must survive (removing them breaks onetap.py save/load silently)."""
+def test_onetap_category_and_pins_removed():
+    """One-Tap Restore was removed in v2026.07.21.x: neither its category nor its hidden
+    pin storage keys may remain. (Previously this test REQUIRED the 50 pins to survive;
+    it now requires them gone.) The wipe engine that outlived the feature lives in
+    onetap.py and does not read these settings."""
     root = _root()
     cats = [c.get("id") for c in root.iter("category")]
     assert "onetap_restore" not in cats, (
@@ -119,13 +121,9 @@ def test_onetap_category_removed_but_pins_preserved():
         for s in root.iter("setting")
         if re.fullmatch(r"pin\d+_(name|kind|src|type|meta)", s.get("id", ""))
     ]
-    assert len(pins) == 50, f"expected 50 pin storage keys, found {len(pins)}"
-    # Every pin must stay hidden - a dropped <visible>false</visible> = 50 blank rows.
-    for s in pins:
-        vis = s.find("visible")
-        assert vis is not None and vis.text == "false", (
-            f"pin {s.get('id')} is not visible=false (would render a blank row)"
-        )
+    assert not pins, (
+        f"One-Tap pin storage keys still present: {[s.get('id') for s in pins]}"
+    )
 
 
 def test_addon_language_declared():

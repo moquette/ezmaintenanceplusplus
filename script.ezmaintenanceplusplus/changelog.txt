@@ -1,3 +1,27 @@
+v2026.07.21.2
+- One-Tap Restore has been removed. The pinned-backup shortcut is gone from the main
+  menu, and its hidden pin slots are gone from Settings. Your actual backup files are
+  untouched, and every one of them can still be restored the normal way, from
+  Backup/Restore.
+- Nothing about backing up, restoring, or Fresh Start changed. The wipe that Fresh
+  Start and Restore share is the same code as before, byte for byte, so a restore
+  behaves exactly as it did.
+
+v2026.07.21.1
+- Fresh Start now shows a real progress bar while it wipes, counting through the
+  files, instead of a bar that sat still and looked frozen.
+- When the wipe finishes, Fresh Start tells you the box needs to close and gives you
+  Shut down and Later buttons, instead of the app disappearing with no word.
+- Fresh Start runs only from the built-in Estuary skin, so that finishing message can
+  always be shown after the wipe. From any other skin it asks you to switch first.
+- A wipe no longer leaves behind stray settings for the skin you were using.
+- New Fresh Start tab in Settings, with two options that are off by default: keep your
+  File Manager sources (your NFS and SMB shares and their saved passwords) and keep
+  your repositories, so a reset does not make you add them all back by hand.
+- Adding media sources under "Set up this box" now offers to close Kodi so the shares
+  actually appear, instead of only saying they were added while Kodi kept showing the
+  old list until a restart.
+
 v2026.07.19.8
 - Cancelling out of a backup, a restore, or an archive check now takes you back to
   the Backup/Restore menu instead of the main screen. Backing out of the file list,

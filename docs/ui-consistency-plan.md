@@ -15,6 +15,8 @@ Implemented (branch `ui-consistency-stage-a`, off `main`):
   (killxbmc, xml_data_advSettings_old/New, orphaned progressDialog).
 - Stage C: `onetap.apply` wipes then restores via `wiz.restore(..., post_wipe=True)` - a single
   UNINTERRUPTIBLE unit that always reaches the restart prompt (a wiped box is never stranded).
+  (Historical: One-Tap Restore, and with it `onetap.apply`, was removed in v2026.07.21.1.
+  Only its wipe engine remains in `onetap.py`, now driven by Fresh Start and `wiz.restore`.)
 - Deferred (separate PR): Stage D buildInstaller/BUILDS/install_build removal (live routes,
   pulls in skinswap/downloader - a feature removal, out of this initiative's no-logic rule).
 - Not migrated (out of scope, unchanged): the Dropbox QR/auth flow and speedtest dialog.

@@ -943,14 +943,15 @@ def test_plugin_root_menu_renders(monkeypatch, tmp_path):
     _import_plugin(
         monkeypatch, tmp_path, rec, ["plugin://script.ezmaintenanceplusplus/", "7", ""]
     )
-    # 9 menu rows + the non-clickable version row.
+    # 8 menu rows + the non-clickable version row.
     # (Went 8 -> 9 in 2026.07.13.1 when "Set up this box" was added; 9 -> 10 on
     # 2026-07-16 when the "Tools" folder landed: stale-key purge + backup verify;
     # 10 -> 11 on 2026-07-19 when "Device Name" landed beside "Video Cache Buffer";
     # 11 -> 9 on 2026-07-19 when BOTH moved out: "Tools" was deleted outright once
     # it held a single backup action, which went to Backup/Restore, and "Device
-    # Name" moved into "Set up this box" where naming a box belongs.)
-    assert len(rec.dir_items) == 10
+    # Name" moved into "Set up this box" where naming a box belongs;
+    # 10 -> 9 on 2026-07-21 when the One-Tap Restore row was removed with the feature.)
+    assert len(rec.dir_items) == 9
     assert rec.end_dirs == [True]
     # Parse the action out of each url rather than substring-matching it: "device_name"
     # is a prefix of "device_nameXX", so a substring test passes against a renamed or
@@ -963,6 +964,10 @@ def test_plugin_root_menu_renders(monkeypatch, tmp_path):
     assert "adv_settings" in actions, (
         "the Video Cache Buffer menu item is the on-demand replacement for the "
         "deleted post-restore buffer prompt"
+    )
+    assert "onetap_menu" not in actions, (
+        "One-Tap Restore was removed on 2026-07-21; its menu row must be gone (only "
+        "its wipe engine survives, in onetap.py)"
     )
     assert "device_name" not in actions, (
         "Device Name moved into 'Set up this box' on 2026-07-19; it must not also "

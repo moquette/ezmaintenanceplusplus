@@ -51,8 +51,8 @@ Everything is in `resources/lib/modules/wiz.py`:
 The add-on id was changed to `script.ezmaintenanceplusplus` so it installs alongside the
 original without conflict. No behavior changes for local-path backups.
 
-Since the original VFS fork, the add-on has grown considerably: One-Tap Restore, Fresh
-Start, Dropbox as a third destination (PKCE sign-in, chunked resumable uploads, an
+Since the original VFS fork, the add-on has grown considerably: Fresh Start, Dropbox as
+a third destination (PKCE sign-in, chunked resumable uploads, an
 on-device QR code), and - the largest addition - **tvOS/Apple TV storage hardening**
 (below). The version scheme is date-stamped (`YYYY.MM.DD.N`); check `addon.xml` for the
 current one rather than trusting a number written down anywhere, including this file.
@@ -189,29 +189,24 @@ exact steps and the current gap between "committed" and "released" if one exists
 3. Run a Backup. It stages locally, then lands on the share.
 4. To restore: set the **Restore from Zip Location** to the same share folder and run Restore.
 
-## One-Tap Restore + Fresh Start
+## Fresh Start
 
-Beyond VFS backup/restore, the "++" fork adds two guarded operations from the add-on's main
-menu:
+Beyond VFS backup/restore, the "++" fork adds a guarded reset from the add-on's main menu:
 
-- **One-Tap Restore** - pin a specific backup (a network/local file or a Dropbox backup) as a
-  golden snapshot, then restore it in one tap. It downloads and verifies the snapshot is a
-  valid zip _before_ touching the box, then wipes and restores through the proven restore
-  path. Tap a pin for Restore / Rename / Verify / Change / Remove. Design + as-built notes:
-  `docs/one-tap-restore.md`.
 - **Fresh Start** - wipe to a clean Kodi canvas with only this add-on left (its dependencies
-  and your backups survive), then restart. It keeps the add-on enabled through the wipe so it
-  is never "lost" afterward.
+  and your backups survive), then close so you can reopen Kodi. It keeps the add-on enabled
+  through the wipe so it is never "lost" afterward, shows a progress bar while it works, ends
+  with a Shut down / Later prompt, and can optionally keep your File Manager sources and your
+  repositories through the wipe (Settings > Fresh Start). It runs only from the built-in
+  Estuary skin, so the finishing prompt can always be shown after the wipe.
 
-Both run the same hardened wipe, which never removes this add-on, its dependencies, or your
-backups.
+The hardened wipe never removes this add-on, its dependencies, or your backups.
 
 ## Credit and license
 
 Forked from **EZ Maintenance+** by **aenema** and **peno**. License is unchanged from the
 upstream add-on (see `script.ezmaintenanceplusplus/addon.xml`). This fork only adds VFS
-network-destination support, One-Tap Restore/Fresh Start, Dropbox, and the tvOS storage
-hardening above.
+network-destination support, Fresh Start, Dropbox, and the tvOS storage hardening above.
 
 **aenema** and **peno** authored the _original_ add-on only. They are not affiliated with,
 and have not endorsed, this fork, and have not given permission for their names to be used

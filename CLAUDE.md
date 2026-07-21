@@ -2,14 +2,9 @@
 
 This file provides guidance to Claude Code when working in this repository.
 
-## MANDATORY: markdown house style
+## Markdown rules (enforced by the global git hook)
 
-Before writing or editing ANY `.md` file in this tree, follow the
-**`markdown-house-style`** skill at
-`~/Code/moquette/kodi/.claude/skills/markdown-house-style/SKILL.md`. It is the
-single standard for all five checkouts and every agent, with no exceptions.
-
-Non-negotiable summary:
+These are the whole standard. There is no skill to load.
 
 - No em dash, en dash, horizontal bar, robot emoji, or AI attribution anywhere.
   The plain hyphen `-` is always fine.
@@ -17,21 +12,22 @@ Non-negotiable summary:
   list item and splits your paragraph.
 - Never let an inline code span cross a line break. It strips the
   list-continuation indent and leaves the next agent editing a stale copy.
-- Markdown is deliberately NOT auto-formatted here (removed from
-  `~/.claude/hooks/auto-format` on 2026-07-18, because prettier's markdown
-  printer relocates content between block containers). Do not add it back.
+- Markdown is deliberately NOT auto-formatted here. Do not add it back.
 
-## READ FIRST: start at `TASKS.md`
 
-**`TASKS.md` is this project's task index.** It lists every open item and points
-at the detail docs. Both 2026-07-18 restore defects are now FIXED IN CODE; what
-survives them is summarized below.
+## Where things stand
+
+There is no tracker. `TASKS.md` was deleted 2026-07-21 along with the rest of
+the fleet process. `git log` is the load-bearing fact. Both 2026-07-18 restore
+defects are FIXED IN CODE; what survives them is summarized below.
+
+**For anything Apple TV, read `~/Code/moquette/kodi/.claude/skills/apple-tv/SKILL.md`.**
 
 ### The two restore defects - both FIXED, one residue OPEN BY DESIGN
 
 **`docs/restore-defects-2026-07-18.md` is the diagnosis record. It was written
 before the fixes and still reads "NOT fixed"; treat it as history, not status.
-`TASKS.md` is the status.**
+This file is the status.**
 
 Read this before touching `wiz.py`, `tools.py`, `ui.py`, `_kodisettings.py`, or
 `service.py`. Short version:
@@ -51,7 +47,7 @@ Read this before touching `wiz.py`, `tools.py`, `ui.py`, `_kodisettings.py`, or
   restore that CHANGES the skin reopens on the old one, because Kodi offers no
   way to set the skin live without arming the 10-second keep-skin countdown and
   any non-Yes reverts. 2026.07.19.0 ships DETECT AND REPORT, not a fix. See
-  `TASKS.md`; the accepted next-cycle design is to terminate instead of `Quit`.
+  the accepted next-cycle design is to terminate instead of `Quit`.
 - **Defect B (post-restore prompt discarded input) is FIXED.** The trigger was
   never in EZM++: `skin.estuary7`'s `Home.xml:9` arms an alarm whose
   skinshortcuts rebuild ends in `ReloadSkin()` and destroys the window stack.
@@ -99,8 +95,8 @@ Until 2026-07-14 this add-on's source was hand-synced between two repos (a copy 
 a copy in the proxy repo), and the copies drifted - the proxy repo's copy had the
 full test suite and got the real fixes; this repo's copy went stale for weeks. That
 duplication is gone. Fix bugs and add tests **here**. The proxy repo's
-`~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md` is the accurate triage/procedure guide
-for backup/restore failures and cross-references back to this repo.
+backup/restore triage lives in this file and, for anything tvOS,
+`~/Code/moquette/kodi/.claude/skills/apple-tv/SKILL.md`.
 
 ## The build/test/release contract
 
@@ -132,7 +128,7 @@ Apple TV shadows certain userdata `.xml` files into NSUserDefaults; a key SHADOW
 disk file, it does not mirror it, and Kodi never copies a key back to disk. Getting
 this wrong has destroyed real user data twice (2026-07-08, 2026-07-14). The
 authoritative model (with exact Kodi source citations) lives in the fleet meta
-repo: `~/Code/moquette/kodi/.claude/skills/kodi-storage-map/SKILL.md`. Three
+repo: `~/Code/moquette/kodi/.claude/skills/apple-tv/SKILL.md`. Three
 mechanical guards in this repo enforce the lessons - do not remove or route around
 them without understanding why they exist:
 

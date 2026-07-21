@@ -108,3 +108,15 @@ msgstr ""
 msgctxt "#30060"
 msgid "Dropbox App secret (advanced)"
 msgstr ""
+
+msgctxt "#30003"
+msgid "Fresh Start"
+msgstr ""
+
+msgctxt "#30061"
+msgid "Keep file manager sources (NFS/SMB mounts and their saved credentials)"
+msgstr ""
+
+msgctxt "#30062"
+msgid "Keep repositories (so you can reinstall add-ons afterward)"
+msgstr ""

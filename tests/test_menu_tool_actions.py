@@ -232,6 +232,12 @@ def dmod(monkeypatch):
         def __exit__(self, *exc):
             return False
 
+        def items(self, done, total, note=""):
+            pass
+
+        def bytes(self, done, total, note=""):
+            pass
+
         def cancelled(self):
             return False
 
@@ -1039,11 +1045,16 @@ def test_verify_corrupt_zip_reports_error(dmod, tmp_path):
     assert dmod.ui.done_calls == []
 
 
-def test_freshstart_wipe_runs_and_restarts_not_false_failed(dmod, monkeypatch):
+def test_freshstart_wipe_runs_and_prompts_shutdown_not_false_failed(dmod, monkeypatch):
     """Regression (QA 2026-07-17): onetap._wipe changed from a 3-tuple to a 4-tuple;
     FRESHSTART still unpacked 3, so it WIPED the box then raised on the unpack, was
     swallowed, and falsely told the user 'the wipe did not run' WITHOUT restarting -
-    a wiped box left stranded. Let the wipe run and assert honest completion + restart."""
+    a wiped box left stranded. Let the wipe run and assert honest completion + the exit.
+
+    2026-07-21: Fresh Start requires stock Estuary (so post-wipe dialogs still render),
+    ends with ui.ask_terminate() (a Shut down / Later prompt), and 'Shut down' hard-exits
+    via ui.terminate() (os._exit) so the exit flush cannot re-dirty the slate. The
+    completion copy must say the box will close/reopen, never 'restart'."""
     import sys
     import types as _t
 
@@ -1060,15 +1071,62 @@ def test_freshstart_wipe_runs_and_restarts_not_false_failed(dmod, monkeypatch):
     monkeypatch.setitem(sys.modules, "resources.lib.modules.onetap", onetap)
     setattr(sys.modules["resources.lib.modules"], "onetap", onetap)
 
+    # Guard: the live skin must live OUTSIDE the wipe root to survive (APK-resident).
+    dmod.mod.HOME = "/home/.kodi"
+    dmod.mod.translatePath = lambda p: (
+        "/apk/assets/skin.estuary" if p == "special://skin/" else p
+    )
     dmod.ui.confirm_wipe = lambda *a, **k: True
-    restarts = []
-    dmod.ui.restart = lambda: restarts.append(True)
+    prompts = []
+    dmod.ui.ask_terminate = lambda status="", **k: prompts.append(status) or False
 
     dmod.mod.FRESHSTART()
 
     assert wiped["v"] is True, "the wipe must actually run"
     assert not any("FAILED" in m for m in dmod.ui.done_calls), dmod.ui.done_calls
-    assert restarts == [True], "a wiped box MUST be driven to restart"
+    assert len(prompts) == 1, (
+        "a wiped box MUST be driven to the Shut down / Later prompt"
+    )
+    # Honest appliance copy: the box closes and is reopened, it does NOT self-restart.
+    assert "restart" not in prompts[0].lower(), prompts[0]
+
+
+def test_freshstart_requires_stock_estuary_skin(dmod, monkeypatch):
+    """Fresh Start deletes the ACTIVE skin's files; only stock Estuary survives the wipe
+    (it is APK-resident, outside special://home), so from any other skin the post-wipe
+    completion prompt could not render. FRESHSTART MUST abort (error, no wipe, no exit
+    prompt) unless the live skin is skin.estuary."""
+    import sys
+    import types as _t
+
+    onetap = _t.ModuleType("resources.lib.modules.onetap")
+    wiped = {"v": False}
+
+    def _wipe(home, excludes, keep=None, progress=None):
+        wiped["v"] = True
+        return (0, 0, 0, [])
+
+    onetap._wipe = _wipe
+    onetap._wipe_excludes = lambda: set()
+    onetap.keep_addon_db = lambda: set()
+    monkeypatch.setitem(sys.modules, "resources.lib.modules.onetap", onetap)
+    setattr(sys.modules["resources.lib.modules"], "onetap", onetap)
+
+    # A custom skin installed UNDER the wipe root (special://home/addons) - it would be
+    # deleted mid-wipe, so Fresh Start must refuse.
+    dmod.mod.HOME = "/home/.kodi"
+    dmod.mod.translatePath = lambda p: (
+        "/home/.kodi/addons/skin.estuary7" if p == "special://skin/" else p
+    )
+    dmod.ui.confirm_wipe = lambda *a, **k: True
+    prompts = []
+    dmod.ui.ask_terminate = lambda status="", **k: prompts.append(status) or False
+
+    dmod.mod.FRESHSTART()
+
+    assert wiped["v"] is False, "the wipe must NOT run from a skin under the wipe root"
+    assert prompts == [], "no completion/terminate prompt when the run is refused"
+    assert any("estuary" in m.lower() for m in dmod.ui.error_calls), dmod.ui.error_calls
 
 
 # --------------------------------------------------------------------------- #

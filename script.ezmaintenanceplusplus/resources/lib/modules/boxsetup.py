@@ -163,12 +163,22 @@ def add_media_sources(interactive=True):
             nsud.persist_one("sources.xml", log=_log)
         _log("sources added=%d renamed=%d" % (added, renamed))
         if interactive:
-            ui.done(
-                "Media sources ready (%d added).\n\nKodi caches sources at "
-                "startup, so KodiShare and KodiBackup show up in File Manager "
-                "after a restart." % added,
-                heading=AddonTitle,
-            )
+            if added or renamed:
+                # Kodi caches sources at startup, so a write alone does not show them.
+                # Offer to close now so they take effect, instead of leaving the user
+                # to wonder why nothing changed after "sources added".
+                ui.ask_restart(
+                    "Media sources ready (%d added). Kodi caches sources at startup, "
+                    "so KodiShare and KodiBackup appear in File Manager once Kodi "
+                    "restarts." % added,
+                    heading=AddonTitle,
+                )
+            else:
+                ui.done(
+                    "Media sources already set up. KodiShare and KodiBackup are in "
+                    "File Manager.",
+                    heading=AddonTitle,
+                )
         return True
     except Exception as e:  # noqa: BLE001 - never abort the box
         _log("sources failed: %s" % e, xbmc.LOGERROR)

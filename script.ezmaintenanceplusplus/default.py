@@ -410,31 +410,62 @@ def _safe_to_re_present(monitor=None, settle=0.25):
 
 
 def FRESHSTART(mode="verbose"):
-    # Wipe to a clean Kodi. No skin-swap first (that step used to hang): we wipe, then
-    # RESTART, and on restart Kodi falls back to a default skin because the custom one is
-    # gone. Uses the same hardened wipe as One-Tap Restore (preserves this add-on, its
-    # runtime deps, temp/, and backupdir). mode="silent" wipes with no prompts, no restart.
+    # Wipe to a clean Kodi, then hard-exit via ui.terminate() (os._exit, NOT a graceful
+    # Quit). Skipping CApplication::Stop() skips its save-skin-settings-on-exit flush,
+    # which used to re-write the wiped custom skin's addon_data AFTER the wipe and
+    # re-dirty the slate. No pre-wipe skin-swap (that step used to hang). Uses the same
+    # hardened wipe as One-Tap Restore (preserves this add-on, its runtime deps, temp/,
+    # and backupdir); the two Fresh Start settings can also keep the user's file-manager
+    # sources (+ credentials) and repositories. mode="silent" wipes with no prompts, no exit.
     if mode != "silent":
+        # Fresh Start deletes everything under the wipe root (special://home), INCLUDING
+        # the active skin's files when that skin is installed there. A skin that lives
+        # OUTSIDE the wipe root (the built-in Estuary, bundled read-only in the APK)
+        # survives, so its dialogs can still draw the completion prompt after the wipe.
+        # Refuse when the live skin sits under the wipe root: it would be pulled out from
+        # under Kodi mid-wipe and nothing could render. Checked by PATH, never by skin
+        # id, so EZM++ stays skin-agnostic.
+        skin_path = os.path.normpath(translatePath("special://skin/"))
+        wipe_root = os.path.normpath(HOME)
+        if skin_path == wipe_root or skin_path.startswith(wipe_root + os.sep):
+            ui.error(
+                "Fresh Start needs a skin that survives the wipe. Your current skin is "
+                "installed under userdata and would be removed mid-wipe.\n"
+                "Please switch to the built-in Estuary skin (Settings > Interface > "
+                "Skin), then run Fresh Start again.",
+                heading=AddonTitle,
+            )
+            return
         if not ui.confirm_wipe(
             "Wipe this Kodi to a clean state?\n"
-            "All add-ons, skins, and settings are removed (this tool survives). "
-            "Kodi restarts afterward.",
+            "EZ Maintenance++ will survive the wipe. You must relaunch Kodi when done.",
             heading=AddonTitle,
         ):
             return
     # The wipe is a single step (no per-item progress); the context-managed gauge shows a
     # 'Wiping install...' spinner and is always closed.
+    # Opt-in "keep across wipe" (Fresh Start settings tab; default OFF == full wipe).
+    keep_sources = control.setting("freshstart.keep_sources") == "true"
+    keep_repos = control.setting("freshstart.keep_repos") == "true"
     wipe_failed = None  # None = the wipe itself never ran (import failure / raise)
-    with ui.Progress("Wiping install...", heading=AddonTitle):
+    with ui.Progress("Wiping install...", heading=AddonTitle) as p:
         try:
             from resources.lib.modules import onetap
 
             # keep_addon_db() preserves Kodi's add-on state DB so EZ Maintenance++ comes
             # back ENABLED after the restart (not disabled/"gone", which was the bad UX).
-            # _wipe returns (files_removed, keys_removed, failed_count, named_leftovers);
-            # Fresh Start only needs the failed COUNT.
+            # The opt-in keeps add the user's file-manager sources (+ credentials) and/or
+            # their repositories to what survives. _wipe returns
+            # (files_removed, keys_removed, failed_count, named_leftovers); Fresh Start
+            # only needs the failed COUNT. progress=p.items drives the wipe gauge.
+            excludes = onetap._wipe_excludes()
+            if keep_repos:
+                excludes = excludes | onetap.repository_addon_names()
+            keep = onetap.keep_addon_db()
+            if keep_sources:
+                keep = keep | onetap.keep_source_files()
             _f, _k, wipe_failed, _leftovers = onetap._wipe(
-                HOME, onetap._wipe_excludes(), onetap.keep_addon_db()
+                HOME, excludes, keep, progress=p.items
             )
         except Exception as e:
             xbmc.log(
@@ -459,19 +490,28 @@ def FRESHSTART(mode="verbose"):
                 "See the log."
             )
             return
+        # Name what the opt-in keeps preserved, so a non-empty "clean" slate is honest.
+        kept = []
+        if keep_sources:
+            kept.append("file manager sources")
+        if keep_repos:
+            kept.append("repositories")
+        kept_line = ("\n\nKept: " + ", ".join(kept) + ".") if kept else ""
+        # Completion prompt: advise the box must close, offer Shut down / Later. It
+        # renders because Fresh Start required stock Estuary, which survived the wipe.
         if wipe_failed:
-            ui.done(
+            ui.ask_terminate(
                 "Fresh Start INCOMPLETE: %d item(s) could not be removed and may "
-                "carry old settings over (see the log). Kodi will restart now."
-                % wipe_failed
+                "carry old settings over (see the log)." % wipe_failed,
+                heading=AddonTitle,
             )
         else:
-            ui.done(
-                "Clean slate ready. Kodi will restart now.\n\n"
-                "After it restarts, EZ Maintenance++ is under Add-ons > Program add-ons "
-                "(if it is off, open it there and choose Enable)."
+            ui.ask_terminate(
+                "Clean slate ready.%s\n\nAfter you reopen Kodi, EZ Maintenance++ is "
+                "under Add-ons > Program add-ons (if it is off, open it there and "
+                "choose Enable)." % kept_line,
+                heading=AddonTitle,
             )
-        ui.restart()
 
 
 def CreateDir(

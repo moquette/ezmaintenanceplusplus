@@ -237,5 +237,19 @@
 				<setting id="pin10_meta" type="string"><level>0</level><default></default><constraints><allowempty>true</allowempty></constraints><visible>false</visible><control type="edit" format="string" /></setting>
 			</group>
 		</category>
+		<category id="freshstart" label="30003">
+			<group id="1">
+				<setting id="freshstart.keep_sources" type="boolean" label="30061">
+					<level>0</level>
+					<default>false</default>
+					<control type="toggle" />
+				</setting>
+				<setting id="freshstart.keep_repos" type="boolean" label="30062">
+					<level>0</level>
+					<default>false</default>
+					<control type="toggle" />
+				</setting>
+			</group>
+		</category>
 	</section>
 </settings>

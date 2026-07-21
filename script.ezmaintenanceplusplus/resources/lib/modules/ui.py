@@ -554,6 +554,56 @@ def restart():
     xbmc.executebuiltin("Quit")
 
 
+def terminate():
+    """Hard-exit the process (os.sync() then os._exit(0)) - the NO-FLUSH exit for
+    Fresh Start ONLY.
+
+    Unlike restart()'s Quit, this bypasses CApplication::Stop() and therefore its
+    save-skin-settings-on-exit flush. That flush is what re-wrote the wiped custom
+    skin's addon_data/<skin>/settings.xml AFTER a Fresh Start wipe (and, on tvOS,
+    re-vectored it into NSUserDefaults), re-dirtying the clean slate for a skin whose
+    add-on no longer exists. os.sync() first so the wipe result is durable on disk.
+
+    Like restart(), this NEVER relaunches - the caller must tell the user to reopen
+    Kodi. Do NOT use this for restore: restore NEEDS the Quit flush to take restored
+    settings live.
+    """
+    import os
+
+    try:
+        os.sync()
+    except Exception:
+        pass
+    os._exit(0)
+
+
+def ask_terminate(status="", heading=None):
+    """Fresh Start completion prompt: advise the user Kodi must close, and offer
+    'Shut down' (hard-exit now via terminate(), which keeps the clean slate) or 'Later'
+    (defer - Kodi stays up, still wiped, so the user can finish first and close it
+    themselves).
+
+    This renders only because Fresh Start REQUIRES the stock Estuary skin, which is
+    bundled read-only in the APK (outside special://home) and therefore survives the
+    wipe. From a wiped custom skin the dialog XML would be gone and nothing could draw.
+
+    `status` is an optional line shown above the prompt (e.g. "Clean slate ready."). On
+    tvOS / Fire TV Kodi cannot relaunch itself, so the wording is close-and-reopen.
+    Returns True and exits on 'Shut down', False on 'Later'.
+    """
+    prompt = "Kodi needs to close to finish. Shut down now, then reopen Kodi."
+    message = (status + "\n\n" + prompt) if status else prompt
+    if xbmcgui.Dialog().yesno(
+        heading if heading is not None else HEADING,
+        message,
+        yeslabel="Shut down",
+        nolabel="Later",
+    ):
+        terminate()
+        return True
+    return False
+
+
 def ask_restart(status="", heading=None):
     """Offer to finish the restore/wipe.
 

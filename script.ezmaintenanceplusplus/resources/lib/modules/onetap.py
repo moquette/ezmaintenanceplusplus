@@ -566,6 +566,54 @@ def keep_addon_db():
         return set()
 
 
+def keep_source_files():
+    """Absolute paths of the file-manager source files to preserve through a Fresh Start
+    when the user opts in ('Keep file manager sources'): userdata/sources.xml (the
+    NFS/SMB/local sources themselves) AND userdata/passwords.xml (their saved
+    credentials). Keeping sources.xml WITHOUT passwords.xml is a half-fix: Kodi stores
+    NFS/SMB credentials as path-substitution entries in passwords.xml, so without it the
+    sources come back but cannot authenticate. Per-profile copies are included for
+    multi-profile setups (a no-op on the single-default-profile appliances). Passing the
+    absolute path also spares the file's NSUserDefaults key on tvOS (_wipe twin-matches
+    keep_files against the vectored key)."""
+    import glob
+    import os
+
+    keep = set()
+    try:
+        ud = xbmcvfs.translatePath("special://home/userdata")
+        for name in ("sources.xml", "passwords.xml"):
+            p = os.path.join(ud, name)
+            if os.path.exists(p):
+                keep.add(p)
+            keep.update(glob.glob(os.path.join(ud, "profiles", "*", name)))
+    except Exception:
+        pass
+    return keep
+
+
+def repository_addon_names():
+    """Directory NAMES of installed repositories (repository.*) to preserve through a
+    Fresh Start when the user opts in ('Keep repositories'). Injected into the wipe's
+    `excludes`, which match by name at any depth, so ONE name protects BOTH
+    addons/<repo> and userdata/addon_data/<repo>. Kodi's kept Addons*.db keeps them
+    ENABLED after the wipe; a repo needs no further deps (the requests/urllib3/chardet/
+    idna/certifi stack is already kept), so the user can reinstall add-ons without
+    re-adding repo sources."""
+    import glob
+    import os
+
+    names = set()
+    try:
+        for base in ("special://home/addons", "special://home/userdata/addon_data"):
+            root = xbmcvfs.translatePath(base)
+            for p in glob.glob(os.path.join(root, "repository.*")):
+                names.add(os.path.basename(p))
+    except Exception:
+        pass
+    return names
+
+
 def _stage(pin, progress=None):
     """Fetch the pinned snapshot into special://temp (preserved by the wipe) and return its
     local path, or None. Runs BEFORE any wipe. `progress(received, total)` drives the download

@@ -356,6 +356,87 @@ def _clear_restore_verdict():
         pass
 
 
+# A single space, not "". skin.estuary7 hides its stock "N items - 1/1" footer
+# while a row supplies ezm.footer, and String.IsEmpty is what it tests, so an
+# empty string would let the item count blink back on the rows that want the
+# line blank. A space is non-empty (verified on Kodi 21) and draws nothing.
+FOOTER_BLANK = " "
+
+# Destination: 0 Local, 1 Network (SMB/NFS), 2 Dropbox. On Dropbox neither path
+# setting applies - settings.xml hides both - so the footer must say so rather
+# than report the stale local path she is not writing to.
+DESTINATION_DROPBOX = "2"
+
+
+def _path_footer(caption, setting_id):
+    """The footer line for a row whose action reads or writes a configured path.
+
+    Says the awkward thing plainly. "not set" is the state that makes Backup and
+    Restore bail into the settings window, and this is the one place she is
+    already looking when it happens."""
+    try:
+        if control.setting("destination") == DESTINATION_DROPBOX:
+            return "%s:  Dropbox" % caption
+        return "%s:  %s" % (caption, control.setting(setting_id) or "not set")
+    except Exception:
+        # The footer is decoration. A settings read that throws must never take
+        # the menu down with it.
+        return FOOTER_BLANK
+
+
+def _footer_rows(rows):
+    """[(label, footer)] -> ListItems carrying the footer, or plain labels.
+
+    Falls back to a list of plain strings if ListItem is unavailable, because
+    the menu working matters and the footer does not."""
+    try:
+        out = []
+        for label, footer in rows:
+            item = xbmcgui.ListItem(label)
+            item.setProperty("ezm.footer", footer)
+            out.append(item)
+        return out
+    except Exception:
+        return [label for label, _ in rows]
+
+
+# Index of the "Backup/Restore" tab in resources/settings.xml, counted from the top
+# in file order. Asserted by a test, so reordering the categories fails the suite
+# rather than silently opening the wrong tab.
+SETTINGS_TAB_BACKUP_RESTORE = 1
+
+
+def _open_settings_tab(index, timeout=5.0, poll=0.1):
+    """Open this add-on's settings ON a given tab. Best effort by design.
+
+    Kodi 19+ builds the category buttons dynamically and gives them NEGATIVE control
+    ids: GUIDialogSettingsBase.h defines CONTROL_SETTINGS_START_BUTTONS as -200, and
+    SetupControls assigns `CONTROL_SETTINGS_START_BUTTONS + offset` in settings.xml
+    order, so tab N is control -200 + N. Focusing it makes the dialog rebuild the
+    settings pane for that category, which is exactly the jump we want. (The
+    100/200 arithmetic in control.openSettings(query) is Krypton-era and no longer
+    addresses anything - do not copy it.)
+
+    Both builtins are ASYNC, so SetFocus must not be fired until the dialog is
+    actually up; otherwise it lands on whatever window is still on screen. If it
+    never comes up, or a probe throws, we leave her on the settings window's first
+    tab - one click from where she asked to be, never an error."""
+    control.openSettings()
+    try:
+        monitor = xbmc.Monitor()
+        waited = 0.0
+        while waited < timeout:
+            if xbmc.getCondVisibility("Window.IsActive(addonsettings)"):
+                xbmc.executebuiltin("SetFocus(%i)" % (-200 + index))
+                return True
+            if monitor.waitForAbort(poll):  # Kodi is shutting down
+                return False
+            waited += poll
+    except Exception:
+        pass
+    return False
+
+
 def _restore_verdict():
     """True if wiz.restore() published a verdict since the last clear."""
     try:
@@ -697,7 +778,24 @@ elif action == "backup_restore":
     # kept verbatim because this select dialog has no plot slot to render it in:
     # "Read-only check of a backup zip: entry count, manifest, failed list, IPTV
     # data, top-level layout. Restores nothing."
-    typeOfBackup = ["BACKUP", "RESTORE", "VERIFY BACKUP ARCHIVE"]
+    # "Settings" jumps straight to the Backup/Restore tab of the add-on settings
+    # (archive location, backup mode, Dropbox), which is where every path setting
+    # these three actions depend on lives. Without it she had to back out to the
+    # root menu and find the settings button.
+    #
+    # The rows are ListItems, not strings, so each can carry the footer line
+    # (see _footer_rows): skin.estuary7 draws ListItem.Property(ezm.footer) along
+    # the bottom of the select dialog, so the path she is about to write to or
+    # read from is on screen while she chooses. Any other skin ignores the
+    # property and shows its own footer, so the labels must stand alone.
+    typeOfBackup = _footer_rows(
+        [
+            ("Backup", _path_footer("Backup path", "download.path")),
+            ("Restore", _path_footer("Restore path", "restore.path")),
+            ("Verify Backup Archive", FOOTER_BLANK),
+            ("Settings", FOOTER_BLANK),
+        ]
+    )
     # This menu LOOPS. Presented once, any sub-action that ended - a cancelled file
     # picker, a dismissed verify report, a cancelled backup-mode dialog - fell off the
     # end of this branch, the script exited, and Kodi dropped the user at the ROOT
@@ -763,6 +861,13 @@ elif action == "backup_restore":
                 break
         elif s_type == 2:
             VERIFY_BACKUP_ARCHIVE()
+        elif s_type == 3:
+            # She asked for the settings window, so this menu is done. Breaking here
+            # rather than leaning on _safe_to_re_present: that probe is a backstop
+            # for sub-actions that bail to settings on their own, and a deliberate
+            # exit must not depend on a best-effort probe returning the right answer.
+            _open_settings_tab(SETTINGS_TAB_BACKUP_RESTORE)
+            break
         else:
             break
         if not _safe_to_re_present():

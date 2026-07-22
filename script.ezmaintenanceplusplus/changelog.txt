@@ -1,3 +1,13 @@
+v2026.07.22.1
+- The backup and restore folders in the Backup/Restore menu now show on EVERY skin,
+  including the built-in Estuary that Fresh Start requires. 2026.07.22.0 showed them
+  only on Estuary 7 1.0.77 or newer, and said so in its release note; that limitation
+  is gone and the note no longer applies.
+- Each row carries its folder beside the name, so Backup shows where the archive will
+  be written and Restore shows where it will be read from.
+- No skin is involved in drawing them any more. An add-on's screens should never
+  depend on which skin a box is running.
+
 v2026.07.22.0
 - "Set up this box" is removed. Adding media sources is what Kodi's File Manager is for,
   and "Device Name" only set the name Kodi itself sets under Settings, Services, General.

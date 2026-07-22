@@ -67,6 +67,17 @@ def infoDialog(message, heading=ui.HEADING, icon="", time=None, sound=False):
 
 
 def selectDialog(list, heading=ui.HEADING):
+    """Kodi's select dialog, plain list.
+
+    Deliberately NOT useDetails=True. The detailed view is the only way to get a
+    real second line per row, but it reserves a thumbnail column and Kodi fills an
+    artless row with DefaultAddonMore.png, putting a column of "+" glyphs down a
+    backup menu. Callers that want extra text put it in the label instead - see
+    _menu_rows in default.py.
+
+    Note the argument order: Kodi takes (heading, list), this takes (list,
+    heading). Do not pass a third positional argument through - Kodi's third is
+    `autoclose`, in milliseconds."""
     return dialog.select(heading, list)
 
 

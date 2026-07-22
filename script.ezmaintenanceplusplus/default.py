@@ -346,48 +346,62 @@ def _clear_restore_verdict():
         pass
 
 
-# A single space, not "". skin.estuary7 hides its stock "N items - 1/1" footer
-# while a row supplies ezm.footer, and String.IsEmpty is what it tests, so an
-# empty string would let the item count blink back on the rows that want the
-# line blank. A space is non-empty (verified on Kodi 21) and draws nothing.
-FOOTER_BLANK = " "
-
 # Destination: 0 Local, 1 Network (SMB/NFS), 2 Dropbox. On Dropbox neither path
-# setting applies - settings.xml hides both - so the footer must say so rather
-# than report the stale local path she is not writing to.
+# setting applies - settings.xml hides both - so the second line must say so
+# rather than report the stale local path she is not writing to.
 DESTINATION_DROPBOX = "2"
 
 
-def _path_footer(caption, setting_id):
-    """The footer line for a row whose action reads or writes a configured path.
+def _path_detail(setting_id):
+    """The second line for a row whose action reads or writes a configured path.
 
-    Says the awkward thing plainly. "not set" is the state that makes Backup and
-    Restore bail into the settings window, and this is the one place she is
-    already looking when it happens."""
+    Just the path: the row's own label already says which one it is, so a
+    "Backup path:" prefix would repeat the word directly above it.
+
+    Says the awkward states plainly. "Not set" is what makes Backup and Restore
+    bail into the settings window, and this is the one place she is already
+    looking when it happens."""
     try:
         if control.setting("destination") == DESTINATION_DROPBOX:
-            return "%s:  Dropbox" % caption
-        return "%s:  %s" % (caption, control.setting(setting_id) or "not set")
+            return "Dropbox"
+        # .strip(): a whitespace-only setting is not a path, and rendering it
+        # would put a separator on screen with nothing after it.
+        return (control.setting(setting_id) or "").strip() or "Not set"
     except Exception:
-        # The footer is decoration. A settings read that throws must never take
-        # the menu down with it.
-        return FOOTER_BLANK
+        # The second line is decoration. A settings read that throws must never
+        # take the menu down with it.
+        return ""
 
 
-def _footer_rows(rows):
-    """[(label, footer)] -> ListItems carrying the footer, or plain labels.
+def _menu_rows(rows):
+    """[(label, detail)] -> plain label strings, path folded into the row.
 
-    Falls back to a list of plain strings if ListItem is unavailable, because
-    the menu working matters and the footer does not."""
-    try:
-        out = []
-        for label, footer in rows:
-            item = xbmcgui.ListItem(label)
-            item.setProperty("ezm.footer", footer)
-            out.append(item)
-        return out
-    except Exception:
-        return [label for label, _ in rows]
+    NO ListItems, NO art, NO detailed view. Kodi's detailed list (useDetails) is
+    the only way to get a real second line, but it reserves a thumbnail column
+    and core fills an artless row with DefaultAddonMore.png - four "+" glyphs
+    down the side of a backup menu. Giving the rows art to suppress that means
+    inventing decoration nobody asked for.
+
+    So the path rides the label itself, greyed, on one line. Every skin draws
+    ListItem.Label; nothing here needs a skin to cooperate, which is the whole
+    point after 2026-07-22.
+
+    Long nfs:// paths can truncate on a narrow dialog; Estuary scrolls the
+    focused row, which covers the case that matters."""
+    out = []
+    for label, detail in rows:
+        if detail:
+            # HEX, not the name "grey". A colour NAME is looked up in the skin's
+            # palette and GUIColorManager falls back to sscanf("%x") on a miss,
+            # which leaves 0 - alpha 0, i.e. the path renders INVISIBLE on any
+            # skin that does not define it. That is the same silent-disappearance
+            # this whole change exists to kill. FFA0A0A0 is byte-identical to what
+            # both fleet skins call grey, so nothing looks different, and it
+            # cannot vanish anywhere.
+            out.append("%s   [COLOR FFA0A0A0]%s[/COLOR]" % (label, detail))
+        else:
+            out.append(label)
+    return out
 
 
 # Index of the "Backup/Restore" tab in resources/settings.xml, counted from the top
@@ -768,19 +782,11 @@ elif action == "backup_restore":
     # these three actions depend on lives. Without it she had to back out to the
     # root menu and find the settings button.
     #
-    # The rows are ListItems, not strings, so each can carry the footer line
-    # (see _footer_rows): skin.estuary7 draws ListItem.Property(ezm.footer) along
-    # the bottom of the select dialog, so the path she is about to write to or
-    # read from is on screen while she chooses. Any other skin ignores the
-    # property and shows its own footer, so the labels must stand alone.
-    typeOfBackup = _footer_rows(
-        [
-            ("Backup", _path_footer("Backup path", "download.path")),
-            ("Restore", _path_footer("Restore path", "restore.path")),
-            ("Verify Backup Archive", FOOTER_BLANK),
-            ("Settings", FOOTER_BLANK),
-        ]
-    )
+    # Backup and Restore carry the folder they act on IN THE ROW LABEL, greyed.
+    # The path she is about to write to or read from is on screen while she
+    # chooses, on stock Estuary as much as on ours, and no skin needs to know
+    # this add-on exists (see _menu_rows).
+    #
     # This menu LOOPS. Presented once, any sub-action that ended - a cancelled file
     # picker, a dismissed verify report, a cancelled backup-mode dialog - fell off the
     # end of this branch, the script exited, and Kodi dropped the user at the ROOT
@@ -809,6 +815,17 @@ elif action == "backup_restore":
     #     never quits; the box is unchanged and she may well want a second archive.
     #   * after a RESTORE, it is NOT safe, and the branch below breaks instead.
     while True:
+        # Rebuilt every pass, deliberately: she may have just changed the folder
+        # in the settings window, and rows built once outside the loop would go on
+        # showing the old one. Cheap - two settings reads.
+        typeOfBackup = _menu_rows(
+            [
+                ("Backup", _path_detail("download.path")),
+                ("Restore", _path_detail("restore.path")),
+                ("Verify Backup Archive", ""),
+                ("Settings", ""),
+            ]
+        )
         s_type = control.selectDialog(typeOfBackup)
         if s_type == 0:
             modes = ["Full Backup", "Addons Settings"]

@@ -89,8 +89,9 @@ def dmod(monkeypatch):
     xbmcgui = types.ModuleType("xbmcgui")
 
     class _ListItem:
-        def __init__(self, name, **k):
+        def __init__(self, name, label2="", **k):
             self.name = name
+            self.label2 = label2
             self.props = {}
 
         def setArt(self, *a, **k):
@@ -100,13 +101,20 @@ def dmod(monkeypatch):
             pass
 
         def setProperty(self, key, value):
-            # Recorded, not swallowed: the Backup/Restore rows carry their footer
-            # line (the configured path) in ezm.footer, and a fake that dropped it
-            # would let an empty or wrong footer ship green.
+            # Recorded, not swallowed. Nothing in the Backup/Restore menu may set
+            # a custom property any more (that was the skin coupling deleted on
+            # 2026-07-22), and a fake that dropped the call would let it come back
+            # unnoticed - the plain-labels pin below reads these rows.
             self.props[key] = value
 
         def getProperty(self, key):
             return self.props.get(key, "")
+
+        def setLabel2(self, value):
+            self.label2 = value
+
+        def getLabel2(self):
+            return self.label2
 
         def getLabel(self):
             return self.name
@@ -194,8 +202,8 @@ def dmod(monkeypatch):
     def _select(options, heading=None):
         # Kodi's select takes strings OR ListItems. Record the LABELS either way,
         # so every assertion about what the menu offered reads the same whichever
-        # form the caller used; select_items keeps the rows themselves for the
-        # footer assertions.
+        # form the caller used; select_items keeps the rows AS PASSED, which is
+        # what the plain-labels pin needs (a stringified copy could not fail).
         control.select_items.append(list(options))
         control.select_calls.append(
             [o if isinstance(o, str) else o.getLabel() for o in options]
@@ -380,8 +388,10 @@ def test_backup_restore_offers_verify_last(dmod, monkeypatch):
     assert dmod.control.select_calls, "the Backup/Restore dialog never opened"
     options = dmod.control.select_calls[0]
     assert len(options) == 4, options
-    assert options[0] == "Backup"
-    assert options[1] == "Restore"
+    # Backup and Restore carry their configured folder after the action name, so
+    # match the action rather than the whole row.
+    assert options[0].startswith("Backup")
+    assert options[1].startswith("Restore")
     assert "VERIFY" in options[2].upper(), (
         "the verify entry must come after backup and restore: %r" % (options,)
     )
@@ -391,94 +401,135 @@ def test_backup_restore_offers_verify_last(dmod, monkeypatch):
     )
 
 
-def _footers(dmod, monkeypatch, name, settings):
-    """Drive the real menu with `settings` configured; return {label: footer}."""
+def _row_paths(dmod, monkeypatch, name, settings):
+    """Drive the real menu with `settings` configured; return {action: path}.
+
+    Splits each row into its action label and the greyed path folded in after it,
+    so the assertions below read as "what does the Backup row say the folder is"
+    rather than as string-formatting checks."""
     _stub_wiz(monkeypatch)
     dmod.control._settings.update(settings)
     dmod.control.select_calls.clear()
-    dmod.control.select_items.clear()
     dmod.control.select_result = -1  # cancel; we only want the rows
     _drive_backup_restore(monkeypatch, name)
-    rows = dmod.control.select_items[0]
-    return {r.getLabel(): r.getProperty("ezm.footer") for r in rows}
+    out = {}
+    for row in dmod.control.select_calls[0]:
+        action, _, rest = row.partition("   [COLOR FFA0A0A0]")
+        out[action] = rest[: -len("[/COLOR]")] if rest else ""
+    return out
 
 
-def test_the_rows_carry_the_configured_paths_as_their_footer(dmod, monkeypatch):
+def test_the_rows_carry_the_configured_paths_in_their_labels(dmod, monkeypatch):
     """Backup shows where it will WRITE, Restore shows where it will READ.
 
-    skin.estuary7 draws ListItem.Property(ezm.footer) along the bottom of the
-    select dialog and follows the highlight, so this is the line that answers
-    "which box am I about to overwrite from" without backing out to settings.
-    The two settings are distinct (download.path is the archive destination,
-    restore.path is the folder restores read zips from) and crossing them would
-    point her at the wrong share, so both are asserted by id."""
-    footers = _footers(
+    The folder is greyed into the row label itself, which every skin draws, so
+    the answer to "which box am I about to overwrite from" is on screen without
+    backing out to settings and without any skin cooperating. The two settings
+    are distinct (download.path is the archive destination, restore.path is the
+    folder restores read zips from) and crossing them would point her at the
+    wrong share, so both are asserted by id."""
+    lines = _row_paths(
         dmod,
         monkeypatch,
-        "ezm_br_footers_uut",
+        "ezm_br_paths_uut",
         {
             "destination": "1",
             "download.path": "nfs://192.168.7.10/volume1/Kodi/Backup/fireos",
             "restore.path": "smb://mini/KodiShare/apps",
         },
     )
-    assert (
-        footers["Backup"]
-        == "Backup path:  nfs://192.168.7.10/volume1/Kodi/Backup/fireos"
-    )
-    assert footers["Restore"] == "Restore path:  smb://mini/KodiShare/apps"
+    assert lines["Backup"] == "nfs://192.168.7.10/volume1/Kodi/Backup/fireos"
+    assert lines["Restore"] == "smb://mini/KodiShare/apps"
 
 
 def test_an_unconfigured_path_says_so_instead_of_reading_blank(dmod, monkeypatch):
     """ "not set" is the state that makes Backup and Restore bail into the
-    settings window, so it is exactly the state worth naming. A blank footer
-    there would look like a rendering bug and tell her nothing."""
-    footers = _footers(
+    settings window, so it is exactly the state worth naming. A bare row there
+    would look like a rendering bug and tell her nothing."""
+    lines = _row_paths(
         dmod,
         monkeypatch,
-        "ezm_br_footers_unset_uut",
+        "ezm_br_paths_unset_uut",
         {"destination": "0", "download.path": "", "restore.path": ""},
     )
-    assert footers["Backup"] == "Backup path:  not set"
-    assert footers["Restore"] == "Restore path:  not set"
+    assert lines["Backup"] == "Not set"
+    assert lines["Restore"] == "Not set"
 
 
 def test_dropbox_destination_never_reports_a_local_path(dmod, monkeypatch):
     """With Destination on Dropbox, settings.xml HIDES both path settings and
     neither is used. Reporting the stale local path left in them would name a
-    folder the backup is not going to - the one thing this footer exists to
-    prevent."""
-    footers = _footers(
+    folder the backup is not going to - the one thing showing the path at all
+    exists to prevent."""
+    lines = _row_paths(
         dmod,
         monkeypatch,
-        "ezm_br_footers_dropbox_uut",
+        "ezm_br_paths_dropbox_uut",
         {
             "destination": "2",
             "download.path": "/storage/emulated/0/stale",
             "restore.path": "/storage/emulated/0/stale",
         },
     )
-    assert footers["Backup"] == "Backup path:  Dropbox"
-    assert footers["Restore"] == "Restore path:  Dropbox"
+    assert lines["Backup"] == "Dropbox"
+    assert lines["Restore"] == "Dropbox"
 
 
-def test_the_diagnostic_rows_blank_the_footer_with_a_space(dmod, monkeypatch):
-    """Verify and Settings show NO footer (owner's call), and the way to show
-    none is a SPACE, not "".
+def test_the_diagnostic_rows_have_no_path(dmod, monkeypatch):
+    """Verify and Settings show no path at all (owner's call).
 
-    The skin hides its stock "N items - 1/1" count with
-    String.IsEmpty(Container(3).ListItem.Property(ezm.footer)); an empty string
-    satisfies that, so the count would blink back on these two rows as she
-    scrolls past. A space is non-empty and draws nothing. Verified on Kodi 21."""
-    footers = _footers(dmod, monkeypatch, "ezm_br_footers_blank_uut", {})
-    assert footers["Verify Backup Archive"] == " "
-    assert footers["Settings"] == " "
+    Their labels stand alone, with no separator and no colour markup. The single
+    space this once used was an artifact of the deleted skin coupling: it existed
+    only to defeat a String.IsEmpty condition in skin.estuary7."""
+    lines = _row_paths(dmod, monkeypatch, "ezm_br_lines_blank_uut", {})
+    assert lines["Verify Backup Archive"] == ""
+    assert lines["Settings"] == ""
+    # Exact rows, not just an empty parse: "Verify Backup Archive   [COLOR ...][/COLOR]"
+    # would also parse to "" while shipping trailing markup to the screen.
+    rows = dmod.control.select_calls[0]
+    assert rows[2] == "Verify Backup Archive"
+    assert rows[3] == "Settings"
+
+
+def test_the_rows_are_plain_labels_a_skin_cannot_be_asked_to_decorate(
+    dmod, monkeypatch
+):
+    """THE REGRESSION PIN for 2026-07-22. The path is IN THE LABEL, full stop.
+
+    The original defect shipped the rows as ListItems carrying
+    setProperty("ezm.footer", <path>), which only skin.estuary7 rendered: the
+    paths were invisible on stock Estuary - the skin EZM++'s own Fresh Start
+    REQUIRES - and one feature needed two artifacts, from two repos, to be seen
+    at all.
+
+    A plain string cannot carry a property, so this asserts the whole class away
+    rather than one property name; the next such coupling would not reuse the old
+    name anyway."""
+    _stub_wiz(monkeypatch)
+    dmod.control._settings.update(
+        {"destination": "1", "download.path": "/a", "restore.path": "/b"}
+    )
+    dmod.control.select_calls.clear()
+    dmod.control.select_items.clear()
+    dmod.control.select_result = -1
+    _drive_backup_restore(monkeypatch, "ezm_br_plain_rows_uut")
+
+    # select_items keeps the rows AS PASSED; select_calls stringifies them, so
+    # asserting against select_calls would be unfalsifiable - every element is a
+    # str by construction there.
+    for row in dmod.control.select_items[0]:
+        assert isinstance(row, str), (
+            "row %r is a %s, not a plain label - anything richer can carry a "
+            "property only a skin we also control would render"
+            % (row, type(row).__name__)
+        )
 
 
 def test_a_settings_read_that_throws_cannot_take_the_menu_down(dmod, monkeypatch):
-    """The footer is decoration; the menu is the feature. If control.setting
-    raises (an odd platform, a corrupt settings.xml), the rows must still be
-    offered - blank-footered, not missing."""
+    """The path is decoration; the menu is the feature. If control.setting raises
+    (an odd platform, a corrupt settings.xml), the rows must still be offered as
+    bare labels - no path, no separator, no dangling colour markup - not
+    missing."""
     _stub_wiz(monkeypatch)
     dmod.control.select_calls.clear()
     dmod.control.select_result = -1
@@ -487,7 +538,7 @@ def test_a_settings_read_that_throws_cannot_take_the_menu_down(dmod, monkeypatch
         raise RuntimeError("settings unreadable")
 
     dmod.control.setting = _boom
-    _drive_backup_restore(monkeypatch, "ezm_br_footers_boom_uut")
+    _drive_backup_restore(monkeypatch, "ezm_br_paths_boom_uut")
 
     assert dmod.control.select_calls[0] == [
         "Backup",
@@ -525,7 +576,7 @@ def test_settings_entry_opens_the_backup_restore_tab_and_ends_the_menu(
 
     assert dmod.control.openSettings_calls, "the Settings entry never opened settings"
     assert "SetFocus(-199)" in dmod.xbmc._executed, dmod.xbmc._executed
-    menus = [c for c in dmod.control.select_calls if c and c[0] == "Backup"]
+    menus = [c for c in dmod.control.select_calls if c and c[0].startswith("Backup")]
     assert len(menus) == 1, (
         "the menu must not re-present on top of the Settings window: %d presentations"
         % len(menus)
@@ -633,7 +684,7 @@ def test_cancelled_verify_re_presents_the_backup_restore_menu(dmod, monkeypatch)
 
     _drive_backup_restore(monkeypatch, "ezm_br_loop_verify_uut")
 
-    menus = [c for c in dmod.control.select_calls if c and c[0] == "Backup"]
+    menus = [c for c in dmod.control.select_calls if c and c[0].startswith("Backup")]
     assert len(menus) == 2, (
         "after a cancelled verify the Backup/Restore menu must be re-presented, not "
         "abandoned to the root menu; dialogs seen: %r" % (dmod.control.select_calls,)
@@ -653,7 +704,7 @@ def test_cancelled_restore_picker_re_presents_the_backup_restore_menu(
     _drive_backup_restore(monkeypatch, "ezm_br_loop_restore_uut")
 
     assert restores == [True], "the RESTORE entry must still reach restoreFolder once"
-    menus = [c for c in dmod.control.select_calls if c and c[0] == "Backup"]
+    menus = [c for c in dmod.control.select_calls if c and c[0].startswith("Backup")]
     assert len(menus) == 2, dmod.control.select_calls
 
 
@@ -669,7 +720,7 @@ def test_cancelled_backup_mode_falls_back_to_the_menu_not_the_root(dmod, monkeyp
     _drive_backup_restore(monkeypatch, "ezm_br_loop_backupmode_uut")
 
     assert backups == [], "a cancelled mode dialog must not take a backup"
-    menus = [c for c in dmod.control.select_calls if c and c[0] == "Backup"]
+    menus = [c for c in dmod.control.select_calls if c and c[0].startswith("Backup")]
     assert len(menus) == 2, (
         "cancelling the backup MODE dialog must fall back to Backup/Restore, not to "
         "the root menu; dialogs seen: %r" % (dmod.control.select_calls,)
@@ -687,7 +738,7 @@ def test_cancelling_the_menu_itself_exits_exactly_once(dmod, monkeypatch):
 
     _drive_backup_restore(monkeypatch, "ezm_br_loop_exit_uut")
 
-    menus = [c for c in dmod.control.select_calls if c and c[0] == "Backup"]
+    menus = [c for c in dmod.control.select_calls if c and c[0].startswith("Backup")]
     assert len(menus) == 1, (
         "cancelling Backup/Restore must exit immediately; it was presented %d times"
         % len(menus)
@@ -707,7 +758,7 @@ def test_an_unexpected_select_return_cannot_spin_the_menu(dmod, monkeypatch):
 
     _drive_backup_restore(monkeypatch, "ezm_br_loop_unknown_uut")
 
-    menus = [c for c in dmod.control.select_calls if c and c[0] == "Backup"]
+    menus = [c for c in dmod.control.select_calls if c and c[0].startswith("Backup")]
     assert len(menus) == 1, (
         "an unrecognised selectDialog return must break the loop, not spin it: %d "
         "presentations" % len(menus)
@@ -737,7 +788,7 @@ def test_cancelling_the_zip_picker_re_presents_the_menu(dmod, monkeypatch):
         "the reported path: %r" % (dmod.control.select_calls,)
     )
     assert dmod.control.infoDialog_calls == [], "no guard dialog should have fired"
-    menus = [c for c in dmod.control.select_calls if c and c[0] == "Backup"]
+    menus = [c for c in dmod.control.select_calls if c and c[0].startswith("Backup")]
     assert len(menus) == 2, (
         "cancelling the zip picker must land back inside Backup/Restore: %r"
         % (dmod.control.select_calls,)
@@ -771,7 +822,7 @@ def test_a_restore_that_ran_ends_the_menu(dmod, monkeypatch):
     _drive_backup_restore(monkeypatch, "ezm_br_loop_restore_ran_uut")
 
     assert restores == [True], "the restore must run exactly once"
-    menus = [c for c in dmod.control.select_calls if c and c[0] == "Backup"]
+    menus = [c for c in dmod.control.select_calls if c and c[0].startswith("Backup")]
     assert len(menus) == 1, (
         "a restore that ran must END the menu, not re-present it: %d presentations"
         % len(menus)
@@ -791,7 +842,7 @@ def test_a_cancelled_restore_still_re_presents_the_menu(dmod, monkeypatch):
     _drive_backup_restore(monkeypatch, "ezm_br_loop_restore_cancelled_uut")
 
     assert restores == [True]
-    menus = [c for c in dmod.control.select_calls if c and c[0] == "Backup"]
+    menus = [c for c in dmod.control.select_calls if c and c[0].startswith("Backup")]
     assert len(menus) == 2, (
         "a CANCELLED restore publishes no verdict and must come back to the menu: %r"
         % (dmod.control.select_calls,)
@@ -815,7 +866,7 @@ def test_a_stale_verdict_from_an_earlier_restore_does_not_end_the_menu(
     _drive_backup_restore(monkeypatch, "ezm_br_loop_stale_verdict_uut")
 
     assert restores == [True]
-    menus = [c for c in dmod.control.select_calls if c and c[0] == "Backup"]
+    menus = [c for c in dmod.control.select_calls if c and c[0].startswith("Backup")]
     assert len(menus) == 2, (
         "a verdict left over from an EARLIER restore must not end this menu: %r"
         % (dmod.control.select_calls,)
@@ -838,7 +889,7 @@ def test_the_menu_stops_when_kodi_is_shutting_down(dmod, monkeypatch):
 
     _drive_backup_restore(monkeypatch, "ezm_br_loop_abort_uut")
 
-    menus = [c for c in dmod.control.select_calls if c and c[0] == "Backup"]
+    menus = [c for c in dmod.control.select_calls if c and c[0].startswith("Backup")]
     assert len(menus) == 1, (
         "the menu must not re-present while Kodi is shutting down: %d presentations"
         % len(menus)
@@ -869,7 +920,7 @@ def test_the_menu_stops_when_a_sub_action_opened_settings(dmod, monkeypatch):
     _drive_backup_restore(monkeypatch, "ezm_br_loop_settings_uut")
 
     assert dmod.control.openSettings_calls, "the settings bail never happened"
-    menus = [c for c in dmod.control.select_calls if c and c[0] == "Backup"]
+    menus = [c for c in dmod.control.select_calls if c and c[0].startswith("Backup")]
     assert len(menus) == 1, (
         "the menu must not re-present on top of the Settings window: %d presentations"
         % len(menus)

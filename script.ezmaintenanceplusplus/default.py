@@ -421,10 +421,9 @@ def FRESHSTART(mode="verbose"):
         wipe_root = os.path.normpath(HOME)
         if skin_path == wipe_root or skin_path.startswith(wipe_root + os.sep):
             ui.error(
-                "Fresh Start needs a skin that survives the wipe. Your current skin is "
-                "installed under userdata and would be removed mid-wipe.\n"
-                "Please switch to the built-in Estuary skin (Settings > Interface > "
-                "Skin), then run Fresh Start again.",
+                "Please switch to the default Estuary skin before running Fresh "
+                "Start.\n"
+                "Settings > Interface > Skin > Estuary",
                 heading=AddonTitle,
             )
             return

@@ -1090,17 +1090,18 @@ def test_plugin_root_menu_renders(monkeypatch, tmp_path):
         "'Set up this box' was retired on 2026-07-22, not hidden and not emptied"
     )
     assert "setup_sources" not in actions, (
-        "adding media sources is a SETTINGS action now (the Media Sources tab, via "
-        "RunScript). A second door on the root menu is the duplication this cut "
-        "was made to remove"
+        "adding media sources was DELETED on 2026-07-22, not moved: Kodi's own File "
+        "Manager adds a source in the same number of steps. There is no Media "
+        "Sources settings tab and settings.xml has three categories, so do not go "
+        "looking for one"
     )
 
 
 def test_the_retired_setup_routes_are_silent_no_ops(monkeypatch, tmp_path):
     """A favourite or widget saved against the deleted folder must land on nothing.
 
-    "Set up this box" and its four deleted items (device_name, setup_all_box,
-    setup_weather, setup_rss) were reachable actions for months, so stale
+    "Set up this box" and its five deleted items (device_name, setup_all_box,
+    setup_sources, setup_weather, setup_rss) were reachable actions for months, so stale
     bookmarks exist. Each must route to an explicit no-op - no directory, no
     dialog, no traceback - exactly as the retired tools and purge actions do.
     Falling through to the unknown-action path is the failure this pins."""
@@ -1108,6 +1109,7 @@ def test_the_retired_setup_routes_are_silent_no_ops(monkeypatch, tmp_path):
         "box_setup",
         "device_name",
         "setup_all_box",
+        "setup_sources",
         "setup_weather",
         "setup_rss",
     ):
@@ -1125,6 +1127,26 @@ def test_the_retired_setup_routes_are_silent_no_ops(monkeypatch, tmp_path):
         )
         assert rec.dir_items == [], "%s still renders rows" % stale
         assert rec.end_dirs == [True], "%s did not close its directory" % stale
+
+    # SOURCE PIN, and it is load-bearing. The behavioural assertions above pass with
+    # or without the routes, because the unknown-action fallthrough is silent in
+    # exactly the same way (default.py runs endOfDirectory unconditionally). Deleting
+    # the block as "dead code" would keep this test green and turn every stale
+    # favourite into an empty-directory dead end. Same pin as the retired tools and
+    # purge actions carry.
+    src = (ADDON_ROOT / "default.py").read_text()
+    for stale in (
+        "box_setup",
+        "setup_all_box",
+        "setup_sources",
+        "setup_weather",
+        "setup_rss",
+        "device_name",
+    ):
+        assert '"%s"' % stale in src, (
+            "%s is no longer routed in default.py - a stale favourite pointing at it "
+            "would fall through to the unknown-action path" % stale
+        )
 
 
 def test_plugin_maintenance_submenu_renders_without_service(monkeypatch, tmp_path):

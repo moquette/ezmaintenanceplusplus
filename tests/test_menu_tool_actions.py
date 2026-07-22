@@ -600,6 +600,132 @@ def test_the_backup_restore_settings_tab_index_matches_settings_xml(dmod):
     )
 
 
+# --------------------------------------------------------------------------- #
+# _open_settings_tab: the WAIT, not just the builtin
+# --------------------------------------------------------------------------- #
+def _script_settings_window(dmod, appear_after):
+    """Make the settings window appear only after `appear_after` probes, and record
+    an ORDERED event log of everything _open_settings_tab does.
+
+    The test above stubs openSettings so the window is active the instant the builtin
+    returns. That models a desktop where the dialog paints faster than the next
+    statement, and it CANNOT distinguish "waited until the dialog was up" from "fired
+    SetFocus blindly": both orderings look identical when the flip is synchronous. On
+    a Fire TV or an Apple TV the dialog is still painting, the category control does
+    not exist yet, and a blind SetFocus is swallowed - the owner lands on Maintenance
+    instead of Backup/Restore.
+
+    So this fake makes the window LATE, which is the real timing, and returns the
+    event log so ordering can be asserted rather than mere presence."""
+    events = []
+    polls = [0]
+
+    def _open_settings(*a, **k):
+        dmod.control.openSettings_calls.append(a)
+        events.append("open")
+
+    dmod.control.openSettings = _open_settings
+
+    def _cond(cond):
+        if cond != "Window.IsActive(addonsettings)":
+            return False
+        polls[0] += 1
+        active = polls[0] > appear_after
+        events.append("poll:active" if active else "poll:inactive")
+        return active
+
+    dmod.xbmc.getCondVisibility = _cond
+
+    def _exec(command, *a, **k):
+        dmod.xbmc._executed.append(command)
+        events.append("exec:%s" % command)
+
+    dmod.xbmc.executebuiltin = _exec
+
+    base = dmod.xbmc.Monitor
+
+    class _RecordingMonitor(base):
+        def waitForAbort(self, timeout=0):
+            events.append("wait")
+            return base.waitForAbort(self, timeout)
+
+    dmod.xbmc.Monitor = _RecordingMonitor
+    return events, polls
+
+
+def test_open_settings_tab_waits_for_the_window_before_focusing_the_tab(dmod):
+    """SetFocus must fire AFTER the settings window reports active, never before.
+
+    Addon.OpenSettings and SetFocus are both ASYNC builtins. If SetFocus goes out
+    while the dialog is still painting, control -199 does not exist yet, the builtin
+    is swallowed, and the owner is left on the first tab. The wait loop is the entire
+    reason this function exists, so the assertion is on ORDER: every probe that came
+    back inactive, then the first active probe, then SetFocus."""
+    events, polls = _script_settings_window(dmod, appear_after=3)
+
+    assert dmod.mod._open_settings_tab(1, timeout=5.0, poll=0.1) is True
+
+    assert events[0] == "open", events
+    assert "poll:active" in events, (
+        "SetFocus was fired without ever seeing the window go active: %r" % (events,)
+    )
+    active_at = events.index("poll:active")
+    focus_at = events.index("exec:SetFocus(-199)")
+    assert focus_at == active_at + 1, (
+        "SetFocus must be the very next thing after the window goes active, and "
+        "must not appear before it: %r" % (events,)
+    )
+    assert polls[0] == 4, "expected 4 probes (3 inactive, then active): %r" % (events,)
+    assert events.count("wait") == 3, (
+        "each inactive probe must be followed by a real poll interval: %r" % (events,)
+    )
+    assert events.count("exec:SetFocus(-199)") == 1, events
+
+
+def test_open_settings_tab_gives_up_quietly_when_the_window_never_appears(dmod):
+    """The timeout path is best effort by design: no SetFocus, no exception.
+
+    Firing SetFocus into whatever window IS on screen is worse than doing nothing -
+    it can move focus somewhere the owner did not ask for. Settings were still
+    opened, so she is one click from where she wanted to be."""
+    events, polls = _script_settings_window(dmod, appear_after=10**6)
+
+    assert dmod.mod._open_settings_tab(1, timeout=0.5, poll=0.1) is False
+
+    assert dmod.control.openSettings_calls, "settings were never opened"
+    assert not [e for e in events if e.startswith("exec:")], (
+        "nothing may be executed once the window never came up: %r" % (events,)
+    )
+    assert polls[0] == 5, events
+    assert events.count("wait") == 5, events
+
+
+def test_open_settings_tab_bails_out_when_kodi_is_shutting_down(dmod):
+    """waitForAbort True means Kodi is tearing down. Stop probing, fire nothing."""
+    events, polls = _script_settings_window(dmod, appear_after=10**6)
+    dmod.xbmc._abort = True
+
+    assert dmod.mod._open_settings_tab(1, timeout=5.0, poll=0.1) is False
+
+    assert polls[0] == 1, "the abort must end the loop after one probe: %r" % (events,)
+    assert events.count("wait") == 1, events
+    assert not [e for e in events if e.startswith("exec:")], events
+
+
+def test_open_settings_tab_survives_a_probe_that_throws(dmod):
+    """An odd platform where the probe raises must not take the menu down with it."""
+    events, _polls = _script_settings_window(dmod, appear_after=1)
+
+    def _boom(cond):
+        raise RuntimeError("no such window condition")
+
+    dmod.xbmc.getCondVisibility = _boom
+
+    assert dmod.mod._open_settings_tab(1, timeout=5.0, poll=0.1) is False
+    assert dmod.control.openSettings_calls, "settings were never opened"
+    assert not [e for e in events if e.startswith("exec:")], events
+
+
 def test_backup_restore_verify_choice_runs_the_verifier(dmod, monkeypatch):
     """Picking the third entry must actually reach VERIFY_BACKUP_ARCHIVE.
 

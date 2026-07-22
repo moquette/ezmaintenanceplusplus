@@ -53,15 +53,6 @@ def CATEGORIES():
         "",
     )
     CreateDir(
-        "Set up this box",
-        "ur",
-        "box_setup",
-        ADDON_ICON,
-        ADDON_FANART,
-        "",
-        isFolder=True,
-    )
-    CreateDir(
         "Maintenance",
         "ur",
         "maintenance",
@@ -149,27 +140,26 @@ def MAINTENANCE():
     )
 
 
-def BOX_SETUP():
-    # "Device Name" moved here from the top level. Naming a box is exactly what this
-    # folder is for, and since 2026.07.19.4 removed the post-restore name prompt
-    # (restore now PRESERVES the box's existing name rather than asking), this item
-    # is the only deliberate way to change a name. It sits FIRST because naming is
-    # the first thing an owner does with a new box and the item most likely to be
-    # wanted on its own, so it must not be buried under the bulk actions.
-    CreateDir(
-        "Device Name",
-        "ur",
-        "device_name",
-        ADDON_ICON,
-        ADDON_FANART,
-        "Name this box so you can tell it apart from the others.",
-    )
-    CreateDir("Set up everything", "url", "setup_all_box", ADDON_ICON, ADDON_FANART, "")
-    CreateDir(
-        "Add media sources (mini)", "url", "setup_sources", ADDON_ICON, ADDON_FANART, ""
-    )
-    CreateDir("Set up weather", "url", "setup_weather", ADDON_ICON, ADDON_FANART, "")
-    CreateDir("Enable RSS ticker", "url", "setup_rss", ADDON_ICON, ADDON_FANART, "")
+# RETIRED 2026-07-22: the "Set up this box" folder, ALL FIVE ITEMS, and the
+# boxsetup.py module behind them. Owner's verdict after living with it, and the
+# reason each removal is safe, so this is not re-litigated:
+#
+#   * Add media sources - DELETED. It wrote the .T7B repository and the two mini
+#     NFS shares into sources.xml. Kodi's own File Manager adds a source in the
+#     same number of steps, which is what it is for, so the add-on was
+#     reimplementing a built-in with three hardcoded paths that would rot the day
+#     the mini's address changed. (It briefly became a Media Sources settings tab
+#     the same day; that tab is gone too.)
+#   * Device Name - DELETED. It only wrote Kodi's own services.devicename, which
+#     every box already exposes at Settings > Services > General. Preservation
+#     across a restore does NOT depend on it (that is tools._get_devicename /
+#     _set_devicename, both still live and still tested).
+#   * Set up weather, Enable RSS ticker, Set up everything - DELETED with their
+#     implementations; nothing else in the add-on called them.
+#
+# boxsetup.py also left service.py's _CONTRACT_FILES, so the storage-contract
+# fingerprint changes with this release. That is correct, not drift: the file it
+# hashed no longer exists.
 
 
 # ###########################################################################################
@@ -732,11 +722,6 @@ elif action == "adv_settings":
 
     tools.advancedSettings()
 
-elif action == "device_name":
-    from resources.lib.modules import tools
-
-    tools.deviceName()
-
 elif action == "clear_all":
     from resources.lib.modules import maintenance
 
@@ -890,9 +875,6 @@ elif action == "dbtest":
 
     _dbtest(dropbox_remote)
 
-elif action == "box_setup":
-    BOX_SETUP()
-
 elif action == "tools":
     # RETIRED: the Tools category is gone. Its last remaining item, "Verify backup
     # archive", now lives at the bottom of Backup/Restore where it belongs, so the
@@ -913,24 +895,20 @@ elif action == "purge_stale_tvos_keys":
 elif action == "verify_backup_archive":
     VERIFY_BACKUP_ARCHIVE()
 
-elif action == "setup_all_box":
-    from resources.lib.modules import boxsetup
-
-    boxsetup.setup_all()
-
-elif action == "setup_sources":
-    from resources.lib.modules import boxsetup
-
-    boxsetup.add_media_sources()
-
-elif action == "setup_weather":
-    from resources.lib.modules import boxsetup
-
-    boxsetup.setup_weather()
-
-elif action == "setup_rss":
-    from resources.lib.modules import boxsetup
-
-    boxsetup.enable_rss()
+elif action in (
+    "box_setup",
+    "setup_all_box",
+    "setup_sources",
+    "setup_weather",
+    "setup_rss",
+    "device_name",
+):
+    # RETIRED 2026-07-22 with the "Set up this box" folder (see the note above
+    # MAINTENANCE for what each one was and why it went). Explicit no-ops, same
+    # shape as the retired tools/purge actions: a stale favourite, widget or
+    # bookmark pointing at any of them lands here rather than falling through to
+    # the unknown-action path. Deliberately silent - nothing failed, and there is
+    # nothing the user needs to do.
+    pass
 
 xbmcplugin.endOfDirectory(int(sys.argv[1]))

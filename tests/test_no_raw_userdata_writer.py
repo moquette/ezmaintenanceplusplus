@@ -158,26 +158,33 @@ def test_no_module_writes_userdata_xml_behind_nsud():
         "disk file, so Kodi may never see these bytes and no error is raised:\n"
         + "\n".join("  %s::%s (line %d)" % o for o in offenders)
         + "\n\nFix: call nsud.persist_one('<userdata-relative path>', log=...) after the "
-        "write, as boxsetup.add_media_sources does. If the file is an add-on's PRIVATE data "
+        "write, as wiz._apply_boot_skin does. If the file is an add-on's PRIVATE data "
         "that only IT reads with plain open(), persist_one already leaves it on disk - "
         "call it anyway and let it decide."
     )
 
 
 def test_the_known_good_pattern_is_present():
-    """Guard the lint itself: add_media_sources is the reference implementation.
+    """Guard the lint itself: wiz._apply_boot_skin is the reference implementation.
 
-    If someone removes its nsud.persist_one call, the lint above must catch it. If this
-    test ever fails, the lint's detection is broken, not boxsetup.
+    It writes userdata/guisettings.xml with a plain open(..., "wb") and then calls
+    nsud.persist_one, which is exactly the shape this lint certifies. If someone
+    removes that persist_one call, the lint above must catch it; if THIS test
+    fails, the lint's detection is broken, not wiz.
+
+    Both previous reference implementations lived in boxsetup.py -
+    _write_weather_settings (the function whose 2026-07-13 bug this whole lint
+    exists to prevent) and add_media_sources - and the module was deleted on
+    2026-07-22 with the "Set up this box" feature. The lesson outlived the code.
     """
-    src = (ADDON / "resources/lib/modules/boxsetup.py").read_text(encoding="utf-8")
+    src = (ADDON / "resources/lib/modules/wiz.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
     fns = {
         n.name: n
         for n in ast.walk(tree)
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
-    for name in ("add_media_sources", "_write_weather_settings"):
+    for name in ("_apply_boot_skin",):
         assert name in fns, "%s vanished - update this lint" % name
         assert _is_write_call_in(fns[name]), (
             "%s no longer writes - update this lint" % name

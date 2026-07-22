@@ -151,7 +151,7 @@ backup/restore triage lives in this file and, for anything tvOS,
   `release.py` automation expects. Never run that automation against this add-on's
   news; it has corrupted the changelog before (~190 lines mangled in one run).
 
-## The tvOS/Apple TV storage rules (read before touching `nsud.py`/`nsub.py`/`boxsetup.py`)
+## The tvOS/Apple TV storage rules (read before touching `nsud.py`/`nsub.py`/`wiz.py`)
 
 Apple TV shadows certain userdata `.xml` files into NSUserDefaults; a key SHADOWS the
 disk file, it does not mirror it, and Kodi never copies a key back to disk. Getting

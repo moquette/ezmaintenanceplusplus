@@ -70,7 +70,7 @@ skin's customized main-menu data, which the skin then couldn't read back (fixed 
 `nsud.py`'s `_should_vector`, scoped to exactly what Kodi's VFS actually reads). The full
 storage model (with exact Kodi source citations) lives in the sibling proxy repo's
 `~/Code/moquette/kodi/.claude/skills/kodi-storage-map/SKILL.md` - read it before touching `nsud.py`,
-`nsub.py`, or `boxsetup.py`.
+`nsub.py`, or `wiz.py`.
 
 Three things in this repo exist specifically to keep that class of bug from shipping
 again:
@@ -88,7 +88,7 @@ again:
   requirement and the foreign-local-VFS-read bug on top of it.
 - **`tools/verify_device.py` + `tests/test_storage_change_requires_device_verification.py`**
   - a machine-generated hardware-verification gate: it pulls live device evidence over
-    Kodi's JSON-RPC and fails the suite if `nsud.py`/`boxsetup.py` changed without a fresh
+    Kodi's JSON-RPC and fails the suite if `nsud.py`/`wiz.py` changed without a fresh
     `verification/<version>.json` artifact to back it up. "Fixed in code" is not a claim
     this add-on gets to make unverified anymore. Scoped deliberately to just those two
     files, not every module touching `xbmcvfs` (`control.py`/`wiz.py`/`maintenance.py`/

@@ -55,7 +55,6 @@ class Monitor(xbmc.Monitor):
 # tests/test_contract_fingerprint_matches_the_gate.py pins that they agree.
 _CONTRACT_FILES = (
     "resources/lib/modules/nsud.py",
-    "resources/lib/modules/boxsetup.py",
     "resources/lib/modules/nsub.py",
     "resources/lib/modules/onetap.py",
     "resources/lib/modules/wiz.py",

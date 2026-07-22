@@ -1050,15 +1050,18 @@ def test_plugin_root_menu_renders(monkeypatch, tmp_path):
     _import_plugin(
         monkeypatch, tmp_path, rec, ["plugin://script.ezmaintenanceplusplus/", "7", ""]
     )
-    # 8 menu rows + the non-clickable version row.
+    # 7 menu rows + the non-clickable version row.
     # (Went 8 -> 9 in 2026.07.13.1 when "Set up this box" was added; 9 -> 10 on
     # 2026-07-16 when the "Tools" folder landed: stale-key purge + backup verify;
     # 10 -> 11 on 2026-07-19 when "Device Name" landed beside "Video Cache Buffer";
     # 11 -> 9 on 2026-07-19 when BOTH moved out: "Tools" was deleted outright once
     # it held a single backup action, which went to Backup/Restore, and "Device
     # Name" moved into "Set up this box" where naming a box belongs;
-    # 10 -> 9 on 2026-07-21 when the One-Tap Restore row was removed with the feature.)
-    assert len(rec.dir_items) == 9
+    # 10 -> 9 on 2026-07-21 when the One-Tap Restore row was removed with the feature;
+    # 9 -> 8 on 2026-07-22 when "Set up this box" was retired: the owner used one of
+    # its five items, and that one - adding the repo and the mini NFS shares - is
+    # configuration, so it became the Media Sources tab of the add-on's settings.)
+    assert len(rec.dir_items) == 8
     assert rec.end_dirs == [True]
     # Parse the action out of each url rather than substring-matching it: "device_name"
     # is a prefix of "device_nameXX", so a substring test passes against a renamed or
@@ -1077,50 +1080,51 @@ def test_plugin_root_menu_renders(monkeypatch, tmp_path):
         "its wipe engine survives, in onetap.py)"
     )
     assert "device_name" not in actions, (
-        "Device Name moved into 'Set up this box' on 2026-07-19; it must not also "
-        "linger at the top level as a second way in"
+        "Device Name was deleted on 2026-07-22 - it only wrote Kodi's own "
+        "services.devicename, reachable at Settings > Services > General"
     )
     assert "tools" not in actions, (
         "the Tools category was deleted on 2026-07-19, not hidden and not emptied"
     )
-    assert "box_setup" in actions, (
-        "'Set up this box' is now the only route to Device Name - if this row ever "
-        "disappears, the rename capability goes with it"
+    assert "box_setup" not in actions, (
+        "'Set up this box' was retired on 2026-07-22, not hidden and not emptied"
+    )
+    assert "setup_sources" not in actions, (
+        "adding media sources is a SETTINGS action now (the Media Sources tab, via "
+        "RunScript). A second door on the root menu is the duplication this cut "
+        "was made to remove"
     )
 
 
-def test_plugin_box_setup_submenu_offers_device_name_first(monkeypatch, tmp_path):
-    """Device Name lives in "Set up this box", at the TOP.
+def test_the_retired_setup_routes_are_silent_no_ops(monkeypatch, tmp_path):
+    """A favourite or widget saved against the deleted folder must land on nothing.
 
-    Moved there 2026-07-19. Naming a box is what that folder is for, and since
-    2026.07.19.4 deleted the post-restore rename prompt (restore now PRESERVES the
-    existing name instead of asking), this item is the ONLY deliberate way to change
-    a name - so it must be reachable and it must not be buried under the bulk
-    setup actions."""
-    rec = _Recorder()
-    _install_fakes(monkeypatch, tmp_path, rec)
-    _import_plugin(
-        monkeypatch,
-        tmp_path,
-        rec,
-        ["plugin://script.ezmaintenanceplusplus/", "7", "?action=box_setup"],
-    )
-    from urllib.parse import parse_qs, urlparse
-
-    ordered = []
-    for url in rec.dir_items:
-        ordered.extend(parse_qs(urlparse(url).query).get("action", []))
-    assert "device_name" in ordered, (
-        "Device Name must be reachable from 'Set up this box' - it left the top "
-        "level, so losing it here loses the rename capability entirely"
-    )
-    assert ordered[0] == "device_name", (
-        "Device Name must come FIRST, above 'Set up everything': naming is the first "
-        "thing an owner does with a new box and the item most wanted on its own. "
-        "Order was %r" % (ordered,)
-    )
-    assert "setup_all_box" in ordered
-    assert rec.end_dirs == [True]
+    "Set up this box" and its four deleted items (device_name, setup_all_box,
+    setup_weather, setup_rss) were reachable actions for months, so stale
+    bookmarks exist. Each must route to an explicit no-op - no directory, no
+    dialog, no traceback - exactly as the retired tools and purge actions do.
+    Falling through to the unknown-action path is the failure this pins."""
+    for stale in (
+        "box_setup",
+        "device_name",
+        "setup_all_box",
+        "setup_weather",
+        "setup_rss",
+    ):
+        rec = _Recorder()
+        _install_fakes(monkeypatch, tmp_path, rec)
+        _import_plugin(
+            monkeypatch,
+            tmp_path,
+            rec,
+            [
+                "plugin://script.ezmaintenanceplusplus/",
+                "7",
+                "?action=%s" % stale,
+            ],
+        )
+        assert rec.dir_items == [], "%s still renders rows" % stale
+        assert rec.end_dirs == [True], "%s did not close its directory" % stale
 
 
 def test_plugin_maintenance_submenu_renders_without_service(monkeypatch, tmp_path):

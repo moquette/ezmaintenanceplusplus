@@ -269,35 +269,15 @@ def advancedSettings():
         ui.error("Could not change the cache setting. Nothing was changed.")
 
 
-def deviceName():
-    """Rename this device, on demand, from the add-on's own menu.
-
-    The counterpart to advancedSettings() for the OTHER per-box identity setting.
-    A restore now PRESERVES the name this box already had, so nothing renames a
-    box behind the user's back and nothing asks him to; renaming is a deliberate
-    action he takes when he wants it.
-
-    Uses _keyboard_result rather than _get_keyboard so an unconfirmed keyboard is
-    treated as "changed nothing" instead of being collapsed into a sentinel that
-    could be mistaken for a name. Fully guarded: a failure reports and changes
-    nothing."""
-    cur = _get_devicename()
-    confirmed, entered = _keyboard_result(
-        default=cur,
-        heading="Device name (currently '%s')" % (cur or "unknown"),
-    )
-    if not confirmed:
-        return
-    new = (entered or "").strip()
-    if not new or new == cur:
-        return
-    if _set_devicename(new):
-        ui.done(
-            "Device name set to '%s'.\n"
-            "The network name (AirPlay/UPnP) updates after the next restart." % new
-        )
-    else:
-        ui.error("Could not change the device name. Nothing was changed.")
+# RETIRED 2026-07-22: deviceName(), the on-demand rename menu item, went with the
+# "Set up this box" folder. It only wrote services.devicename, which Kodi itself
+# exposes at Settings > Services > General on every box, so the add-on was
+# carrying a second door to the same room.
+#
+# _get_devicename and _set_devicename below are NOT dead with it: they are the
+# restore-preservation contract (capture this box's own name before the extract,
+# write it back into the restored guisettings.xml), which is why a restore no
+# longer clones the source box's name. Do not delete them chasing this comment.
 
 
 # --------------------------------------------------------------------------- #

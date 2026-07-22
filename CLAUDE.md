@@ -248,8 +248,13 @@ two-layer wipe and the purge exist BECAUSE of those facts.
 - Approval is needed for DESTRUCTIVE or OUTWARD-FACING actions only: wiping a
   box, restoring onto a box, publishing, pushing. Reading logs, listing files,
   read-only JSON-RPC queries and inspecting archives need no approval. The
-  office Fire TV at `192.168.7.162` stays HANDS-OFF for everything, reads
-  included.
+  office Fire TV `192.168.7.162` HANDS-OFF rule was **LIFTED 2026-07-21**; it
+  is a normal target and the rule must not be reinstated.
+- **Always pin `adb -s <ip>:5555`.** Several boxes sit on adb at once, so an
+  unpinned command lands on whichever one adb happens to pick.
+  `repo/_tools/firetv.sh` lost its silent `192.168.7.162` default on
+  2026-07-21: it now needs an alias or `FIRETV_IP` and echoes the target it
+  resolved. Check what it points at before running it.
 - Safety core, unchanged: a backup must contain what it claims (one
   archive-contents inspection when backup/restore code changes); CI green before
   deploy; skins install from the Kodi repo, never adb/devicectl push.

@@ -466,10 +466,15 @@ Do these in order. Do not skip the gates.
      `tony7bones.github.io` and ship via `python3 _tools/release.py --proxy`. A
      version bumped here alone is not live on any box.
 
-7. **Hard constraint.** The office Fire TV at `192.168.7.162` is HANDS-OFF. Never
-   adb, JSON-RPC, ping, or otherwise contact it without explicit per-instance
-   owner permission. The bedroom Fire TV at `192.168.7.84` is the sanctioned
-   JSON-RPC target. Carry this prohibition into any subagent prompt you write.
+7. **Hard constraint. [LIFTED 2026-07-21: the office Fire TV HANDS-OFF rule no
+   longer exists. `192.168.7.162` is a normal target, no per-instance permission
+   is needed, and subagent prompts must not carry the prohibition. What still
+   stands is pinning `adb -s <ip>:5555`, since boxes are co-attached. The
+   original text follows as history.]** The office Fire TV at `192.168.7.162` is
+   HANDS-OFF. Never adb, JSON-RPC, ping, or otherwise contact it without
+   explicit per-instance owner permission. The bedroom Fire TV at
+   `192.168.7.84` is the sanctioned JSON-RPC target. Carry this prohibition into
+   any subagent prompt you write.
 
 ### Acceptance criteria
 

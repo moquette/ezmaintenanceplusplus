@@ -592,6 +592,201 @@ def test_the_rows_show_the_path_the_action_will_actually_use(dmod, monkeypatch):
     assert ":2049" not in lines["Backup"] + lines["Restore"]
 
 
+# --------------------------------------------------------------------------- #
+# The rows must FIT. 2026-07-22.
+#
+# Estuary's select dialog gives a row 840 skin pixels of label (a list 880 wide,
+# 20px insets, font13 = NotoSans-Regular 30px; stock Estuary and skin.estuary7
+# are identical here). The fleet's own Backup row measured 891px - past the edge
+# - and Estuary SCROLLS the focused row instead of clipping it, so the row under
+# the cursor was the one that turned ambiguous. A bench capture caught it
+# mid-scroll reading "/Users/moquette/Kodi/Backup/fireos/ | Backup   nfs://192.168.7."
+# with the row's own name sitting inside the path.
+# --------------------------------------------------------------------------- #
+
+# The two paths the boxes really carry, exactly as Kodi's browse dialog writes
+# them (the :2049 included; wiz.configured_path strips it).
+FLEET_BACKUP_PATH = "nfs://192.168.7.2:2049/Users/moquette/Kodi/Backup/fireos/"
+FLEET_RESTORE_PATH = "nfs://192.168.7.2:2049/Users/moquette/Kodi/Backup/tvos/"
+
+
+def _row_text(row):
+    """A rendered row with the colour markup removed - what is actually drawn.
+
+    [COLOR ...] and [/COLOR] are formatting tags Kodi consumes, so counting them
+    would overstate every row by 20 characters."""
+    import re as _re
+
+    return _re.sub(r"\[/?COLOR[^\]]*\]", "", row)
+
+
+def test_the_fleet_paths_fit_the_row_instead_of_scrolling_under_the_cursor(
+    dmod, monkeypatch
+):
+    """THE DEFECT. With the fleet's real folders every drawn row must fit.
+
+    Before the fix the Backup row was 61 drawn characters against a budget of 56
+    and Estuary scrolled it, which is what made the focused row unreadable. This
+    asserts the drawn width of EVERY row, not just the two with paths, because a
+    budget applied to one row and not another is the same bug in a new place."""
+    _stub_wiz(monkeypatch)
+    lines = _row_paths(
+        dmod,
+        monkeypatch,
+        "ezm_br_rows_fit_uut",
+        {
+            "destination": "1",
+            "download.path": FLEET_BACKUP_PATH,
+            "restore.path": FLEET_RESTORE_PATH,
+        },
+    )
+    budget = dmod.mod.ROW_BUDGET
+    for row in dmod.control.select_calls[0]:
+        drawn = _row_text(row)
+        assert len(drawn) <= budget, (
+            "row %r draws %d characters against a %d character budget, so Estuary "
+            "will scroll it while it is focused" % (drawn, len(drawn), budget)
+        )
+    # Fitting by showing nothing useful would also pass the length check, so the
+    # two questions the row exists to answer are asserted too: which share, and
+    # which folder on it.
+    assert lines["Backup"].startswith("nfs://192.168.7.2/")
+    assert lines["Restore"].startswith("nfs://192.168.7.2/")
+    assert lines["Backup"].endswith("/Backup/fireos/")
+    assert lines["Restore"].endswith("/Backup/tvos/")
+    assert lines["Backup"] != lines["Restore"], (
+        "the two rows point at different folders and must not read the same"
+    )
+
+
+def test_the_row_budget_counts_the_action_name_sharing_the_line(dmod, monkeypatch):
+    """The path does not get the whole row - the action name is on it too.
+
+    "Restore" is one character longer than "Backup", so the same folder must be
+    allowed one character less beside it. Budgeting the path alone puts the
+    Restore row over the edge, which is the defect again on one row only. The
+    path here is chosen so the two rows land on DIFFERENT elisions: Backup has
+    room for one more segment than Restore does."""
+    path = "nfs://192.168.7.2/Users/abcdefg/Kodi/Backup/tvos/"
+    lines = _row_paths(
+        dmod,
+        monkeypatch,
+        "ezm_br_budget_per_row_uut",
+        {"destination": "1", "download.path": path, "restore.path": path},
+    )
+    assert lines["Backup"] == "nfs://192.168.7.2/.../abcdefg/Kodi/Backup/tvos/"
+    assert lines["Restore"] == "nfs://192.168.7.2/.../Kodi/Backup/tvos/"
+    for row in dmod.control.select_calls[0]:
+        assert len(_row_text(row)) <= dmod.mod.ROW_BUDGET, row
+
+
+# (path, budget, expected) - the shapes of path this add-on has to survive.
+ELIDE_CASES = [
+    (
+        "the fleet's Fire TV backup folder",
+        "nfs://192.168.7.2/Users/moquette/Kodi/Backup/fireos/",
+        47,  # what the "Backup" row leaves
+        "nfs://192.168.7.2/.../Kodi/Backup/fireos/",
+    ),
+    (
+        "the fleet's Apple TV backup folder, on the Restore row",
+        "nfs://192.168.7.2/Users/moquette/Kodi/Backup/tvos/",
+        46,  # what the longer "Restore" label leaves
+        "nfs://192.168.7.2/.../Kodi/Backup/tvos/",
+    ),
+    (
+        "an smb:// share, which elides exactly like nfs://",
+        "smb://192.168.7.2/KodiShare/Users/moquette/Kodi/Backup/tvos/",
+        46,
+        "smb://192.168.7.2/.../Kodi/Backup/tvos/",
+    ),
+    (
+        "a short local path, left alone",
+        "/storage/emulated/0/backup",
+        47,
+        "/storage/emulated/0/backup",
+    ),
+    (
+        "a long local path has no host, so the tail is the whole story",
+        "/storage/emulated/0/Android/data/org.xbmc.kodi/files/Backup/fireos",
+        47,
+        ".../data/org.xbmc.kodi/files/Backup/fireos",
+    ),
+    (
+        "a path already inside the budget is returned untouched",
+        "nfs://192.168.7.2/volume1/Kodi",
+        47,
+        "nfs://192.168.7.2/volume1/Kodi",
+    ),
+    (
+        "a path with no separator to cut on keeps its tail",
+        "x" * 80,
+        47,
+        "..." + "x" * 44,
+    ),
+    (
+        "a host so long no whole segment fits beside it still names the folder",
+        "smb://averyveryveryverylonghostnamethatgoesonforever/share/fireos",
+        47,
+        "...rylonghostnamethatgoesonforever/share/fireos",
+    ),
+    ("the unset case", "", 47, ""),
+    ("None, which control.setting can hand back", None, 47, None),
+    ("the Not set placeholder is far too short to touch", "Not set", 47, "Not set"),
+    ("the Dropbox placeholder likewise", "Dropbox", 47, "Dropbox"),
+]
+
+
+@pytest.mark.parametrize(
+    "what,path,budget,expected",
+    ELIDE_CASES,
+    ids=[c[0] for c in ELIDE_CASES],
+)
+def test_eliding_across_every_shape_of_path_this_fleet_can_produce(
+    dmod, what, path, budget, expected
+):
+    """Table of the real shapes: both fleet paths, smb://, short and long local,
+    a path already inside the budget, a pathological one with no separators, a
+    host too long to sit beside anything, and the empty/unset states.
+
+    Two invariants hold for every row of it, asserted separately from the
+    expected string so a wrong expectation cannot hide a wrong rule:
+
+      * the result never exceeds the budget, and
+      * a result that was shortened says so, with an ellipsis.
+    """
+    got = dmod.mod._elide_path(path, budget)
+    assert got == expected, "%s: %r" % (what, got)
+    if got:
+        assert len(got) <= budget, "%s: %d over budget %d" % (what, len(got), budget)
+        if path and len(path) > budget:
+            assert dmod.mod.ELLIPSIS in got, (
+                "%s: %r was shortened without saying so" % (what, got)
+            )
+        else:
+            assert got == path, "%s: a path that fit was changed anyway" % what
+
+
+def test_eliding_never_shows_half_a_folder_name(dmod):
+    """The kept tail is made of WHOLE segments.
+
+    ".../ki/Backup/fireos" would be a folder that does not exist, and a folder
+    name that does not exist is worse than a shorter true one. This walks the
+    budget across the whole interesting range of one real path rather than
+    testing the one width that happened to be convenient."""
+    path = "nfs://192.168.7.2/Users/moquette/Kodi/Backup/fireos/"
+    segments = ["Users", "moquette", "Kodi", "Backup", "fireos"]
+    for budget in range(22, len(path) + 1):
+        got = dmod.mod._elide_path(path, budget)
+        assert len(got) <= budget, (budget, got)
+        if got == path:
+            continue
+        if not got.startswith("nfs://192.168.7.2/..."):
+            continue  # the host did not fit; the tail-only fallback is its own case
+        kept = [s for s in got[len("nfs://192.168.7.2/...") :].split("/") if s]
+        assert kept == segments[len(segments) - len(kept) :], (budget, got)
+
+
 def test_dropbox_destination_never_reports_a_local_path(dmod, monkeypatch):
     """With Destination on Dropbox, settings.xml HIDES both path settings and
     neither is used. Reporting the stale local path left in them would name a

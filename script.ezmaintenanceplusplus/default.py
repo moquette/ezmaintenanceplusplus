@@ -381,6 +381,107 @@ def _path_detail(setting_id):
         return ""
 
 
+# How much of a select-dialog row is readable at a glance, in characters.
+#
+# Estuary draws each row of its select dialog from ListItem.Label in font13 -
+# NotoSans-Regular at 30px - inside a list 880 wide with 20px insets, so 840
+# skin pixels of usable label. Stock Estuary and skin.estuary7 were both read on
+# 2026-07-22 and the geometry and the font are identical in the two trees, so
+# this is not a number tuned to our skin.
+#
+# Measured against the real NotoSans-Regular.ttf at 30px, path text runs about
+# 14.6px per character, and the fleet's own row
+#   "Backup   nfs://192.168.7.2/Users/moquette/Kodi/Backup/fireos/"
+# is 61 characters and 891px - 51px past the edge. That is the overflow this
+# budget exists to stop. 56 characters is roughly 818px and fits, with a little
+# room for a path made of wider-than-average characters.
+#
+# It is a readability heuristic, not a contract. A proportional font cannot be
+# budgeted exactly by counting characters, and a pathological path of nothing
+# but "m" would still overrun. Overrunning is not a NEW failure - it is what
+# every long row did before this - so an approximate budget costs nothing, while
+# an exact one would cost a font metric table the add-on has no way to keep
+# true across skins.
+ROW_BUDGET = 56
+
+# The gap between a row's action name and its greyed path.
+ROW_SEPARATOR = "   "
+
+# ASCII, not U+2026. The row is drawn in whatever font the current skin resolves
+# for font13, and three dots cannot come out as a missing-glyph box on a skin
+# that ships a narrower font file.
+ELLIPSIS = "..."
+
+
+def _elide_path(path, budget):
+    """`path` shortened to `budget` characters by dropping the MIDDLE of it.
+
+    The Backup and Restore rows carry the folder they act on. With the fleet's
+    real path that row is 61 characters where about 56 fit, and Estuary SCROLLS
+    the focused row rather than clipping it, so the row the owner is actually
+    pointing at is the one that becomes unreadable: a bench capture caught it
+    mid-scroll reading
+
+        /Users/moquette/Kodi/Backup/fireos/ | Backup   nfs://192.168.7.
+
+    with the row's own name sitting in the middle of the path. Correct data,
+    unreadable presentation, and worst on the row under the cursor.
+
+    Dropping the middle keeps the two parts that answer the two questions:
+
+      * the HEAD - scheme and host - answers "which share is this".
+      * the TAIL - as many whole trailing segments as fit - answers "which
+        folder on it", and that is the part that tells .../Backup/fireos from
+        .../Backup/tvos. Truncating from the right, which is what a dialog does
+        on its own, throws away exactly that.
+
+    Only whole path segments are kept, so the result never shows half a folder
+    name and never invents one. A path with no separators to cut on, or a host
+    so long that not even one trailing segment fits beside it, falls back to
+    keeping the tail alone; that is still the more informative end.
+
+    The FULL path is not lost: it is on the Backup/Restore tab of the add-on
+    settings, in the very setting this reads, and the Settings row of this same
+    menu jumps straight there.
+
+    Returns `path` untouched when it already fits, and for "", None, "Not set"
+    and "Dropbox" alike - none of which are long enough to elide."""
+    if not path or budget <= 0 or len(path) <= budget:
+        return path
+
+    # The head is scheme://host, and only that: the first "/" after the "://".
+    # A local path has none, and then the tail is the whole story.
+    head = ""
+    mark = path.find("://")
+    if mark != -1:
+        slash = path.find("/", mark + 3)
+        if slash != -1:
+            head = path[:slash]
+
+    # A trailing slash is worth keeping - it is what says "folder" - and it costs
+    # one character, so it is reserved out of the budget rather than counted as a
+    # segment.
+    trailing = "/" if path.endswith("/") and len(path) > 1 else ""
+    segments = [s for s in path[len(head) :].split("/") if s]
+    prefix = (head + "/" + ELLIPSIS) if head else ELLIPSIS
+
+    tail = ""
+    for segment in reversed(segments):
+        candidate = "/" + segment + tail
+        if len(prefix) + len(candidate) + len(trailing) > budget:
+            break
+        tail = candidate
+    if tail:
+        return prefix + tail + trailing
+
+    # Nothing whole fits beside the head. Keep the tail characters instead of the
+    # head ones: a truncated host is a host you cannot identify anyway, while the
+    # last characters of the path still name the folder.
+    if budget > len(ELLIPSIS):
+        return ELLIPSIS + path[-(budget - len(ELLIPSIS)) :]
+    return path[:budget]
+
+
 def _menu_rows(rows):
     """[(label, detail)] -> plain label strings, path folded into the row.
 
@@ -394,11 +495,20 @@ def _menu_rows(rows):
     ListItem.Label; nothing here needs a skin to cooperate, which is the whole
     point after 2026-07-22.
 
-    Long nfs:// paths can truncate on a narrow dialog; Estuary scrolls the
-    focused row, which covers the case that matters."""
+    A path too long for the row is elided in the MIDDLE (see _elide_path) rather
+    than left to the dialog. Estuary scrolls the FOCUSED row, so leaving it long
+    made the row under the cursor the ambiguous one - the row's own name would
+    slide into the middle of the path. The budget is per row, because the action
+    name shares the line with the path: "Restore" leaves one character less for
+    the folder than "Backup" does.
+
+    The colour markup is deliberately outside the budget. It is never drawn - it
+    is a formatting tag Kodi consumes - so counting it would shorten every path
+    by 20 characters for nothing."""
     out = []
     for label, detail in rows:
         if detail:
+            shown = _elide_path(detail, ROW_BUDGET - len(label) - len(ROW_SEPARATOR))
             # HEX, not the name "grey". A colour NAME is looked up in the skin's
             # palette and GUIColorManager falls back to sscanf("%x") on a miss,
             # which leaves 0 - alpha 0, i.e. the path renders INVISIBLE on any
@@ -406,7 +516,7 @@ def _menu_rows(rows):
             # this whole change exists to kill. FFA0A0A0 is byte-identical to what
             # both fleet skins call grey, so nothing looks different, and it
             # cannot vanish anywhere.
-            out.append("%s   [COLOR FFA0A0A0]%s[/COLOR]" % (label, detail))
+            out.append("%s%s[COLOR FFA0A0A0]%s[/COLOR]" % (label, ROW_SEPARATOR, shown))
         else:
             out.append(label)
     return out

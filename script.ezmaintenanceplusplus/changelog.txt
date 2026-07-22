@@ -1,3 +1,20 @@
+v2026.07.22.3
+- The folder shown beside Backup and Restore is readable again. With the folders this
+  fleet actually uses, the folder ran off the end of the row, and the row you were
+  pointing at was the worst one: Kodi slides a highlighted row's text sideways when it
+  does not fit, so the word "Backup" drifted into the middle of the path and you could
+  not tell where the row began or ended.
+- A folder too long for the row is now shortened in the MIDDLE, keeping the share it is
+  on and the last folders of the path. The Fire TV folder now reads
+  "nfs://192.168.7.2/.../Kodi/Backup/fireos/" instead of running off the row, so it is
+  still plainly the fireos folder and not the tvos one. Only whole folder names are
+  kept, so a name is never cut in half, and nothing slides any more whether the row is
+  highlighted or not.
+- The full folder is unchanged and still shown in one piece where you set it, on the
+  Backup/Restore tab of Settings, which the Settings row of the same menu opens.
+- Short folders, "Not set" and Dropbox are untouched, and the folder on the row is
+  still exactly the folder the action will use.
+
 v2026.07.22.2
 - When Backup or Restore says "Not set" and you pick it, EZ Maintenance++ now opens
   Settings ON the Backup/Restore tab, where that folder is set. It used to open

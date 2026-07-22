@@ -869,13 +869,52 @@ def test_ezmpp_keeps_its_own_window_properties():
     """EZM++'s own namespaced Window(10000) properties are its diagnostics surface and
     are not a skin coupling."""
     wiz_src = (MODULES / "wiz.py").read_text()
-    svc_src = (ADDON_ROOT / "service.py").read_text()
     for prop in ("ezm_skin_reapply", "ezm_boot_skin", "ezm_restore_verdict"):
         assert prop in wiz_src, "EZM++'s own property %s was stripped" % prop
-    assert "ezm_contract_fingerprint" in svc_src, (
-        "the contract fingerprint property was stripped - it is what binds "
-        "verification to the code the box is actually running (G-2)"
+
+
+def test_the_contract_fingerprint_machinery_is_gone_and_stays_gone():
+    """ezm_contract_fingerprint had exactly ONE reader, tools/verify_device.py.
+
+    That tool, its verification/*.json artifacts and the test pinning its file list
+    against service.py's were all DELETED on 2026-07-21 with the device-verification
+    gate. What was left behind was a hash nobody read, published at every boot under a
+    comment naming two files that no longer exist - which tells the next agent a gate
+    is watching when none is. Removed 2026-07-22.
+
+    Reinstating it needs a READER first, so this fails if the property, the file list
+    or the publisher comes back on its own. Asserted over the parsed CODE, not the
+    text: the comment recording the removal names all four, and a text scan would
+    either fail on the record of the removal or force the record to be deleted."""
+    import ast
+
+    svc_src = (ADDON_ROOT / "service.py").read_text()
+    tree = ast.parse(svc_src)
+    defined = set()
+    literals = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            defined.add(node.name)
+        elif isinstance(node, ast.Name):
+            defined.add(node.id)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            literals.add(node.value)
+    for gone in (
+        "_CONTRACT_FILES",
+        "CONTRACT_FINGERPRINT_PROPERTY",
+        "_contract_fingerprint",
+        "_publish_contract_fingerprint",
+    ):
+        assert gone not in defined, (
+            "%s is back in service.py with nothing reading it. If a verification gate "
+            "is wanted again, land the reader first." % gone
+        )
+    assert "ezm_contract_fingerprint" not in literals, (
+        "the fingerprint property is being published again and nothing reads it"
     )
+    # The bytecode purge is NOT part of that and must survive: a stale .pyc makes a
+    # box run the OLD code after a correct upgrade (observed on atv2, 2026-07-19).
+    assert "_purge_stale_bytecode" in svc_src
 
 
 def test_generic_kodi_api_paragraph_survives():

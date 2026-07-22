@@ -86,58 +86,25 @@ again:
   fake cannot express this, which is why 33 tests once stayed green through a real bug.
   `tests/test_tvos_sandbox_io_contract.py` covers the `ControlImage` write-through
   requirement and the foreign-local-VFS-read bug on top of it.
-- **`tools/verify_device.py` + `tests/test_storage_change_requires_device_verification.py`**
-  - a machine-generated hardware-verification gate: it pulls live device evidence over
-    Kodi's JSON-RPC and fails the suite if `nsud.py`/`wiz.py` changed without a fresh
-    `verification/<version>.json` artifact to back it up. "Fixed in code" is not a claim
-    this add-on gets to make unverified anymore. Scoped deliberately to just those two
-    files, not every module touching `xbmcvfs` (`control.py`/`wiz.py`/`maintenance.py`/
-    `onetap.py` were audited and do no raw userdata writes - the chokepoint lint above
-    already covers them) - see the rationale and tracked follow-up in that tool's own
-    `CONTRACT_FILES` comment.
+- **`service.py`'s boot-time `__pycache__` purge** - CPython invalidates a `.pyc` by the
+  source's recorded mtime AND size, and `tools/build.py` stamps every zip entry
+  1980-01-01 for reproducible builds, so across builds the mtime half is constant and
+  staleness detection collapses onto size alone. A same-length edit leaves a stale
+  `.pyc` valid and the box keeps running the OLD code after a correct upgrade landed
+  the new source beside it (observed on an Apple TV, 2026-07-19).
 
-### Running a device verification
+### Device verification: the gate is GONE (2026-07-21)
 
-`tools/verify_device.py` takes the box's JSON-RPC credential and address from the
-environment. This repo is public, so a credential or address committed here is a
-published one: no credential and no box address is baked into the tool's source, and
-the artifacts it writes no longer record the box's address either.
+`tools/verify_device.py`, the committed `verification/<version>.json` artifacts and the
+tests that enforced them were **deleted on 2026-07-21** together with the rest of the
+fleet process. Nothing in this repo pulls evidence off a box any more, and the
+`ezm_contract_fingerprint` window property the boxes used to publish for that tool was
+removed on 2026-07-22 once it was clear nothing read it. Older docs in `docs/` still
+describe the gate; they are history.
 
-> **Known gap (accepted, 2026-07-18):** git history before 2026-07-18 contains LAN
-> device addresses - in the `host` field of committed verification artifacts, in three
-> waiver rationales, and in an earlier revision of `RESUME.md`. All of it is redacted
-> at HEAD and the writer no longer emits `host` at all, but `git show` on an older
-> commit still reveals it. That history is deliberately NOT being rewritten: these are
-> non-routable private addresses (`192.168.7.x`) usable only from the LAN or tailnet,
-> and rewriting an evidence log is disproportionate to topology disclosure of that
-> kind. Going forward,
-> `tests/test_verify_device_checks.py::test_committed_verification_artifacts_carry_no_device_address`
-> scans the whole artifact, waiver prose included, and is deliberately not narrowed to
-> machine fields - a future waiver that types an IP into its justification fails the
-> suite.
-
-| Variable                | Required               | Meaning                                         |
-| ----------------------- | ---------------------- | ----------------------------------------------- |
-| `KODI_JSONRPC_USER`     | yes, for a device pull | JSON-RPC user (Settings > Services > Control)   |
-| `KODI_JSONRPC_PASSWORD` | yes, for a device pull | JSON-RPC password                               |
-| `KODI_JSONRPC_HOST`     | no                     | default for `--host`; an explicit `--host` wins |
-| `KODI_JSONRPC_PORT`     | no                     | defaults to Kodi's `8080`                       |
-
-```sh
-export KODI_JSONRPC_USER=<the box's JSON-RPC user>
-export KODI_JSONRPC_PASSWORD=<the box's JSON-RPC password>
-
-python3 tools/verify_device.py --host <firetv-ip>  --class android
-python3 tools/verify_device.py --host <appletv-ip> --class tvos
-
-# Offline: diff two artifacts (needs no credential and contacts nothing)
-python3 tools/verify_device.py --diff before.json after.json
-```
-
-There is **no fallback credential**. An unset user or password is a hard error naming
-the variables to set, never a silent retry against Kodi's stock defaults - a regression
-guarded by `tests/test_verify_device_checks.py`, which asserts on the source itself so
-re-introducing a default fails the suite even with a working environment.
+The rule it existed to serve did not go away: **"fixed" means verified on the affected
+device class, not verified in code.** Verify cheapest-first - the two-layer test fake
+here, then the wipeable macOS Kodi bench, then a real box.
 
 ## Repo, build, and tests
 

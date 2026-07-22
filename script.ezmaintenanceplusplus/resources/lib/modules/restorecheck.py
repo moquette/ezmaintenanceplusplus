@@ -34,9 +34,9 @@ Triage classes for a wipe leftover, in order of decreasing comfort:
 import xbmc
 import xbmcvfs
 
-# The key-bearing directories the release-gate verification probes on device
-# (tools/verify_device.py restore_contract) - the on-device twin checks the
-# same spots so the addon and the gate can never disagree about "clean".
+# The key-bearing directories a restore has to leave clean. (These were also the
+# spots the release-gate verification probed, until that gate was deleted on
+# 2026-07-21; this is now the only check, not the twin of one.)
 DUPLICATE_PROBE_DIRS = (
     "special://profile/addon_data/",
     "special://profile/addon_data/pvr.iptvsimple/",
@@ -115,9 +115,7 @@ def _sidecar_predicate():
     skin's dual-layer menu keys, so if this module carried its own copy of that
     rule the two would drift and the detector would alarm about exactly the keys
     the purge is designed to preserve - which is the defect this function had
-    (atv2, 23 false hits, verification/2026.07.19.4.json). One definition, one
-    behaviour. Importing it does not modify nsud.py, so the storage-contract
-    fingerprint is unaffected."""
+    (atv2, 23 false hits, 2026-07-19). One definition, one behaviour."""
     try:
         from resources.lib.modules import nsud
 

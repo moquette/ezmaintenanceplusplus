@@ -50,35 +50,38 @@ class Monitor(xbmc.Monitor):
 # silent and complete on its own.
 
 
-# The storage-contract files, in the same order tools/verify_device.py hashes them.
-# Keep the two lists identical or every verification reports a false mismatch;
-# tests/test_contract_fingerprint_matches_the_gate.py pins that they agree.
-_CONTRACT_FILES = (
-    "resources/lib/modules/nsud.py",
-    "resources/lib/modules/nsub.py",
-    "resources/lib/modules/onetap.py",
-    "resources/lib/modules/wiz.py",
-)
-CONTRACT_FINGERPRINT_PROPERTY = "ezm_contract_fingerprint"
+# REMOVED 2026-07-22: _CONTRACT_FILES, _contract_fingerprint,
+# _publish_contract_fingerprint and the ezm_contract_fingerprint window property.
+# They existed for ONE reader, tools/verify_device.py, which published the hash of
+# the developer's working tree while the box only ever asserted a hand-typed version
+# string - so a box running an older build could produce a green artifact certifying
+# code it had never run. That tool, its committed verification/*.json artifacts and
+# the test that pinned the two file lists together were all DELETED on 2026-07-21
+# with the rest of the device-verification gate. Nothing has read the property since.
+# Computing a hash nobody reads, under a comment naming two files that no longer
+# exist, is worse than nothing: it tells the next agent a gate is watching when none
+# is. Do not reinstate it; if a gate is ever wanted again, it needs a reader first.
+#
+# _purge_stale_bytecode below is NOT part of that and stays. It has its own reason.
 
 
 def _purge_stale_bytecode():
-    """Delete this add-on's __pycache__ so the source we hash is the code that runs.
+    """Delete this add-on's __pycache__ so what runs next start is the source on disk.
 
-    Without this the contract fingerprint can certify bytecode the source no longer
-    describes. CPython invalidates a .pyc by comparing the SOURCE's mtime AND size
-    recorded in its header; it is not content-hashed. tools/build.py stamps every zip
-    entry 1980-01-01 for reproducible builds, so across builds the mtime half is a
-    CONSTANT and staleness detection collapses onto size alone. Any edit that
-    preserves byte length - a flipped comparison, a same-length constant, a reflowed
-    docstring - leaves a stale .pyc valid. The box would then execute old bytecode
-    while _contract_fingerprint() reports the NEW source hash and the gate goes green:
-    G-2 reopened through the one door the fingerprint cannot see.
+    CPython invalidates a .pyc by comparing the SOURCE's mtime AND size recorded in
+    its header; it is not content-hashed. tools/build.py stamps every zip entry
+    1980-01-01 for reproducible builds, so across builds the mtime half is a CONSTANT
+    and staleness detection collapses onto size alone. Any edit that preserves byte
+    length - a flipped comparison, a same-length constant, a reflowed docstring -
+    leaves a stale .pyc valid, and the box goes on executing the OLD code after a
+    correct upgrade landed the new source beside it. That is not theoretical: stale
+    __pycache__ was observed on atv2 on 2026-07-19, and it is why a fix can appear to
+    have failed on a box that has it.
 
-    Stale __pycache__ was observed on atv2 on 2026-07-19 and could NOT be removed with
-    devicectl. It can be removed from in here, because the add-on runs on the box with
-    write access to its own directory. Best-effort and silent: a failure leaves the
-    previous behaviour, never a broken start."""
+    That stale __pycache__ could NOT be removed with devicectl. It can be removed from
+    in here, because the add-on runs on the box with write access to its own
+    directory. Best-effort and silent: a failure leaves the previous behaviour, never
+    a broken start."""
     try:
         base = os.path.dirname(os.path.abspath(__file__))
         for root, dirs, _files in os.walk(base):
@@ -101,65 +104,17 @@ def _purge_stale_bytecode():
         pass
 
 
-def _contract_fingerprint():
-    """Hash THIS BOX'S INSTALLED storage-contract files. "" if it cannot be computed.
-
-    This closes gate defect G-2. verify_device.py's own fingerprint is computed from
-    the developer's LOCAL working tree, and the only thing the box asserted was
-    addon_version_on_box - a hand-typed date string that does NOT move when contract
-    code changes. So a box running an older build produced a fully green artifact
-    certifying code it had never run. That is not theoretical: it happened on
-    2026-07-19, when a docstring edit after deployment left both boxes on the previous
-    build under an unchanged version while the artifact claimed the new fingerprint.
-
-    Hashing the INSTALLED files (rather than baking a value in at package time) means
-    there is no packaged artifact that can drift from the code beside it: the box
-    reports what it is actually running, whatever put it there - a release, a manual
-    adb push, or a half-finished copy."""
-    try:
-        import hashlib
-
-        base = os.path.dirname(os.path.abspath(__file__))
-        h = hashlib.sha256()
-        for rel in sorted(_CONTRACT_FILES):
-            path = os.path.join(base, *rel.split("/"))
-            with open(path, "rb") as fh:
-                h.update(fh.read())
-        return h.hexdigest()
-    except Exception:
-        # "" is reported as "the box could not tell us", which the gate must treat as
-        # unverified - never as a match.
-        return ""
-
-
-def _publish_contract_fingerprint():
-    """Publish the installed-code fingerprint for verify_device.py. Never raises."""
-    try:
-        xbmcgui.Window(10000).setProperty(
-            CONTRACT_FINGERPRINT_PROPERTY, _contract_fingerprint()
-        )
-    except Exception:
-        pass
-
-
 def _startup_sequence(monitor):
     """The boot-time steps, in order, extracted so the ORDER is testable.
 
     This used to be inline under __main__, which meant nothing could assert it: a
-    mutation wrapping the publish in `if False:` passed the whole suite, and the only
-    guard was a test checking that two statements were textually adjacent.
-
-    The bytecode purge runs FIRST because the contract fingerprint is only meaningful
-    if the source being hashed is what the next start will actually execute. The
-    publish runs SECOND, before any wait, so verify_device.py can read what this box
-    is running even if a later step blocks or fails - it is a pure hash of installed
-    files, so there is nothing to wait for."""
+    mutation wrapping a step in `if False:` passed the whole suite, and the only guard
+    was a test checking that two statements were textually adjacent."""
     # Stale-key migration FIRST, so files a "vector everything" era left shadowed in
     # NSUserDefaults are visible on disk before the post-restore check below reads
     # them.
     _maybe_purge_stale_nsud_keys()
     _purge_stale_bytecode()
-    _publish_contract_fingerprint()
     _maybe_resume_paused_pvr()
     _maybe_restore_check(monitor)
 

@@ -259,19 +259,20 @@ def format_backup_report(report, zip_name=""):
 def VERIFY_BACKUP_ARCHIVE():
     """Owner tool: pick a backup zip (same restore.path picker restore uses), open
     it READ-ONLY, and report what is inside. Never extracts, never restores."""
-    zipFolder = control.setting("restore.path")
-    try:
-        # Reuse wiz's baked-nfs-port fix when this build has it (see wiz.py: Kodi's
-        # browse dialog bakes :2049 into nfs:// paths, which then fail to list).
-        from resources.lib.modules import wiz
+    # wiz.configured_path is the one definition of "configured" this add-on has:
+    # it strips whitespace (so "   " bails here instead of failing later) and strips
+    # the port Kodi's browse dialog bakes into nfs:// paths (which breaks listing).
+    # The Backup/Restore row shows the same value, so what is on screen is what this
+    # reads.
+    from resources.lib.modules import wiz
 
-        if hasattr(wiz, "_strip_nfs_port"):
-            zipFolder = wiz._strip_nfs_port(zipFolder)
-    except Exception:
-        pass
-    if zipFolder == "" or zipFolder is None:
+    zipFolder = wiz.configured_path("restore.path")
+    if zipFolder == "":
         control.infoDialog("Please Setup a Zip Files Location first")
-        control.openSettings()
+        # ON the Backup/Restore tab, where restore.path actually is. A plain
+        # openSettings() lands on Maintenance: told to set a path, then dropped on the
+        # wrong tab with nothing on screen saying which one.
+        control.openSettingsTab(control.SETTINGS_TAB_BACKUP_RESTORE)
         return
     try:
         _dirs, _files = xbmcvfs.listdir(zipFolder)
@@ -360,13 +361,20 @@ def _path_detail(setting_id):
 
     Says the awkward states plainly. "Not set" is what makes Backup and Restore
     bail into the settings window, and this is the one place she is already
-    looking when it happens."""
+    looking when it happens.
+
+    It reports what the ACTION will use, via the action's own wiz.configured_path,
+    not the raw setting. Two things used to differ. A whitespace-only setting showed
+    "Not set" while Backup and Restore treated it as configured and pushed on, so the
+    row told the truth and the action did not. And the row printed the nfs:// port
+    that both actions strip before using (the live boxes really do carry :2049 in
+    that setting), so the folder on screen was not the folder written to."""
     try:
         if control.setting("destination") == DESTINATION_DROPBOX:
             return "Dropbox"
-        # .strip(): a whitespace-only setting is not a path, and rendering it
-        # would put a separator on screen with nothing after it.
-        return (control.setting(setting_id) or "").strip() or "Not set"
+        from resources.lib.modules import wiz
+
+        return wiz.configured_path(setting_id) or "Not set"
     except Exception:
         # The second line is decoration. A settings read that throws must never
         # take the menu down with it.
@@ -404,41 +412,10 @@ def _menu_rows(rows):
     return out
 
 
-# Index of the "Backup/Restore" tab in resources/settings.xml, counted from the top
-# in file order. Asserted by a test, so reordering the categories fails the suite
-# rather than silently opening the wrong tab.
-SETTINGS_TAB_BACKUP_RESTORE = 1
-
-
-def _open_settings_tab(index, timeout=5.0, poll=0.1):
-    """Open this add-on's settings ON a given tab. Best effort by design.
-
-    Kodi 19+ builds the category buttons dynamically and gives them NEGATIVE control
-    ids: GUIDialogSettingsBase.h defines CONTROL_SETTINGS_START_BUTTONS as -200, and
-    SetupControls assigns `CONTROL_SETTINGS_START_BUTTONS + offset` in settings.xml
-    order, so tab N is control -200 + N. Focusing it makes the dialog rebuild the
-    settings pane for that category, which is exactly the jump we want. (The
-    100/200 arithmetic in control.openSettings(query) is Krypton-era and no longer
-    addresses anything - do not copy it.)
-
-    Both builtins are ASYNC, so SetFocus must not be fired until the dialog is
-    actually up; otherwise it lands on whatever window is still on screen. If it
-    never comes up, or a probe throws, we leave her on the settings window's first
-    tab - one click from where she asked to be, never an error."""
-    control.openSettings()
-    try:
-        monitor = xbmc.Monitor()
-        waited = 0.0
-        while waited < timeout:
-            if xbmc.getCondVisibility("Window.IsActive(addonsettings)"):
-                xbmc.executebuiltin("SetFocus(%i)" % (-200 + index))
-                return True
-            if monitor.waitForAbort(poll):  # Kodi is shutting down
-                return False
-            waited += poll
-    except Exception:
-        pass
-    return False
+# MOVED 2026-07-22 to control.openSettingsTab / control.SETTINGS_TAB_BACKUP_RESTORE.
+# The same jump is needed by wiz.backup and wiz.restoreFolder when they bail on an
+# unset path, and wiz cannot import default.py. One implementation, in the module all
+# three already import.
 
 
 def _restore_verdict():
@@ -452,7 +429,7 @@ def _restore_verdict():
         return False
 
 
-def _safe_to_re_present(monitor=None, settle=0.25):
+def _safe_to_re_present(monitor=None, settle=0.25, opened_before=None):
     """False when re-presenting the Backup/Restore menu would fight another window.
 
     Two ASYNC builtins can take the screen between iterations, invisibly to a
@@ -467,11 +444,27 @@ def _safe_to_re_present(monitor=None, settle=0.25):
         restore.path. Re-presenting would drop a modal select dialog on top of the
         settings window the user was just sent to.
 
-    The short wait is load-bearing twice over: it IS the abort check, and it gives
-    the async OpenSettings time to actually become the active window before we look.
-    Best-effort by design - if the probes themselves fail we keep the menu open,
-    because staying is the behaviour the owner asked for and the abort check is the
-    backstop for the one case where leaving matters."""
+    `opened_before` is control.open_settings_count() sampled BEFORE the sub-action
+    ran, and it is the authoritative signal for the second case. Asking Kodi whether
+    the settings window is active yet is a RACE the guard used to lose: this function
+    settled 0.25s and looked once, while _open_settings_tab (right above) polls the
+    very same window for up to 5s because on an appliance that is how long it can
+    take. A late window meant the probe said "nothing there", the menu re-presented,
+    and the modal landed on top of the settings window anyway - exactly the defect
+    the guard exists to prevent. The call COUNT cannot lose that race: the builtin was
+    either fired or it was not, and the answer is already known before we look.
+
+    The window probe stays as a backstop for anything that opens the settings window
+    without going through control.openSettings. The short wait is still the abort
+    check. Best-effort by design - if the probes themselves fail we keep the menu
+    open, because staying is the behaviour the owner asked for and the abort check is
+    the backstop for the one case where leaving matters."""
+    if opened_before is not None:
+        try:
+            if control.open_settings_count() != opened_before:
+                return False  # a sub-action bailed to the settings window
+        except Exception:
+            pass  # older control.py without the counter: fall back to the probe
     try:
         if monitor is None:
             monitor = xbmc.Monitor()
@@ -827,6 +820,10 @@ elif action == "backup_restore":
             ]
         )
         s_type = control.selectDialog(typeOfBackup)
+        # Sampled BEFORE the sub-action so _safe_to_re_present can tell "it bailed to
+        # the settings window" from "the window has not painted yet" without racing
+        # an async builtin. See _safe_to_re_present.
+        _opened_before = control.open_settings_count()
         if s_type == 0:
             modes = ["Full Backup", "Addons Settings"]
             select = control.selectDialog(modes)
@@ -868,11 +865,11 @@ elif action == "backup_restore":
             # rather than leaning on _safe_to_re_present: that probe is a backstop
             # for sub-actions that bail to settings on their own, and a deliberate
             # exit must not depend on a best-effort probe returning the right answer.
-            _open_settings_tab(SETTINGS_TAB_BACKUP_RESTORE)
+            control.openSettingsTab(control.SETTINGS_TAB_BACKUP_RESTORE)
             break
         else:
             break
-        if not _safe_to_re_present():
+        if not _safe_to_re_present(opened_before=_opened_before):
             break
 
 elif action == "speedtest":

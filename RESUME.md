@@ -58,20 +58,15 @@ status; `CLAUDE.md` carries the short version at the top.
   bundled inside the `repository.tony7bones` add-on's own zip).
 - Tests: `cd ~/Code/moquette/kodi/ezmpp && /opt/homebrew/bin/python3 -m
   pytest tests/ -q` (system `python3` on this machine is 3.9, too old for this suite).
-  `ruff check tests/ tools/` must also be clean. Includes the tvOS storage-contract
-  hardware-verification gate (`test_storage_change_requires_device_verification.py` +
-  `tools/verify_device.py` + `verification/*.json`) - a change to `nsud.py`/`boxsetup.py`
-  requires a fresh two-class (`tvos`+`android`) device run before it ships; see that
-  test's docstring.
+  `ruff check tests/ tools/` must also be clean.
 
-## Device verification credentials
+## Device verification: DELETED 2026-07-21
 
-`tools/verify_device.py` takes the box's JSON-RPC user, password, host and port
-from the environment (`KODI_JSONRPC_USER`, `KODI_JSONRPC_PASSWORD`,
-`KODI_JSONRPC_HOST`, `KODI_JSONRPC_PORT`). Nothing device-specific is baked into
-the source and there is no fallback default: this repo is public, so a credential
-committed here is a published credential. See the "Running a device verification"
-section in `README.md`.
+`tools/verify_device.py`, `verification/*.json` and the test that gated a
+`nsud.py` change on a fresh two-class device run are GONE, with the rest of the
+fleet process. No JSON-RPC credential is needed by anything in this repo any
+more. What survives is the rule, not the machinery: "fixed" means verified on the
+affected device class, cheapest-first (test fake, macOS Kodi bench, real box).
 
 ## Dropbox credentials - do not re-add a secret
 

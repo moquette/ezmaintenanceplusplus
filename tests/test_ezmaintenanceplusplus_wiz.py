@@ -321,31 +321,128 @@ def test_backup_confirm_shows_final_filename_then_proceeds(wiz, monkeypatch, tmp
 # here could not tell a live call from a commented-out one.
 
 
-def test_backup_opens_native_settings_when_path_unset(wiz, monkeypatch, tmp_path):
-    """backup() with an empty download.path must open the (now-working) NATIVE
-    settings dialog via control.openSettings, not the retired custom screen."""
-    backupdata = tmp_path / "home"
-    backupdata.mkdir()
-    monkeypatch.setattr(wiz.control, "HOME", str(backupdata))
-    monkeypatch.setattr(wiz.control, "setting", lambda key: "")
+def _record_settings_jumps(wiz, monkeypatch):
+    """Record both settings entry points separately.
 
-    calls = []
-    monkeypatch.setattr(wiz.control, "openSettings", lambda *a, **k: calls.append(True))
+    A bail that opens the settings window on its FIRST category (Maintenance) is the
+    defect: she is told to set a path and then dropped on the wrong tab. Recording the
+    plain openSettings AND the tab-aware openSettingsTab is what lets a test say which
+    one was used, rather than "settings opened somehow"."""
+    plain, tabs = [], []
+    monkeypatch.setattr(wiz.control, "openSettings", lambda *a, **k: plain.append(True))
+    monkeypatch.setattr(
+        wiz.control, "openSettingsTab", lambda index, **k: tabs.append(index)
+    )
+    return plain, tabs
+
+
+def _backup_env_with_setting(wiz, monkeypatch, tmp_path, value):
+    backupdata = tmp_path / "home"
+    backupdata.mkdir(exist_ok=True)
+    monkeypatch.setattr(wiz.control, "HOME", str(backupdata))
+    monkeypatch.setattr(wiz.control, "setting", lambda key: value)
+
+
+def test_backup_jumps_to_the_backup_restore_tab_when_path_unset(
+    wiz, monkeypatch, tmp_path
+):
+    """backup() with an empty download.path must open the settings window ON the
+    Backup/Restore tab, where download.path actually lives.
+
+    A plain openSettings() lands on Maintenance, the first category: the message says
+    "Please Setup a Path for Downloads first" and then nothing on screen says where."""
+    _backup_env_with_setting(wiz, monkeypatch, tmp_path, "")
+    plain, tabs = _record_settings_jumps(wiz, monkeypatch)
 
     wiz.backup(mode="full")
-    assert calls == [True]
+
+    assert tabs == [wiz.control.SETTINGS_TAB_BACKUP_RESTORE], (
+        "the bail must target the Backup/Restore tab, not just open settings: "
+        "tab jumps %r, plain opens %r" % (tabs, plain)
+    )
+    assert plain == [], "the settings window must not also be opened untargeted"
 
 
-def test_restore_opens_native_settings_when_path_unset(wiz, monkeypatch):
-    """restoreFolder() with an empty restore.path must open the NATIVE settings
-    dialog via control.openSettings, not the retired custom screen."""
+def test_restore_jumps_to_the_backup_restore_tab_when_path_unset(wiz, monkeypatch):
+    """Same rule for restoreFolder() and restore.path."""
     monkeypatch.setattr(wiz.control, "setting", lambda key: "")
-
-    calls = []
-    monkeypatch.setattr(wiz.control, "openSettings", lambda *a, **k: calls.append(True))
+    plain, tabs = _record_settings_jumps(wiz, monkeypatch)
 
     wiz.restoreFolder()
-    assert calls == [True]
+
+    assert tabs == [wiz.control.SETTINGS_TAB_BACKUP_RESTORE], (
+        "the bail must target the Backup/Restore tab: tab jumps %r, plain opens %r"
+        % (tabs, plain)
+    )
+    assert plain == []
+
+
+def test_backup_treats_a_whitespace_only_path_as_unset(wiz, monkeypatch, tmp_path):
+    """ "   " is not a folder, and the menu row already says so.
+
+    backup() used to compare the RAW setting to "", so a whitespace-only download.path
+    walked past this guard and the backup ran on toward a path that cannot exist -
+    while the Backup row on the menu right before it read "Not set". The row told the
+    truth and the action did not."""
+    _backup_env_with_setting(wiz, monkeypatch, tmp_path, "   ")
+    plain, tabs = _record_settings_jumps(wiz, monkeypatch)
+    built = []
+    monkeypatch.setattr(wiz, "CreateZip", lambda *a, **k: built.append(a))
+
+    wiz.backup(mode="full")
+
+    assert tabs == [wiz.control.SETTINGS_TAB_BACKUP_RESTORE], (
+        "a whitespace-only download.path must bail to the settings tab like any "
+        "other unset path: tab jumps %r, plain opens %r" % (tabs, plain)
+    )
+    assert built == [], "nothing may be zipped against a whitespace-only path"
+
+
+def test_restore_treats_a_whitespace_only_path_as_unset(wiz, monkeypatch):
+    """The mirror for restore.path: listing "   " lists nothing and reports an empty
+    folder, which reads as "your backups are gone" rather than "you have not set a
+    folder yet"."""
+    monkeypatch.setattr(wiz.control, "setting", lambda key: " \t ")
+    plain, tabs = _record_settings_jumps(wiz, monkeypatch)
+    listed = []
+
+    def _listdir(path):
+        listed.append(path)
+        return ([], [])
+
+    monkeypatch.setattr(wiz.xbmcvfs, "listdir", _listdir)
+
+    wiz.restoreFolder()
+
+    assert tabs == [wiz.control.SETTINGS_TAB_BACKUP_RESTORE], (
+        "a whitespace-only restore.path must bail to the settings tab: tab jumps %r, "
+        "plain opens %r" % (tabs, plain)
+    )
+    assert listed == [], "nothing may be listed against a whitespace-only path: %r" % (
+        listed,
+    )
+
+
+def test_configured_path_strips_the_nfs_port_the_actions_discard(wiz, monkeypatch):
+    """One definition of "configured", shared by the actions and the menu row.
+
+    Kodi's browse dialog bakes :2049 into nfs:// paths and that form breaks Kodi's own
+    NFS client, so every reader strips it. The row used to print the raw setting and
+    therefore named a folder with a port the add-on discards - visible on the live
+    boxes, whose setting really does carry :2049."""
+    monkeypatch.setattr(
+        wiz.control, "setting", lambda key: "nfs://192.168.7.2:2049/volume1/Kodi"
+    )
+    assert wiz.configured_path("download.path") == "nfs://192.168.7.2/volume1/Kodi"
+
+    def _boom(key):
+        raise RuntimeError("settings unreadable")
+
+    monkeypatch.setattr(wiz.control, "setting", _boom)
+    assert wiz.configured_path("download.path") == "", (
+        "an unreadable setting is 'not configured', never a crash: the callers are a "
+        "menu row and a bail guard"
+    )
 
 
 def test_restore_does_not_rewrite_settings_verbatim_restore(wiz, monkeypatch, tmp_path):

@@ -26,6 +26,64 @@ import pytest
 
 ADDON_ROOT = Path(__file__).parent.parent / "script.ezmaintenanceplusplus"
 DEFAULT_PY = ADDON_ROOT / "default.py"
+MODULES = ADDON_ROOT / "resources" / "lib" / "modules"
+
+
+def _real_tab_index():
+    """control.SETTINGS_TAB_BACKUP_RESTORE, read out of control.py's source.
+
+    Hardcoding 1 here would let the constant and the menu drift apart silently: the
+    stub would keep asserting the old tab after the real one moved. control.py is not
+    importable in this fixture (it builds Kodi objects at import), so the value is
+    lifted from its source and fails loudly if the constant is renamed or deleted.
+    Whether that value is the RIGHT tab is settled separately, against settings.xml,
+    by test_the_backup_restore_tab_index_matches_what_kodi_would_render."""
+    import ast
+
+    src = (MODULES / "control.py").read_text()
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Assign) and any(
+            getattr(t, "id", "") == "SETTINGS_TAB_BACKUP_RESTORE" for t in node.targets
+        ):
+            return ast.literal_eval(node.value)
+    raise AssertionError("control.py no longer defines SETTINGS_TAB_BACKUP_RESTORE")
+
+
+def _real_configured_path(control):
+    """wiz.configured_path's REAL source, bound to this fixture's control stub.
+
+    The Backup/Restore rows and the actions behind them must agree on what
+    "configured" means - a whitespace-only setting is not a path, and the nfs:// port
+    Kodi's browse dialog bakes in is stripped before use. A hand-written stub here
+    would be a SECOND copy of that rule, and two copies of a predicate drifting is the
+    exact bug being fixed, so it could not catch a regression.
+
+    wiz.py is far too heavy to import for a menu test (it pulls the whole backup
+    stack), so this lifts the actual definitions out of its source and binds them to
+    the stub control. If wiz stops defining them, or renames them, this fails loudly
+    instead of quietly testing a copy."""
+    import ast
+    import re as _re
+
+    src = (MODULES / "wiz.py").read_text()
+    tree = ast.parse(src)
+    wanted = {"_strip_nfs_port", "configured_path"}
+    chunks = []
+    saw_regex = False
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name in wanted:
+            chunks.append(ast.get_source_segment(src, node))
+            wanted.discard(node.name)
+        elif isinstance(node, ast.Assign) and any(
+            getattr(t, "id", "") == "_NFS_PORT_RE" for t in node.targets
+        ):
+            chunks.append(ast.get_source_segment(src, node))
+            saw_regex = True
+    assert not wanted, "wiz.py no longer defines %s" % sorted(wanted)
+    assert saw_regex, "wiz.py no longer defines _NFS_PORT_RE"
+    ns = {"re": _re, "control": control}
+    exec("\n".join(chunks), ns)
+    return ns["configured_path"]
 
 
 # --------------------------------------------------------------------------- #
@@ -223,6 +281,28 @@ def dmod(monkeypatch):
     control.infoDialog = lambda msg, *a, **k: control.infoDialog_calls.append(msg)
     control.openSettings_calls = []
     control.openSettings = lambda *a, **k: control.openSettings_calls.append(a)
+    # The real control.openSettings counts its own calls (control.py), because
+    # Addon.OpenSettings is ASYNC and "is the settings window up yet?" is a race the
+    # menu guard used to lose. Derived from the recorded calls rather than kept as a
+    # separate counter, so a test that swaps openSettings for its own recorder still
+    # counts correctly - and so a guard that ignores the count cannot be hidden by a
+    # stub that never moves.
+    control.open_settings_count = lambda: len(control.openSettings_calls)
+    # The tab-aware open. Its own behaviour (wait for the window, THEN SetFocus on
+    # -200 + index) is tested against the REAL control.py in
+    # test_control_select_dialog.py; here it records the index it was asked for, so a
+    # menu test proves default.py reached the right entry point with the right tab.
+    # It calls openSettings() because the real one does, which keeps the settings-bail
+    # counter the menu guard reads behaving exactly as it does on a box.
+    control.openSettingsTab_calls = []
+
+    def _open_settings_tab(index, **k):
+        control.openSettingsTab_calls.append(index)
+        control.openSettings()
+        return True
+
+    control.openSettingsTab = _open_settings_tab
+    control.SETTINGS_TAB_BACKUP_RESTORE = _real_tab_index()
     _submodule("control", control)
 
     # ---- ui stub ---- #
@@ -284,6 +364,16 @@ def dmod(monkeypatch):
     ui.restart = lambda: None
     _submodule("ui", ui)
 
+    # ---- wiz stub ---- #
+    # Always installed: the menu rows and VERIFY_BACKUP_ARCHIVE both resolve their
+    # folder through wiz.configured_path now, so there is one definition of
+    # "configured" instead of the row and the action each having their own.
+    wiz = types.ModuleType("resources.lib.modules.wiz")
+    wiz.backup = lambda *a, **k: None
+    wiz.restoreFolder = lambda *a, **k: None
+    wiz.configured_path = _real_configured_path(control)
+    _submodule("wiz", wiz)
+
     # ---- maintenance / backtothefuture stubs ---- #
     maintenance = types.ModuleType("resources.lib.modules.maintenance")
     maintenance.getNextMaintenance = lambda: 0
@@ -321,6 +411,7 @@ def dmod(monkeypatch):
     ns.xbmcplugin = xbmcplugin
     ns.control = control
     ns.ui = ui
+    ns.wiz = wiz
     ns.set_nsud = set_nsud
     return ns
 
@@ -364,11 +455,7 @@ def test_backup_restore_offers_verify_last(dmod, monkeypatch):
     after it: a jump to the config tab, not a backup operation at all. default.py
     routes at IMPORT time, so drive the real dispatch with the querystring and
     inspect the options the select dialog was actually offered."""
-    wiz = types.ModuleType("resources.lib.modules.wiz")
-    wiz.backup = lambda *a, **k: None
-    wiz.restoreFolder = lambda *a, **k: None
-    monkeypatch.setitem(sys.modules, "resources.lib.modules.wiz", wiz)
-    setattr(sys.modules["resources.lib.modules"], "wiz", wiz)
+    _stub_wiz(monkeypatch)
 
     dmod.control.select_calls.clear()
     dmod.control.select_result = -1  # cancel the dialog; we only want the options
@@ -454,6 +541,55 @@ def test_an_unconfigured_path_says_so_instead_of_reading_blank(dmod, monkeypatch
     )
     assert lines["Backup"] == "Not set"
     assert lines["Restore"] == "Not set"
+
+
+def test_a_whitespace_only_path_reads_as_unset_to_the_row_AND_the_action(
+    dmod, monkeypatch
+):
+    """The row and the action must not disagree about what "configured" means.
+
+    They used to. The row stripped the setting and said "Not set", while backup() and
+    restoreFolder() compared the RAW value to "" - so "   " was a configured folder to
+    them, they walked straight past the bail-to-settings guard, and failed later on
+    something the owner could do nothing with. The row told the truth and the action
+    did not.
+
+    Asserted on BOTH sides in one test, because either side alone can be made green by
+    changing only itself."""
+    lines = _row_paths(
+        dmod,
+        monkeypatch,
+        "ezm_br_paths_whitespace_uut",
+        {"destination": "0", "download.path": "   ", "restore.path": "\t \n"},
+    )
+    assert lines["Backup"] == "Not set"
+    assert lines["Restore"] == "Not set"
+    # The very function the actions gate on (bound to this control stub from wiz.py's
+    # own source), so this is the action's answer, not a restatement of the row's.
+    assert dmod.wiz.configured_path("download.path") == ""
+    assert dmod.wiz.configured_path("restore.path") == ""
+
+
+def test_the_rows_show_the_path_the_action_will_actually_use(dmod, monkeypatch):
+    """Kodi's browse dialog bakes :2049 into nfs:// paths and both actions STRIP it
+    before use (the port form breaks Kodi's own NFS client). The row used to print the
+    raw setting, so it named a folder with a port the add-on discards - and the live
+    boxes really do carry :2049 in that setting, so it was on screen every day.
+
+    What is on the row is what the action will use."""
+    lines = _row_paths(
+        dmod,
+        monkeypatch,
+        "ezm_br_paths_nfsport_uut",
+        {
+            "destination": "1",
+            "download.path": "nfs://192.168.7.2:2049/volume1/Kodi/Backup/fireos",
+            "restore.path": "nfs://192.168.7.2:2049/volume1/Kodi/Backup",
+        },
+    )
+    assert lines["Backup"] == "nfs://192.168.7.2/volume1/Kodi/Backup/fireos"
+    assert lines["Restore"] == "nfs://192.168.7.2/volume1/Kodi/Backup"
+    assert ":2049" not in lines["Backup"] + lines["Restore"]
 
 
 def test_dropbox_destination_never_reports_a_local_path(dmod, monkeypatch):
@@ -553,11 +689,9 @@ def test_settings_entry_opens_the_backup_restore_tab_and_ends_the_menu(
 ):
     """The Settings entry must land ON the Backup/Restore tab, then stop the menu.
 
-    Kodi 19+ gives the settings dialog's category buttons dynamic NEGATIVE control
-    ids (CONTROL_SETTINGS_START_BUTTONS = -200, GUIDialogSettingsBase.h), assigned in
-    settings.xml order, so tab 1 is SetFocus(-199). Asserting the exact builtin is
-    the only way to catch a silent regression to the Krypton-era 100/200 arithmetic,
-    which addresses nothing on Omega and would leave her on the first tab.
+    It must go through control.openSettingsTab, which waits for the dialog before
+    focusing the tab (both builtins are async). A bare control.openSettings() opens on
+    the FIRST category, Maintenance, which is not where any path setting lives.
 
     The menu must NOT re-present afterwards: she asked for the settings window, and a
     modal select dialog on top of it is the defect the loop guard exists to prevent."""
@@ -565,17 +699,15 @@ def test_settings_entry_opens_the_backup_restore_tab_and_ends_the_menu(
     dmod.control.select_calls.clear()
     dmod.control.select_results = [3]  # Settings, and nothing after it
 
-    # Model Kodi honouring the async Addon.OpenSettings builtin.
-    def _open_settings(*a, **k):
-        dmod.control.openSettings_calls.append(a)
-        dmod.xbmc._active_window = "addonsettings"
-
-    dmod.control.openSettings = _open_settings
-
     _drive_backup_restore(monkeypatch, "ezm_br_settings_entry_uut")
 
-    assert dmod.control.openSettings_calls, "the Settings entry never opened settings"
-    assert "SetFocus(-199)" in dmod.xbmc._executed, dmod.xbmc._executed
+    assert dmod.control.openSettingsTab_calls == [
+        dmod.control.SETTINGS_TAB_BACKUP_RESTORE
+    ], (
+        "the Settings entry must open the Backup/Restore TAB, not the settings "
+        "window's first category: %r / %r"
+        % (dmod.control.openSettingsTab_calls, dmod.control.openSettings_calls)
+    )
     menus = [c for c in dmod.control.select_calls if c and c[0].startswith("Backup")]
     assert len(menus) == 1, (
         "the menu must not re-present on top of the Settings window: %d presentations"
@@ -583,147 +715,178 @@ def test_settings_entry_opens_the_backup_restore_tab_and_ends_the_menu(
     )
 
 
-def test_the_backup_restore_settings_tab_index_matches_settings_xml(dmod):
-    """SETTINGS_TAB_BACKUP_RESTORE is a POSITION in settings.xml, not an id lookup.
+# --------------------------------------------------------------------------- #
+# The tab index: what KODI renders, not what the file lists
+# --------------------------------------------------------------------------- #
+class UnmodelledCategory(AssertionError):
+    """A settings.xml category whose presence cannot be decided by reading the file."""
 
-    Kodi numbers the category buttons by file order, so inserting or reordering a
-    category silently retargets the jump. This test is the tie: it re-derives the
-    index from the XML and fails the reorder instead of shipping a Settings entry
-    that opens the wrong tab."""
+
+def kodi_category_buttons(xml_text):
+    """The category ids Kodi would draw as buttons, in button order.
+
+    Kodi does NOT number the category buttons by file order.
+    GUIDialogSettingsBase assigns CONTROL_SETTINGS_START_BUTTONS (-200) + offset over
+    whatever SettingSection::GetCategories(level) returns, and that skips any category
+    that fails IsVisible() or MeetsRequirements(), and any whose groups are empty at
+    the current level (SettingSection.cpp). So a category that is present in the file
+    but not rendered shifts every tab below it UP by one, and a jump aimed by file
+    order then lands on the wrong tab while a file-order test stays green.
+
+    This models the parts that can be decided statically:
+      * a category with no unconditionally visible setting is NOT rendered (skipped);
+      * a category with at least one setting at level 0, with no <visible> of its own
+        and no visibility dependency, IS rendered;
+      * anything else - a category carrying its own <visible>/<requirement>, or one
+        whose only settings are conditional or above level 0 - is UNDECIDABLE from the
+        file, and raises rather than guessing. A constant that cannot be derived is
+        not a constant that may be shipped."""
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(xml_text)
+    section = root.find("section")
+    assert section is not None, "settings.xml has no <section>"
+    rendered = []
+    for cat in section.findall("category"):
+        cid = cat.get("id")
+        if cat.find("visible") is not None or cat.find("requirement") is not None:
+            raise UnmodelledCategory(
+                "category %r carries its own visibility/requirement condition, so the "
+                "tab index can no longer be derived from the file. Aim the jump by "
+                "something Kodi agrees with, or make the category unconditional." % cid
+            )
+        unconditional = 0
+        conditional = 0
+        for setting in cat.iter("setting"):
+            level = setting.findtext("level")
+            hidden = setting.find("visible") is not None
+            dep_visible = any(
+                d.get("type") == "visible" for d in setting.iter("dependency")
+            )
+            if level == "0" and not hidden and not dep_visible:
+                unconditional += 1
+            elif not hidden:
+                # level > 0 (shown only at a higher UI level) or shown only when
+                # another setting has some value: its category's presence moves with
+                # state this file cannot resolve.
+                conditional += 1
+        if unconditional:
+            rendered.append(cid)
+        elif conditional:
+            raise UnmodelledCategory(
+                "category %r is rendered only under conditions the file cannot "
+                "resolve (level, or a visibility dependency), so every tab below it "
+                "moves with runtime state: %r" % (cid, cid)
+            )
+        # else: no visible settings at all -> Kodi draws no button for it
+    return rendered
+
+
+def test_the_backup_restore_tab_index_matches_what_kodi_would_render():
+    """The shipped constant must equal Kodi's own button index, not the file's.
+
+    This is the tie between control.SETTINGS_TAB_BACKUP_RESTORE and settings.xml.
+    Reordering a category, or adding one that Kodi would skip, fails here instead of
+    shipping a jump that opens the wrong tab."""
+    buttons = kodi_category_buttons(
+        (ADDON_ROOT / "resources" / "settings.xml").read_text()
+    )
+    assert buttons, "no categories would be rendered at all"
+    index = _real_tab_index()
+    assert buttons[index] == "backup_restore", (
+        "control.SETTINGS_TAB_BACKUP_RESTORE is %d, which is tab %r, not "
+        "backup_restore. Kodi would render: %r" % (index, buttons[index], buttons)
+    )
+
+
+def test_file_order_and_kodi_order_disagree_when_a_category_is_not_rendered():
+    """Prove the model catches exactly what plain file order misses.
+
+    This XML is the trap the old test could not see: an empty category sits FIRST, so
+    counting <category> tags in file order puts backup_restore at 1 (the shipped
+    constant, green) while Kodi never draws a button for the empty one and
+    backup_restore is really tab 0. SetFocus(-199) would land on maintenance.
+
+    Both halves are asserted: that naive file order says 1 (so the old derivation
+    passes this XML), and that the model says 0 (so it does not)."""
     import re as _re
 
-    xml = (ADDON_ROOT / "resources" / "settings.xml").read_text()
-    categories = _re.findall(r'<category\s+id="([^"]+)"', xml)
-    assert categories, "no categories parsed out of settings.xml"
-    assert categories[dmod.mod.SETTINGS_TAB_BACKUP_RESTORE] == "backup_restore", (
-        "settings.xml category order changed: %r" % (categories,)
+    xml = """<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<settings version="1">
+  <section id="script.ezmaintenanceplusplus">
+    <category id="placeholder" label="30099">
+      <group id="1"/>
+    </category>
+    <category id="backup_restore" label="30002">
+      <group id="1">
+        <setting id="destination" type="integer" label="30051">
+          <level>0</level>
+          <default>0</default>
+        </setting>
+      </group>
+    </category>
+    <category id="maintenance" label="30000">
+      <group id="1">
+        <setting id="notify_mode" type="boolean" label="30030">
+          <level>0</level>
+          <default>false</default>
+        </setting>
+      </group>
+    </category>
+  </section>
+</settings>"""
+    file_order = _re.findall(r'<category\s+id="([^"]+)"', xml)
+    assert file_order.index("backup_restore") == 1, (
+        "the trap XML must LOOK correct to a file-order derivation, or it proves "
+        "nothing: %r" % (file_order,)
+    )
+    buttons = kodi_category_buttons(xml)
+    assert buttons == ["backup_restore", "maintenance"], buttons
+    assert buttons.index("backup_restore") == 0, (
+        "Kodi draws no button for a category with no settings, so backup_restore is "
+        "tab 0 here and the file-order answer of 1 would focus maintenance"
     )
 
 
-# --------------------------------------------------------------------------- #
-# _open_settings_tab: the WAIT, not just the builtin
-# --------------------------------------------------------------------------- #
-def _script_settings_window(dmod, appear_after):
-    """Make the settings window appear only after `appear_after` probes, and record
-    an ORDERED event log of everything _open_settings_tab does.
+def test_a_conditionally_hidden_category_is_refused_rather_than_guessed():
+    """The other trap: a category above backup_restore that Kodi may or may not draw.
 
-    The test above stubs openSettings so the window is active the instant the builtin
-    returns. That models a desktop where the dialog paints faster than the next
-    statement, and it CANNOT distinguish "waited until the dialog was up" from "fired
-    SetFocus blindly": both orderings look identical when the flip is synchronous. On
-    a Fire TV or an Apple TV the dialog is still painting, the category control does
-    not exist yet, and a blind SetFocus is swallowed - the owner lands on Maintenance
-    instead of Backup/Restore.
+    File order says 1 and stays green forever, while the real tab index depends on a
+    runtime condition. There is no right constant to ship, so the derivation must
+    REFUSE, loudly, instead of returning a number that is right only sometimes."""
+    xml = """<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<settings version="1">
+  <section id="script.ezmaintenanceplusplus">
+    <category id="advanced" label="30098">
+      <visible>System.HasAddon(pvr.iptvsimple)</visible>
+      <group id="1">
+        <setting id="whatever" type="boolean" label="30097">
+          <level>0</level>
+          <default>false</default>
+        </setting>
+      </group>
+    </category>
+    <category id="backup_restore" label="30002">
+      <group id="1">
+        <setting id="destination" type="integer" label="30051">
+          <level>0</level>
+          <default>0</default>
+        </setting>
+      </group>
+    </category>
+  </section>
+</settings>"""
+    with pytest.raises(UnmodelledCategory, match="advanced"):
+        kodi_category_buttons(xml)
 
-    So this fake makes the window LATE, which is the real timing, and returns the
-    event log so ordering can be asserted rather than mere presence."""
-    events = []
-    polls = [0]
-
-    def _open_settings(*a, **k):
-        dmod.control.openSettings_calls.append(a)
-        events.append("open")
-
-    dmod.control.openSettings = _open_settings
-
-    def _cond(cond):
-        if cond != "Window.IsActive(addonsettings)":
-            return False
-        polls[0] += 1
-        active = polls[0] > appear_after
-        events.append("poll:active" if active else "poll:inactive")
-        return active
-
-    dmod.xbmc.getCondVisibility = _cond
-
-    def _exec(command, *a, **k):
-        dmod.xbmc._executed.append(command)
-        events.append("exec:%s" % command)
-
-    dmod.xbmc.executebuiltin = _exec
-
-    base = dmod.xbmc.Monitor
-
-    class _RecordingMonitor(base):
-        def waitForAbort(self, timeout=0):
-            events.append("wait")
-            return base.waitForAbort(self, timeout)
-
-    dmod.xbmc.Monitor = _RecordingMonitor
-    return events, polls
-
-
-def test_open_settings_tab_waits_for_the_window_before_focusing_the_tab(dmod):
-    """SetFocus must fire AFTER the settings window reports active, never before.
-
-    Addon.OpenSettings and SetFocus are both ASYNC builtins. If SetFocus goes out
-    while the dialog is still painting, control -199 does not exist yet, the builtin
-    is swallowed, and the owner is left on the first tab. The wait loop is the entire
-    reason this function exists, so the assertion is on ORDER: every probe that came
-    back inactive, then the first active probe, then SetFocus."""
-    events, polls = _script_settings_window(dmod, appear_after=3)
-
-    assert dmod.mod._open_settings_tab(1, timeout=5.0, poll=0.1) is True
-
-    assert events[0] == "open", events
-    assert "poll:active" in events, (
-        "SetFocus was fired without ever seeing the window go active: %r" % (events,)
+    # And the same for a category Kodi only draws at a higher UI level.
+    xml_level = xml.replace(
+        "<visible>System.HasAddon(pvr.iptvsimple)</visible>", ""
+    ).replace(
+        "<level>0</level>\n          <default>false</default>", "<level>2</level>"
     )
-    active_at = events.index("poll:active")
-    focus_at = events.index("exec:SetFocus(-199)")
-    assert focus_at == active_at + 1, (
-        "SetFocus must be the very next thing after the window goes active, and "
-        "must not appear before it: %r" % (events,)
-    )
-    assert polls[0] == 4, "expected 4 probes (3 inactive, then active): %r" % (events,)
-    assert events.count("wait") == 3, (
-        "each inactive probe must be followed by a real poll interval: %r" % (events,)
-    )
-    assert events.count("exec:SetFocus(-199)") == 1, events
-
-
-def test_open_settings_tab_gives_up_quietly_when_the_window_never_appears(dmod):
-    """The timeout path is best effort by design: no SetFocus, no exception.
-
-    Firing SetFocus into whatever window IS on screen is worse than doing nothing -
-    it can move focus somewhere the owner did not ask for. Settings were still
-    opened, so she is one click from where she wanted to be."""
-    events, polls = _script_settings_window(dmod, appear_after=10**6)
-
-    assert dmod.mod._open_settings_tab(1, timeout=0.5, poll=0.1) is False
-
-    assert dmod.control.openSettings_calls, "settings were never opened"
-    assert not [e for e in events if e.startswith("exec:")], (
-        "nothing may be executed once the window never came up: %r" % (events,)
-    )
-    assert polls[0] == 5, events
-    assert events.count("wait") == 5, events
-
-
-def test_open_settings_tab_bails_out_when_kodi_is_shutting_down(dmod):
-    """waitForAbort True means Kodi is tearing down. Stop probing, fire nothing."""
-    events, polls = _script_settings_window(dmod, appear_after=10**6)
-    dmod.xbmc._abort = True
-
-    assert dmod.mod._open_settings_tab(1, timeout=5.0, poll=0.1) is False
-
-    assert polls[0] == 1, "the abort must end the loop after one probe: %r" % (events,)
-    assert events.count("wait") == 1, events
-    assert not [e for e in events if e.startswith("exec:")], events
-
-
-def test_open_settings_tab_survives_a_probe_that_throws(dmod):
-    """An odd platform where the probe raises must not take the menu down with it."""
-    events, _polls = _script_settings_window(dmod, appear_after=1)
-
-    def _boom(cond):
-        raise RuntimeError("no such window condition")
-
-    dmod.xbmc.getCondVisibility = _boom
-
-    assert dmod.mod._open_settings_tab(1, timeout=5.0, poll=0.1) is False
-    assert dmod.control.openSettings_calls, "settings were never opened"
-    assert not [e for e in events if e.startswith("exec:")], events
+    with pytest.raises(UnmodelledCategory, match="advanced"):
+        kodi_category_buttons(xml_level)
 
 
 def test_backup_restore_verify_choice_runs_the_verifier(dmod, monkeypatch):
@@ -732,12 +895,7 @@ def test_backup_restore_verify_choice_runs_the_verifier(dmod, monkeypatch):
     Without this, the label could be present and wired to nothing (or to the
     restore path, which is the dangerous mis-wire) and the options test above
     would still pass."""
-    wiz = types.ModuleType("resources.lib.modules.wiz")
-    backups, restores = [], []
-    wiz.backup = lambda *a, **k: backups.append(k)
-    wiz.restoreFolder = lambda *a, **k: restores.append(True)
-    monkeypatch.setitem(sys.modules, "resources.lib.modules.wiz", wiz)
-    setattr(sys.modules["resources.lib.modules"], "wiz", wiz)
+    _wiz, backups, restores = _stub_wiz(monkeypatch)
 
     # The verify entry, then Back out of the (now looping) Backup/Restore menu.
     dmod.control.select_results = [2, -1]
@@ -787,24 +945,33 @@ def _drive_backup_restore(monkeypatch, name):
 
 
 def _stub_wiz(monkeypatch):
-    """Install a recording wiz stub; returns (module, backups, restores)."""
-    wiz = types.ModuleType("resources.lib.modules.wiz")
+    """Make the fixture's wiz stub RECORD; returns (module, backups, restores).
+
+    The module itself comes from the dmod fixture so it keeps the real
+    configured_path binding - only the two actions are swapped for recorders."""
+    wiz = sys.modules["resources.lib.modules.wiz"]
     backups, restores = [], []
-    wiz.backup = lambda *a, **k: backups.append(k)
-    wiz.restoreFolder = lambda *a, **k: restores.append(True)
-    monkeypatch.setitem(sys.modules, "resources.lib.modules.wiz", wiz)
-    setattr(sys.modules["resources.lib.modules"], "wiz", wiz)
+    monkeypatch.setattr(wiz, "backup", lambda *a, **k: backups.append(k))
+    monkeypatch.setattr(wiz, "restoreFolder", lambda *a, **k: restores.append(True))
     return wiz, backups, restores
 
 
 def test_cancelled_verify_re_presents_the_backup_restore_menu(dmod, monkeypatch):
     """THE REPORTED BUG. Cancel out of the verify flow -> back INSIDE Backup/Restore.
 
-    Answers the menu with VERIFY, lets the verifier bail on its own missing-path
-    guard (a cancel-shaped exit that restores nothing), then Backs out. The menu must
-    have been presented TWICE: once to choose verify, once after it returned. One
-    presentation means the script exited to the root menu, which is the defect."""
+    Answers the menu with VERIFY, lets the verifier come back empty-handed (a folder
+    with no zips in it: a cancel-shaped exit that restores nothing and takes no window
+    away from us), then Backs out. The menu must have been presented TWICE: once to
+    choose verify, once after it returned. One presentation means the script exited to
+    the root menu, which is the defect.
+
+    The path is CONFIGURED on purpose. Letting the verifier bail on its missing-path
+    guard instead would exercise the opposite rule - that guard opens the settings
+    window, and a menu that re-presents on top of it is its own defect - so this test
+    would then be asserting the wrong outcome."""
     _stub_wiz(monkeypatch)
+    dmod.control._settings["restore.path"] = "/fake/backups"
+    dmod.xbmcvfs.listdir_result = ([], [])  # a real folder, no archives in it
     dmod.control.select_calls.clear()
     dmod.control.select_results = [2, -1]
 
@@ -1011,6 +1178,11 @@ def test_the_menu_stops_when_kodi_is_shutting_down(dmod, monkeypatch):
     _stub_wiz(monkeypatch)
     dmod.control.select_calls.clear()
     dmod.control.select_result = 2  # VERIFY forever; only the abort can stop this
+    # A CONFIGURED path, so the verifier does not bail to the settings window: that
+    # is the other exit, and it would stop the menu for a reason this test is not
+    # about, leaving the shutdown check unexercised.
+    dmod.control._settings["restore.path"] = "/fake/backups"
+    dmod.xbmcvfs.listdir_result = ([], [])
     dmod.xbmc._abort = True
 
     _drive_backup_restore(monkeypatch, "ezm_br_loop_abort_uut")
@@ -1050,6 +1222,78 @@ def test_the_menu_stops_when_a_sub_action_opened_settings(dmod, monkeypatch):
     assert len(menus) == 1, (
         "the menu must not re-present on top of the Settings window: %d presentations"
         % len(menus)
+    )
+
+
+def test_the_menu_stops_even_when_the_settings_window_paints_LATE(dmod, monkeypatch):
+    """THE RACE. The guard must not depend on how fast the settings window paints.
+
+    _safe_to_re_present used to settle 0.25s and then ask Kodi whether the settings
+    window was active. Right above it, openSettingsTab polls that SAME window for up to
+    FIVE SECONDS, which is this codebase's own measured statement of how long an
+    appliance can take. When the window lost that race the guard answered "safe", the
+    menu re-presented, and a modal select dialog landed on top of the settings window
+    the user had just been sent to - the exact defect the guard exists to prevent.
+
+    So this fake keeps the window inactive for far longer than the guard is willing to
+    wait, which is the real Fire TV / Apple TV timing. The signal has to be something
+    that cannot be late: control.openSettings COUNTS its calls, and the count is
+    already final when the sub-action returns."""
+    _stub_wiz(monkeypatch)
+    dmod.control.select_calls.clear()
+    dmod.control.select_result = 2  # VERIFY forever; only the guard can stop this
+
+    # The builtin fires; the window is still painting. Nothing sets _active_window,
+    # so every probe the guard makes comes back "no settings window here" - exactly
+    # what a real box reports for the first few hundred milliseconds.
+    probes = []
+    _real_cond = dmod.xbmc.getCondVisibility
+
+    def _cond(cond):
+        if cond == "Window.IsActive(addonsettings)":
+            probes.append(cond)
+            return False
+        return _real_cond(cond)
+
+    dmod.xbmc.getCondVisibility = _cond
+
+    _drive_backup_restore(monkeypatch, "ezm_br_loop_late_window_uut")
+
+    assert dmod.control.openSettings_calls, "the settings bail never happened"
+    menus = [c for c in dmod.control.select_calls if c and c[0].startswith("Backup")]
+    assert len(menus) == 1, (
+        "a settings bail must end the menu even when the window has not painted yet; "
+        "the menu re-presented %d times on top of it" % len(menus)
+    )
+
+
+def test_all_three_bails_land_on_the_backup_restore_tab(dmod, monkeypatch):
+    """ "Not set" plus a click must land ON the tab that holds the path setting.
+
+    All three bails tell her to set a path: wiz.backup (download.path),
+    wiz.restoreFolder (restore.path) and VERIFY_BACKUP_ARCHIVE (restore.path). A plain
+    control.openSettings() opens the settings window on its FIRST category, Maintenance
+    - told to set a path, then dropped on the wrong tab with nothing on screen saying
+    which one. They must go through the tab-aware entry point, with the Backup/Restore
+    index.
+
+    wiz's two bails are asserted where they live (test_ezmaintenanceplusplus_wiz.py,
+    against the real wiz module); this covers the one in default.py, and that the
+    dialog still says WHAT is missing, and that the window opens exactly once."""
+    _stub_wiz(monkeypatch)
+    dmod.control._settings.update({"destination": "0", "restore.path": "   "})
+
+    dmod.mod.VERIFY_BACKUP_ARCHIVE()
+
+    assert dmod.control.openSettingsTab_calls == [
+        dmod.control.SETTINGS_TAB_BACKUP_RESTORE
+    ], "the unset-path bail must open the Backup/Restore TAB: %r" % (
+        dmod.control.openSettingsTab_calls,
+    )
+    assert dmod.control.infoDialog_calls == ["Please Setup a Zip Files Location first"]
+    assert len(dmod.control.openSettings_calls) == 1, (
+        "the settings window must open once, not once per entry point: %r"
+        % (dmod.control.openSettings_calls,)
     )
 
 

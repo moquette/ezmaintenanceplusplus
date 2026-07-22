@@ -372,7 +372,6 @@ def test_boot_sequence_runs_the_migration_before_the_restore_check(env):
     for name in (
         "_maybe_purge_stale_nsud_keys",
         "_purge_stale_bytecode",
-        "_publish_contract_fingerprint",
         "_maybe_resume_paused_pvr",
         "_maybe_restore_check",
     ):
@@ -452,7 +451,6 @@ def test_boot_sequence_runs_pvr_recovery(env):
     for name in (
         "_maybe_purge_stale_nsud_keys",
         "_purge_stale_bytecode",
-        "_publish_contract_fingerprint",
         "_maybe_resume_paused_pvr",
         "_maybe_restore_check",
     ):

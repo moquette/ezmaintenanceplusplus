@@ -1,3 +1,20 @@
+v2026.07.22.2
+- When Backup or Restore says "Not set" and you pick it, EZ Maintenance++ now opens
+  Settings ON the Backup/Restore tab, where that folder is set. It used to open
+  Settings on the Maintenance tab, so you were told to set a folder and then left to
+  find the right tab yourself. The same goes for Verify Backup Archive.
+- The folder shown beside Backup and Restore is now exactly the folder the add-on
+  will use. On a network share set up through Kodi's own browse screen, the row was
+  showing a ":2049" that the add-on drops before using the folder.
+- A folder setting containing only spaces now counts as not set, everywhere. The menu
+  row already called it "Not set", but Backup and Restore treated it as a real folder
+  and pushed on, so the failure came later and said nothing useful.
+- On a slower box the Backup/Restore menu could reopen on top of the Settings window
+  it had just sent you to. It now steps aside every time, however long the Settings
+  window takes to appear.
+- Housekeeping: a leftover start-up step that computed a code fingerprint for a
+  verification tool deleted last week has been removed. Nothing read it.
+
 v2026.07.22.1
 - The backup and restore folders in the Backup/Restore menu now show on EVERY skin,
   including the built-in Estuary that Fresh Start requires. 2026.07.22.0 showed them

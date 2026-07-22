@@ -261,6 +261,30 @@ def _strip_nfs_port(path):
     return _NFS_PORT_RE.sub(r"\1\2", path)
 
 
+def configured_path(setting_id):
+    """The path a path-taking action will ACTUALLY use, or "" when unconfigured.
+
+    ONE definition of "configured", shared by the actions and by the menu row that
+    reports them (default._path_detail). They used to disagree twice over:
+
+      * Whitespace. The row stripped and said "Not set"; the actions compared the
+        RAW value to "" and so treated "   " as a configured folder, walked past the
+        bail-to-settings guard, and failed later with something the owner could not
+        act on. The row told the truth and the action did not.
+      * The nfs:// port. Both actions run the setting through _strip_nfs_port (Kodi's
+        browse dialog bakes :2049 in and that form breaks Kodi's own NFS writes), but
+        the row printed the raw setting, so it showed a port the add-on discards. The
+        live boxes do carry :2049 in that setting, so this was on screen every day.
+
+    Returns "" for None, an unset setting, and a whitespace-only setting alike, so
+    every caller can test one thing."""
+    try:
+        raw = control.setting(setting_id)
+    except Exception:
+        return ""
+    return _strip_nfs_port((raw or "").strip()) or ""
+
+
 # Backup filenames carry a trailing _YYYYMMDDHHMM stamp before ".zip".
 _STAMP_RE = re.compile(r"_(\d{12})\.zip$", re.IGNORECASE)
 
@@ -370,10 +394,13 @@ def backup(mode="full"):
         return
 
     # Local / Network (SMB/NFS): path-based CreateZip (VFS copy seam handles nfs://, smb://).
-    backupdir = _strip_nfs_port(control.setting("download.path"))
-    if backupdir == "" or backupdir == None:
+    backupdir = configured_path("download.path")
+    if backupdir == "":
         control.infoDialog("Please Setup a Path for Downloads first")
-        control.openSettings()
+        # ON the Backup/Restore tab, where download.path actually is. A plain
+        # openSettings() opens on the FIRST category, Maintenance: she is told to set
+        # a path and then dropped on the wrong tab, with nothing saying which one.
+        control.openSettingsTab(control.SETTINGS_TAB_BACKUP_RESTORE)
         return
 
     name = tools._get_keyboard(
@@ -717,10 +744,11 @@ def restoreFolder():
 
     names = []
     links = []
-    zipFolder = _strip_nfs_port(control.setting("restore.path"))
-    if zipFolder == "" or zipFolder == None:
+    zipFolder = configured_path("restore.path")
+    if zipFolder == "":
         control.infoDialog("Please Setup a Zip Files Location first")
-        control.openSettings()
+        # ON the Backup/Restore tab, where restore.path actually is (see backup()).
+        control.openSettingsTab(control.SETTINGS_TAB_BACKUP_RESTORE)
         return
     try:
         _dirs, _files = xbmcvfs.listdir(
@@ -936,10 +964,10 @@ def _apply_skin_settings(rlog, target_skin, settings):
     its own addon_data dir, so when the restored skin is not the live one the flush
     cannot touch the restored file and the builtins would write into the WRONG skin.
 
-    Never raises. Returns a short status string, also published as a window property
-    for tools/verify_device.py, since there is no read-only JSON-RPC way to read a skin
-    setting (Skin.HasSetting / GetInfoBooleans MUTATE: CSkinInfo::TranslateBool inserts
-    a default-false bool AND schedules a save)."""
+    Never raises. Returns a short status string, also published as a window property so
+    the outcome can be read off a live box at all: there is no read-only JSON-RPC way
+    to read a skin setting (Skin.HasSetting / GetInfoBooleans MUTATE:
+    CSkinInfo::TranslateBool inserts a default-false bool AND schedules a save)."""
     status = "none"
     try:
         if not settings:
@@ -950,8 +978,8 @@ def _apply_skin_settings(rlog, target_skin, settings):
             live = ""
         if not target_skin or live != target_skin:
             # Do NOT return here: fall through so the diagnostic window property is
-            # published on this path too. verify_device.py reads it, and "why did
-            # nothing get applied" is exactly the case worth being able to see.
+            # published on this path too: "why did nothing get applied" is exactly
+            # the case worth being able to see from outside.
             status = "skipped:not-live"
             rlog(
                 "skin settings: %s (live=%s target=%s)"

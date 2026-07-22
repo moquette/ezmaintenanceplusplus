@@ -1,3 +1,14 @@
+v2026.07.22.0
+- "Set up this box" is removed. Adding media sources is what Kodi's File Manager is for,
+  and "Device Name" only set the name Kodi itself sets under Settings, Services, General.
+  Weather setup, the RSS ticker and "Set up everything" are gone with it.
+- The Backup/Restore menu shows the backup folder while Backup is highlighted and the
+  restore folder while Restore is, along the bottom of the window. Needs skin.estuary7
+  1.0.77 or newer; other skins show their usual item count.
+- The Backup/Restore menu has a Settings entry that opens the Backup/Restore settings tab.
+- Its entries are Title Case now, not capitals.
+- Fresh Start's message for an unsupported skin is two short lines.
+
 v2026.07.21.5
 - Restore no longer overwrites this box's own EZ Maintenance++ settings with the copy
   stored in the backup. Restoring another box's archive, or an older one from this box,

@@ -110,21 +110,20 @@ TVs). This repo (`moquette/ezmaintenanceplusplus`, public) is the **single sourc
 truth**: the add-on source, its full test suite, and the build/release tooling live
 here and only here.
 
-**Distribution stays in the sibling repo** (remote `tony7bones/tony7bones.github.io`,
-local checkout `~/Code/moquette/kodi/repo`; the standalone
-`~/Code/moquette/tony7bones.github.io` path older docs cite DOES NOT EXIST)
-(the Tony.7.Bones Kodi repository, a virtual proxy `repository.tony7bones`): this
-repo publishes a GitHub Release asset via `tools/release.sh`, and the proxy carries
-only a hosted metadata mirror (`addons/hosted/script.ezmaintenanceplusplus/` -
-`addon.xml` + icon + fanart, no source) whose `repository.json` entry points at that
-release asset - the exact same "own repo + release asset" pattern already proven for
-the skin project, `moquette/estuary7` / `skin.estuary7`.
+**Distribution stays in the sibling repo** (remote
+`tony7bones/tony7bones.github.io`, local checkout `~/Code/moquette/kodi/repo`;
+the standalone `~/Code/moquette/tony7bones.github.io` path older docs cite DOES
+NOT EXIST). This repo publishes a GitHub Release asset via `tools/release.sh`;
+the hub carries only a metadata mirror
+(`addons/hosted/script.ezmaintenanceplusplus/` - `addon.xml` + icon + fanart, no
+source) plus a `_tools/catalog.json` entry whose `assets.zip` template points
+boxes at that release asset. Same pattern as the skin, `moquette/estuary7`.
+There is no virtual proxy and no `repository.json` left in the hub; both
+belonged to the retired dynamic-proxy design.
 
-Until 2026-07-14 this add-on's source was hand-synced between two repos (a copy here,
-a copy in the proxy repo), and the copies drifted - the proxy repo's copy had the
-full test suite and got the real fixes; this repo's copy went stale for weeks. That
-duplication is gone. Fix bugs and add tests **here**. The proxy repo's
-backup/restore triage lives in this file and, for anything tvOS,
+Until 2026-07-14 the source was hand-synced between both repos and the copies
+drifted, the hub's copy holding the tests and the real fixes while this one went
+stale for weeks. Fix bugs and add tests **here**. For anything tvOS, read
 `~/Code/moquette/kodi/.claude/skills/apple-tv/SKILL.md`.
 
 ## The build/test/release contract
@@ -133,19 +132,38 @@ backup/restore triage lives in this file and, for anything tvOS,
   members and fixes 1980-01-01 timestamps, same discipline as the proxy repo's
   `generate_repo.py` and the skin repo's `build_skin.py`. `./build.sh --check` builds
   twice and byte-compares.
-- **Tests are mandatory before any release.** `/opt/homebrew/bin/python3 -m pytest
-  tests/ -q` (the system `python3` on this machine is 3.9, too old for this suite).
+- **Tests are mandatory before any release.** Run
+  `/opt/homebrew/bin/python3 -m pytest tests/ -q` (670 tests + 3 xfail; the
+  system `python3` on this machine is 3.9, too old for this suite), and
   `ruff check tests/ tools/` must also be clean.
+- **Tool versions are pinned in `requirements-ci.txt` and `ruff.toml`**, which CI
+  installs from and which `../bin/check-all` provisions. `ruff.toml` also declares
+  `[lint] select`, so a ruff release cannot change what "clean" means here (0.16.0
+  put 283 findings on untouched code when the set was inherited rather than
+  declared), and its `required-version` makes the global auto-format hook a no-op.
+  Consequence: a bare `ruff` off PATH refuses to run unless PATH ruff is the pinned
+  version. Lint scope is `tests/` and `tools/` only; `script.ezmaintenanceplusplus/`
+  stays out on purpose, as inherited upstream debt marked by
+  `tests/test_addon_source_lint_debt.py`.
+- **`tools/check_unreleased_changes.py` warns when source moved at an
+  already-released version.** The publish job is idempotent by tag, so a fix
+  committed without bumping `addon.xml` builds, tests green, publishes nothing,
+  reaches zero boxes and goes red nowhere. It is a warning by design, because
+  batching several commits into one later release is the normal workflow here.
+  `tools/release.sh` is the hard block; it refuses outright when the tag exists.
 - **`tools/release.sh` is the only sanctioned release path.** It builds, tags
   `v<version>` anchored to `origin/main` (never local/unpushed work - a release can
   never smuggle out unreviewed changes), publishes the zip as a GitHub Release asset
   via `gh release create`, then verifies the asset is anonymously downloadable and
   its sha256 matches the local build. A release that fails verification is a hard
   failure, not a warning.
-- **After releasing here, the proxy repo needs a follow-up release** - bump
-  `addons/hosted/script.ezmaintenanceplusplus/addon.xml`'s version to match, then
-  `python3 _tools/release.py --proxy` in that repo. A version bumped in `addon.xml`
-  here is not live on any box until BOTH of those happen.
+- **Releasing here reaches no box.** The hub needs a follow-up commit: bump BOTH
+  the version attribute and the news line in
+  `repo/addons/hosted/script.ezmaintenanceplusplus/addon.xml`, then push. CI
+  rebuilds `/static/`, which is what boxes actually read. The
+  `python3 _tools/release.py --proxy` older text here named NO LONGER EXISTS; that
+  mode went with the proxy engine. The hub's `check_hosted_release_sync.py` catches
+  a forgotten bump, but only once the release is more than two hours old.
 - **This add-on's changelog is hand-written, multi-line prose** (`changelog.txt` +
   the `<news>` block in `addon.xml`) - NOT the one-line convention the proxy repo's
   `release.py` automation expects. Never run that automation against this add-on's
@@ -242,7 +260,8 @@ two-layer wipe and the purge exist BECAUSE of those facts.
 
 ## House rules (inherited from the fleet's workflow)
 
-- implement -> TEST -> gate (pytest + ruff green) -> commit/release.
+- implement -> TEST -> gate (`../bin/check-all ezmpp`, which runs pytest and the
+  pinned ruff; add `--fast` to skip the deterministic build check) -> commit/release.
 - **Routine changes get a one-line commit message.** Long-form records
   (acceptance logs, multi-paragraph commits) are for genuine incidents only.
 - Approval is needed for DESTRUCTIVE or OUTWARD-FACING actions only: wiping a
@@ -259,5 +278,7 @@ two-layer wipe and the purge exist BECAUSE of those facts.
   archive-contents inspection when backup/restore code changes); CI green before
   deploy; skins install from the Kodi repo, never adb/devicectl push.
 - No AI attribution anywhere; no em dashes in written deliverables.
-- Never edit `addons/script.ezmaintenanceplusplus/` in the proxy repo - that
-  directory no longer exists (deleted 2026-07-14) and nothing reads it.
+- Never edit `repo/addons/script.ezmaintenanceplusplus/`. That directory is gone
+  (the source copy in 2026-07-14, the code-less shim that remained in `08d9a3d`
+  on 2026-07-20) and nothing reads it. The path boxes read is
+  `repo/addons/hosted/script.ezmaintenanceplusplus/`.

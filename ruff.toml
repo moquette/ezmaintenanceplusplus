@@ -15,3 +15,17 @@
 # upstream debt, tracked by tests/test_addon_source_lint_debt.py); CI lints
 # tests/ and tools/ only.
 required-version = "==0.15.22"
+
+[lint]
+# THIS is the actual fix, and the version pin above is only the belt to its
+# braces. The floating input was never ruff's version, it was ruff's DEFAULT RULE
+# SET, which a release is free to change. Declaring the set explicitly makes the
+# two versions agree exactly: measured on this tree, 0.15.22 and 0.16.0 both
+# report 0 findings on tests/ and tools/ with these rules, against 0 and 285 on
+# their respective defaults.
+#
+# These four are ruff's pre-0.16 defaults, written down rather than inherited:
+#   E4 imports, E7 statements, E9 syntax/IO errors, F pyflakes.
+# Widening the set is a deliberate choice to make in its own commit, alongside
+# clearing whatever it flags. It is not something a `pip install` gets to decide.
+select = ["E4", "E7", "E9", "F"]

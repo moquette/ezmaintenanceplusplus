@@ -125,8 +125,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      # --check builds twice and byte-compares, the same determinism guarantee
+      # estuary7 gets from its own anchored-build-check job. Without it a
+      # nondeterminism regression in build.py would only ever be caught locally
+      # by bin/check-all, never in CI, and would ship into the release zip.
+      # Measured cost of the second build: 0.06s.
       - name: Build the deterministic release zip
-        run: python3 tools/build.py
+        run: python3 tools/build.py --check
 
       - name: Publish the GitHub Release asset (once per version) + verify
         env:

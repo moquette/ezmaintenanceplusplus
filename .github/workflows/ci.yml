@@ -53,6 +53,29 @@ jobs:
       - name: Lint (tests + tooling)
         run: ruff check tests/ tools/
 
+      # Deliberately a WARNING, never a failure. The publish job is idempotent by
+      # tag: if the tag for the current version already exists it prints "nothing
+      # to publish" and exits 0, so a fix committed without bumping addon.xml
+      # reaches zero boxes with nothing red anywhere (2026-07-25 audit). This
+      # makes that state loud. It does NOT block, because batching several
+      # commits into one later release is the normal workflow here and a gate
+      # that fought it would just get bypassed. tools/release.sh is the hard
+      # block: it refuses outright when the tag already exists.
+      - name: Unreleased-changes check (warning only)
+        run: |
+          python3 tools/check_unreleased_changes.py | tee /tmp/unreleased.txt
+          if grep -q WARNING /tmp/unreleased.txt; then
+            {
+              echo "### Unreleased changes"
+              echo
+              echo '```'
+              cat /tmp/unreleased.txt
+              echo '```'
+              echo
+              echo "Bump \`addon.xml\` before this can reach a box."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       # GAP 2 (2026-07-14): queries this repo's own GitHub Releases and only fails on a
       # REGRESSION (addon.xml behind the latest published release) or a CONTRADICTION (a
       # release tag matching addon.xml exists with a missing/mismatched asset) - never

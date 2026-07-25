@@ -89,10 +89,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 tools/check_release_consistency.py
 
-      # Determinism + packagability: the release zip must build headlessly and byte-stably
-      # (sorted members, fixed timestamps). Guards against a change that breaks the build.
-      - name: Build smoke (deterministic zip)
-        run: python3 tools/build.py
+      # Packagability AND determinism: the release zip must build headlessly, and
+      # two builds of the same source must be byte-identical (sorted members,
+      # fixed timestamps).
+      #
+      # This ran a SINGLE build until 2026-07-25, while its comment claimed
+      # byte-stability. One build cannot show that; --check builds twice and
+      # compares, which is what the comment always described. estuary7 has had
+      # the equivalent as its own anchored-build-check job.
+      #
+      # Keep --check OUT of the publish job: it builds into temp dirs and leaves
+      # nothing in dist/, so the release step there fails with "shasum:
+      # dist/...zip: No such file or directory" (proven, run 2026-07-25).
+      # Measured cost of the second build: 0.06s.
+      - name: Build smoke (deterministic zip, built twice)
+        run: python3 tools/build.py --check
 
   # Publishing is CI's job, not a hand-run script. This publishes the GitHub Release
   # asset automatically once `test` is green on main.
@@ -125,13 +136,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      # --check builds twice and byte-compares, the same determinism guarantee
-      # estuary7 gets from its own anchored-build-check job. Without it a
-      # nondeterminism regression in build.py would only ever be caught locally
-      # by bin/check-all, never in CI, and would ship into the release zip.
-      # Measured cost of the second build: 0.06s.
+      # A PLAIN build, deliberately. `--check` builds twice into temp dirs and
+      # byte-compares, and leaves NOTHING in dist/, so using it here breaks the
+      # next step with "shasum: dist/...zip: No such file or directory" (proven,
+      # run 2026-07-25). The determinism gate lives in the `test` job instead,
+      # which is also where estuary7 keeps its equivalent.
       - name: Build the deterministic release zip
-        run: python3 tools/build.py --check
+        run: python3 tools/build.py
 
       - name: Publish the GitHub Release asset (once per version) + verify
         env:

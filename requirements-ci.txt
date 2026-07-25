@@ -1,0 +1,11 @@
+# Pinned CI tooling. SINGLE SOURCE OF TRUTH for .github/workflows/ci.yml.
+#
+# Why pinned at all: on 2026-07-23 ruff 0.16.0 moved rules into its stable set.
+# It put 283 findings on tests/ and tools/ with nothing pushed since 07-22, so
+# the next push would have failed CI for reasons that push did not cause. The
+# sibling repo actually went red on this for two nights.
+#
+# Bumping: change the pin here ONLY, in a commit that also clears whatever the
+# new version flags. Never bump it to make a red build go green.
+pytest==9.1.1
+ruff==0.15.22

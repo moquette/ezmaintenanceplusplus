@@ -1,0 +1,17 @@
+# The ruff version is declared here as well as in requirements-ci.txt, so that
+# running `ruff check` by hand with the WRONG version fails with one clear
+# sentence instead of a wall of findings that look like real defects.
+#
+# ruff 0.16.0 (2026-07-23) moved rules into its stable set and put 283 findings
+# on tests/ and tools/ with nothing pushed since 07-22. They were not defects,
+# they were a version change wearing a defect costume. The sibling repo went red
+# for two nights on the same cause before anyone worked that out.
+#
+# Keep this equal to the ruff pin in requirements-ci.txt. Bump both together, in
+# a commit that also clears whatever the new version flags.
+#
+# Note this does NOT change which rules run. The add-on source under
+# script.ezmaintenanceplusplus/ stays out of CI lint on purpose (inherited
+# upstream debt, tracked by tests/test_addon_source_lint_debt.py); CI lints
+# tests/ and tools/ only.
+required-version = "==0.15.22"

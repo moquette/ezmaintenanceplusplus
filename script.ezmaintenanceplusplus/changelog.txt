@@ -1,3 +1,10 @@
+v2026.07.31.0
+- New icon. The picture beside EZ Maintenance++ in Kodi's add-on list now carries the
+  "++" next to the "e", so it matches the add-on's name. The artwork is otherwise the
+  same shield it has always been.
+- Nothing else is in this release. No setting, no menu and no button behaves any
+  differently, and your backups, settings and custom menu are untouched.
+
 v2026.07.22.3
 - The folder shown beside Backup and Restore is readable again. With the folders this
   fleet actually uses, the folder ran off the end of the row, and the row you were

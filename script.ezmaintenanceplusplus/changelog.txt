@@ -1,3 +1,20 @@
+v2026.07.31.1
+- The video cache buffer returns to Kodi's own default of 20 MB when you restore a
+  backup or run a Fresh Start. Before this, a restored box kept the buffer it had been
+  using, and a wiped box could keep it too. Neither is right on a fleet where the boxes
+  are not the same machine: a buffer that suits one device is the wrong size on another,
+  and it was arriving without anyone having asked for it.
+- No inherited number survives either of those two actions. Not the one carried in the
+  backup archive, and not the box's own previous one.
+- The per-device recommendation has not moved. It is still under Video Cache Buffer in
+  this add-on's menu, where "Use recommended for this device" fills in the size that box
+  should have, and you can type your own instead.
+- Nothing asks you about the buffer during a restore or after one. There is no new
+  prompt anywhere.
+- A buffer you set yourself stays set. Nothing puts it back at start-up, on an update or
+  after a restart, until the next restore or Fresh Start.
+- Your box still keeps its own device name through a restore, exactly as it did before.
+
 v2026.07.31.0
 - New icon. The picture beside EZ Maintenance++ in Kodi's add-on list now carries the
   "++" next to the "e", so it matches the add-on's name. The artwork is otherwise the

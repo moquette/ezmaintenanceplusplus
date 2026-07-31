@@ -1155,25 +1155,42 @@ def _apply_boot_skin(rlog, target):
 
 
 def _preserve_device_settings(rlog, preserved):
-    """Write THIS box's own identity settings back over the archive's, on disk.
+    """Settle THIS box's hardware-scoped settings over the archive's - one PRESERVED,
+    one RESET.
 
     The other half of `_kodisettings._BOOT_STATE_ONLY`. Skipping the live-apply keeps
-    the archive's device name and cache buffer out of Kodi's running memory; this keeps
-    them out of the FILE. Without both, the archive's values sit in the restored
-    guisettings.xml and win at the next boot - the box silently answers to the source
-    box's name again, one restart after the restore reported success.
+    the archive's device name and cache buffer out of Kodi's running memory; this
+    decides what stands in their place. Without both halves the archive's values sit in
+    the restored guisettings.xml and win at the next boot - the box silently answers to
+    the source box's name again, one restart after the restore reported success.
 
-    `preserved` is {setting_id: value}, captured LIVE before the extract
-    (tools.capture_device_identity). A value that could not be read is absent, and an
-    absent value writes nothing: the archive's value is a worse answer than this box's
-    own, but it beats a guess.
+    ONE shared principle, TWO DIFFERENT resolutions. Collapsing them back into a single
+    rule is the regression this docstring exists to prevent:
+
+      * `services.devicename` is PRESERVED. `preserved` is {setting_id: value}, captured
+        LIVE before the extract (tools.capture_device_identity), so the box keeps the
+        name it answers to on the network. A value that could not be read is absent, and
+        an absent value writes nothing: the archive's name is a worse answer than this
+        box's own, but it beats a guess.
+      * `filecache.memorysize` is RESET to `tools.KODI_DEFAULT_MB`, never preserved and
+        never cloned. The fleet mixes device classes whose right buffer differs, so no
+        inherited number is allowed to survive a restore - not the archive's, and not
+        this box's own previous one either (owner decision 2026-07-31). The per-device
+        recommendation is offered on demand in the add-on's Video Cache Buffer menu
+        (tools.advancedSettings); the buffer only moves off Kodi's default when the user
+        accepts it or types his own. There is deliberately NO prompt: the post-restore
+        popup was deleted 2026-07-19 and does not come back for this.
+
+    The reset depends on nothing captured, so it runs even when the capture came back
+    EMPTY - which is why this function no longer returns early on an empty `preserved`.
 
     Runs immediately before _apply_boot_skin, for the same reasons that function runs
     last: after apply_guisettings, the stale-key purge and the tvOS re-vector, so
     nothing re-saves over it. Same tvOS dance too - the re-vector drops the POSIX copy,
     so the file is re-materialized from the VFS (never a stub, which would wipe every
-    other setting) before editing, and persist_one vectors the result back into
-    NSUserDefaults, where a stale key would otherwise SHADOW the disk file.
+    other setting) before editing, and ONE persist_one at the end vectors the result
+    back into NSUserDefaults, where a stale key would otherwise SHADOW the disk file.
+    That single vector is why the reset is asked not to vector for itself.
 
     Publishes Window(10000) property "ezm_preserved" (a comma-joined id:value list, or
     "none" / "failed:<Error>") so a hardware verification can read the outcome over
@@ -1181,9 +1198,6 @@ def _preserve_device_settings(rlog, preserved):
     is logged and NEVER breaks the restore."""
     prop = "none"
     try:
-        if not preserved:
-            rlog("preserve: nothing was captured from this box; archive values stand")
-            return prop
         from resources.lib.modules import _kodisettings, nsud
 
         guisettings_path = os.path.join(control.USERDATA, "guisettings.xml")
@@ -1203,12 +1217,25 @@ def _preserve_device_settings(rlog, preserved):
                 rlog("preserve: could not re-materialize guisettings.xml (%s)" % e)
         written = []
         failed = []
-        for sid in sorted(preserved):
+        for sid in sorted(preserved or {}):
+            if sid == tools.CACHE_SETTING:
+                # The buffer is RESET below, never written back. Skipping it here means
+                # a capture that still carries it - an older caller, a hand-built dict -
+                # cannot smuggle an inherited number past the reset.
+                continue
             value = preserved[sid]
             if _kodisettings.write_guisetting(guisettings_path, sid, value):
                 written.append("%s:%s" % (sid, value))
             else:
                 failed.append(sid)
+        # RESET, not preserve. vector=False because the single persist_one below covers
+        # every write in this function; a vector taken inside the reset would, on tvOS,
+        # drop the POSIX copy out from under the device-name write above.
+        reset = tools.reset_cache_buffer(guisettings_path, vector=False, log=rlog)
+        if reset.get("file"):
+            written.append("%s:%d" % (tools.CACHE_SETTING, tools.KODI_DEFAULT_MB))
+        else:
+            failed.append(tools.CACHE_SETTING)
         # Vector guisettings.xml into NSUserDefaults on tvOS (the durable store there);
         # a harmless no-op rewrite of identical bytes on Fire TV / Android / desktop.
         nsud.persist_one("guisettings.xml", log=rlog)
@@ -1217,7 +1244,7 @@ def _preserve_device_settings(rlog, preserved):
             rlog("preserve: could not write %s" % ", ".join(failed))
         elif written:
             prop = ",".join(written)
-            rlog("preserve: kept this box's own %s" % ", ".join(written))
+            rlog("preserve: settled %s" % ", ".join(written))
     except Exception as e:
         prop = "failed:%s" % type(e).__name__
         rlog("preserve: failed (%s: %s); restore stands" % (type(e).__name__, e))
@@ -1257,13 +1284,16 @@ def restore(
     which preserves this add-on, its runtime deps, and special://temp (the staged zip).
     """
     # Capture THIS box's own identity settings FIRST, before anything can overwrite
-    # them: the device name it answers to on the network and the cache buffer sized for
-    # its own RAM. A restore clones the SOURCE box's guisettings, so without this the box
-    # comes back wearing another box's name. Read from Kodi's LIVE settings, which is why
-    # it is still correct on the One-Tap path where the CALLER already wiped the box
-    # before calling us - a wipe removes files, not the running process's memory. This is
-    # the first statement in the function so no later edit can slip a wipe or an extract
-    # in front of it. Written back by _preserve_device_settings after the extract.
+    # them: the device name it answers to on the network. A restore clones the SOURCE
+    # box's guisettings, so without this the box comes back wearing another box's name.
+    # Read from Kodi's LIVE settings, which is why it is still correct on the One-Tap
+    # path where the CALLER already wiped the box before calling us - a wipe removes
+    # files, not the running process's memory. This is the first statement in the
+    # function so no later edit can slip a wipe or an extract in front of it. Written
+    # back by _preserve_device_settings after the extract.
+    #
+    # The cache buffer is NOT captured: it is RESET to Kodi's default rather than
+    # preserved (see _preserve_device_settings), so there is nothing here to keep.
     preserved = {}
     try:
         preserved = tools.capture_device_identity()
@@ -1753,10 +1783,11 @@ def restore(
         _apply_skin_settings(
             _rlog, _boot_skin.get("target"), _boot_skin.get("settings") or []
         )
-        # Put this box's OWN device name and cache buffer back over the archive's, in
-        # the file, now that nothing further will re-save guisettings.xml. Runs inside
-        # the pass so it gets the same auto-fix retry every other step gets, and before
-        # the boot-skin write so the skin remains the restore's last userdata write.
+        # Put this box's OWN device name back over the archive's, and reset the cache
+        # buffer to Kodi's default, now that nothing further will re-save
+        # guisettings.xml. Runs inside the pass so it gets the same auto-fix retry every
+        # other step gets, and before the boot-skin write so the skin remains the
+        # restore's last userdata write.
         _preserve_device_settings(_rlog, preserved)
         boot_skin = _apply_boot_skin(_rlog, _boot_skin.get("target"))
         if str(boot_skin or "").startswith("unconfirmed:"):
@@ -1869,9 +1900,11 @@ def restore(
 
     # A restore used to leave this box carrying the SOURCE box's device name and cache
     # buffer, and drop a marker so the boot service could ask the user to repair both on
-    # the next start. Both questions are gone: the values are captured before the extract
-    # and written back by _preserve_device_settings, so there is nothing to ask and no
-    # marker to arm. The restore-check marker below is unrelated and stays - it makes the
+    # the next start. Both questions are gone: _preserve_device_settings settles both
+    # before the restart - the name preserved from the pre-extract capture, the buffer
+    # reset to Kodi's default - so there is nothing to ask and no marker to arm. The
+    # per-device buffer recommendation lives on demand in the add-on's own Video Cache
+    # Buffer menu. The restore-check marker below is unrelated and stays - it makes the
     # boot service re-verify the restored state on the next start (silent on a pass).
     # Written HERE, after the final pass, deliberately: the wipe runs earlier and would
     # remove it, and the extract itself would overwrite it. Guarded: a marker-write

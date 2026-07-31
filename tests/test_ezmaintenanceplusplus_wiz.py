@@ -1785,7 +1785,11 @@ def test_attention_surviving_auto_fix_needs_attention(wiz, monkeypatch, tmp_path
 # --------------------------------------------------------------------------- #
 def _preserve_env(wiz, monkeypatch, tmp_path, archive_name="Golden Image Box"):
     """A userdata dir holding an ARCHIVE-valued guisettings.xml, plus a persist_one
-    fake that snapshots what the file said AT THE MOMENT it was called."""
+    fake that snapshots what the file said AT THE MOMENT it was called.
+
+    The archive's buffer is 200, distinct from Kodi's default 20 and from the 96 the
+    tests hand in as a captured value, so "reset" cannot be confused with either "left
+    alone" or "preserved"."""
     userdata = tmp_path / "userdata"
     userdata.mkdir(parents=True, exist_ok=True)
     gs = userdata / "guisettings.xml"
@@ -1830,11 +1834,22 @@ def test_preserve_vectors_only_after_its_own_writes(wiz, monkeypatch, tmp_path):
     launder the ordering."""
     gs, snapshots = _preserve_env(wiz, monkeypatch, tmp_path)
 
-    wiz._preserve_device_settings(
+    prop = wiz._preserve_device_settings(
         lambda m: None,
         {"services.devicename": "Living Room", "filecache.memorysize": 96},
     )
 
+    # The buffer is reported ONCE, as the reset value. A capture that still carries the
+    # buffer must be SKIPPED by the write-back loop, not written and then overwritten:
+    # the ezm_preserved property is read off a real box over JSON-RPC to find out what
+    # a restore did, and a property listing a number the box does not have makes it a
+    # worse diagnostic than none. This is also the only place the skip guard is
+    # observable, because the reset that follows the loop hides the double write.
+    assert prop == "services.devicename:Living Room,filecache.memorysize:20", (
+        "ezm_preserved is %r. A ':96' in there means an inherited buffer was written "
+        "back before the reset overwrote it, and the property is now reporting a value "
+        "no layer holds." % prop
+    )
     assert snapshots, "the preserved file must be vectored into NSUserDefaults"
     assert [s for _rel, s in snapshots] == ["Living Room"], (
         "every vector must see this box's preserved name; a snapshot of %r means "
@@ -1842,17 +1857,27 @@ def test_preserve_vectors_only_after_its_own_writes(wiz, monkeypatch, tmp_path):
         % [s for _rel, s in snapshots]
     )
     assert _setting_value(gs, "services.devicename") == "Living Room"
-    assert _setting_value(gs, "filecache.memorysize") == "96"
+    # The buffer is RESET to Kodi's default, never preserved (owner decision
+    # 2026-07-31), so the 96 handed in above must NOT reach the file - and neither may
+    # the archive's 200. A capture that still carries the buffer cannot smuggle an
+    # inherited number past the reset.
+    assert _setting_value(gs, "filecache.memorysize") == "20", (
+        "the buffer is %r: 96 means the captured value was written back (the deleted "
+        "preserve behaviour), 200 means the archive's value stands and the reset never "
+        "ran at all" % _setting_value(gs, "filecache.memorysize")
+    )
 
 
 def test_preserve_vectors_after_writing_every_value_not_just_the_first(
     wiz, monkeypatch, tmp_path
 ):
-    """Both preserved values must be in the file before the vector, not just one.
+    """Every value must be in the file before the vector, not just the first.
 
-    The ids are written in a loop; a vector inside that loop would carry the first
-    value and the archive's second. Asserted on the BUFFER, which sorts after the
-    device name, so it is the one an early vector would miss."""
+    The preserved ids are written in a loop and the buffer reset runs after it, so a
+    vector taken inside the loop - or inside the reset, which is why the reset is asked
+    NOT to vector for itself - would carry one settled value and one archive value.
+    Asserted on the BUFFER, which is written last, so it is the one an early vector
+    would miss."""
     gs, snapshots = _preserve_env(wiz, monkeypatch, tmp_path)
     seen_buffer = []
     from resources.lib.modules import nsud
@@ -1868,23 +1893,43 @@ def test_preserve_vectors_after_writing_every_value_not_just_the_first(
         {"services.devicename": "Living Room", "filecache.memorysize": 96},
     )
 
-    assert seen_buffer == ["96"], (
-        "the vector must run after EVERY preserved value is written; saw %r"
-        % seen_buffer
+    assert seen_buffer == ["20"], (
+        "the vector must run exactly once, after every write including the buffer "
+        "reset; saw %r" % seen_buffer
     )
 
 
-def test_preserve_with_nothing_captured_writes_nothing(wiz, monkeypatch, tmp_path):
-    """An empty capture leaves the archive's values alone rather than writing a guess.
+def test_preserve_with_nothing_captured_still_resets_the_buffer(
+    wiz, monkeypatch, tmp_path
+):
+    """An empty capture leaves the archive's device NAME alone rather than writing a
+    guess - and still resets the buffer.
 
-    A default here would invent a device name nobody chose and publish it to the
-    network, which is worse than keeping the value the restore brought."""
+    A default name here would invent one nobody chose and publish it to the network,
+    which is worse than keeping the value the restore brought. The buffer is the
+    opposite case: its reset uses no captured value at all, so an empty capture must
+    not suppress it. The function used to return early on an empty capture, which would
+    now leave the SOURCE box's buffer on any box whose name could not be read."""
     gs, snapshots = _preserve_env(wiz, monkeypatch, tmp_path)
 
-    assert wiz._preserve_device_settings(lambda m: None, {}) == "none"
+    prop = wiz._preserve_device_settings(lambda m: None, {})
 
-    assert _setting_value(gs, "services.devicename") == "Golden Image Box"
-    assert snapshots == [], "nothing to preserve means nothing to vector"
+    assert _setting_value(gs, "services.devicename") == "Golden Image Box", (
+        "nothing was captured, so the archive's device name must stand"
+    )
+    assert _setting_value(gs, "filecache.memorysize") == "20", (
+        "an empty capture suppressed the buffer reset - the archive's %r survived"
+        % _setting_value(gs, "filecache.memorysize")
+    )
+    assert snapshots, (
+        "the reset wrote the file, so it MUST be vectored: on tvOS an unvectored "
+        "write is shadowed by the stale key and the Apple TV boots the old buffer"
+    )
+    assert prop == "filecache.memorysize:20", (
+        "the ezm_preserved property must report what actually happened, so a hardware "
+        "check can read the outcome over JSON-RPC instead of inferring it; got %r"
+        % prop
+    )
 
 
 def test_preserve_never_raises_into_the_restore(wiz, monkeypatch, tmp_path):

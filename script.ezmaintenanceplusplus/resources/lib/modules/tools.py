@@ -88,13 +88,20 @@ def _get_devicename():
 def capture_device_identity():
     """This box's OWN identity settings, read LIVE before a restore overwrites them.
 
-    A restore clones the SOURCE box's guisettings, which carries two values that
-    describe the TARGET hardware and must not travel with an archive:
+    A restore clones the SOURCE box's guisettings, which carries values describing the
+    TARGET hardware that must not travel with an archive. Exactly ONE of them is
+    PRESERVED and therefore captured here:
 
       * ``services.devicename`` - what this box is called on the network. A fresh
         Kodi install is already named "Kodi", so this box always HAS a name; there
         is no first-run case where the value is absent and something must be asked.
-      * ``filecache.memorysize`` - the video cache buffer, sized per device.
+
+    ``filecache.memorysize`` is deliberately NOT captured. It is RESET to
+    ``KODI_DEFAULT_MB`` by ``reset_cache_buffer`` rather than preserved (owner
+    decision 2026-07-31: the fleet mixes device classes whose right buffer differs,
+    so no inherited number survives a restore - not the archive's, and not this box's
+    own previous one either). Capturing it would only hand the write-back loop an
+    inherited number to smuggle past the reset.
 
     Returns ``{setting_id: value}`` holding only the values that could actually be
     read. A value that could not be read is OMITTED rather than defaulted, so the
@@ -109,12 +116,6 @@ def capture_device_identity():
         name = _get_devicename()
         if name:
             out[DEVICENAME_SETTING] = name
-    except Exception:
-        pass
-    try:
-        mb = _get_cache_mb()
-        if mb is not None:
-            out[CACHE_SETTING] = int(mb)
     except Exception:
         pass
     return out
@@ -211,7 +212,25 @@ def _recommended_mb():
 
 def _clean_stale_advancedsettings():
     """Best-effort removal of a stale advancedsettings.xml <cache> written by older versions
-    (Omega ignores it, but it can confuse). Only deletes if it contains a cache block."""
+    (Omega ignores it, but it can confuse). Only deletes if it contains a cache block.
+
+    Called ONLY from the "Reset to Kodi default" MENU action, and deliberately NOT from
+    ``reset_cache_buffer`` on the restore / wipe paths. Three reasons, all load-bearing:
+
+      * it cannot change the outcome. Omega reads the buffer from the GUI setting; the
+        advancedsettings.xml <cache> block is deprecated and IGNORED, so deleting it
+        moves nothing towards KODI_DEFAULT_MB.
+      * it deletes the WHOLE FILE, not the <cache> block. advancedsettings.xml is a
+        general Kodi tuning file (network timeouts, video settings, logging), so on a
+        restore this would destroy archive-carried settings that have nothing to do
+        with the cache - a restore silently deleting what it just restored.
+      * on tvOS ``xbmcvfs.delete`` cannot delete a userdata xml at all: it drops the
+        NSUserDefaults key, reports success and leaves the POSIX file. That is the
+        one-layer asymmetry the backup/restore contract exists to forbid.
+
+    In the menu the same three points do not apply: the user explicitly asked for
+    Kodi's default, the file is his own rather than an archive's, and a stale <cache>
+    block is exactly the confusion he is trying to clear."""
     try:
         if xbmcvfs.exists(ADV_XML):
             with xbmcvfs.File(ADV_XML) as f:
@@ -220,6 +239,86 @@ def _clean_stale_advancedsettings():
                 xbmcvfs.delete(ADV_XML)
     except Exception:
         pass
+
+
+def reset_cache_buffer(guisettings_path=None, vector=True, log=None):
+    """Land this box's video cache buffer on Kodi's OWN default (``KODI_DEFAULT_MB``).
+
+    Owner decision 2026-07-31: a restore or a wipe leaves the box on Kodi's default.
+    Not the archive's buffer, and NOT this box's own previous one either - the fleet
+    mixes device classes whose right buffer differs, so no inherited number is allowed
+    to survive. The per-device recommendation is then offered where it already lives,
+    in ``advancedSettings()`` ("Use recommended for this device: N MB"), and the buffer
+    only moves off the default when the user ACCEPTS that or types his own value.
+
+    This function asks nothing and shows nothing. There is deliberately NO prompt: the
+    post-restore popup was deleted 2026-07-19 and does not come back for this.
+
+    THREE layers, because any one of them alone is silently reverted:
+
+      * the LIVE store (``Settings.SetSettingValue``). Kodi's clean-shutdown flush
+        serializes live memory over guisettings.xml, so a file-only reset is written
+        straight back to the old value - the kodi-settings-clobber class, hardware
+        proven. This is also the durable path on tvOS.
+      * the FILE (guisettings.xml). The live store only reaches disk on a CLEAN exit,
+        so on Fire TV / Android an unclean kill (power pull, task-swipe) would lose a
+        live-only reset.
+      * the tvOS VECTOR (``nsud.persist_one``). On Apple TV the NSUserDefaults key
+        SHADOWS the disk file and Kodi never copies a key back, so a file-only reset is
+        INVISIBLE there. Pass ``vector=False`` when the CALLER owns the single vector
+        for this file - ``wiz._preserve_device_settings`` does, because it writes the
+        device name into the same file and ``persist_one`` DROPS the POSIX copy on
+        tvOS, so a vector taken here would strand that write.
+
+    ``guisettings_path`` defaults to this box's own file; the restore passes the path it
+    already resolved, because the module-level constant is frozen at import time.
+
+    Never raises: every layer is independently guarded, because this runs mid-restore
+    and mid-wipe where an exception would abort something that matters over a cosmetic
+    setting. Returns ``{"live": bool, "file": bool, "before": int|None}`` so the caller
+    can report truthfully - notably that a missing guisettings.xml (a wipe already
+    removed it) is an EXPECTED ``file: False``, not a failure."""
+    if guisettings_path is None:
+        guisettings_path = GUISETTINGS_XML
+    try:
+        before = _get_cache_mb()
+    except Exception:
+        before = None
+    try:
+        live_ok = bool(_set_cache_mb(KODI_DEFAULT_MB))
+    except Exception:
+        live_ok = False
+    try:
+        from resources.lib.modules import _kodisettings
+
+        file_ok = bool(
+            _kodisettings.write_guisetting(
+                guisettings_path, CACHE_SETTING, KODI_DEFAULT_MB
+            )
+        )
+    except Exception:
+        file_ok = False
+    if vector:
+        try:
+            from resources.lib.modules import nsud
+
+            nsud.persist_one("guisettings.xml", log=log)
+        except Exception:
+            pass
+    if log:
+        try:
+            log(
+                "cache-buffer: reset %s -> %d MB (live=%s file=%s)"
+                % (
+                    "unknown" if before is None else "%d MB" % before,
+                    KODI_DEFAULT_MB,
+                    live_ok,
+                    file_ok,
+                )
+            )
+        except Exception:
+            pass
+    return {"live": live_ok, "file": file_ok, "before": before}
 
 
 def advancedSettings():
@@ -286,11 +385,15 @@ def advancedSettings():
 # A restore used to clone the SOURCE box's `services.devicename` and
 # `filecache.memorysize`, then ask the user, on the first boot afterwards, to
 # repair what it had just broken. Both questions were deleted (owner decision,
-# 2026-07-19) and replaced with PRESERVATION: wiz.restore() captures this box's
-# own two values before the extract and writes them back into the restored
-# guisettings.xml, and `_kodisettings._BOOT_STATE_ONLY` stops the archive's
-# values from being live-applied over them. The box keeps the name and the
-# buffer it already had, so there is nothing left to ask.
+# 2026-07-19). `_kodisettings._BOOT_STATE_ONLY` stops the archive's values from
+# being live-applied over this box's, and wiz._preserve_device_settings settles
+# both before the restart - with two DIFFERENT resolutions:
+#   * the device name is PRESERVED, captured live before the extract;
+#   * the cache buffer is RESET to KODI_DEFAULT_MB (owner decision 2026-07-31),
+#     because the fleet mixes device classes whose right buffer differs and no
+#     inherited number may survive - not the archive's, not this box's own.
+# Either way there is nothing left to ask, and STILL no prompt: the buffer's
+# per-device recommendation is offered on demand under Video Cache Buffer.
 #
 # Why the questions were wrong, recorded so they are not reinvented:
 #   * The buffer question was theatre. _recommended_mb() derives the value from

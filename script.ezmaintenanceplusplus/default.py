@@ -669,6 +669,29 @@ def FRESHSTART(mode="verbose"):
             )  # reconcile the DB with what's left
         except Exception:
             pass
+    # The box is going to a clean state, so the video cache buffer goes to Kodi's own
+    # default with it (owner decision 2026-07-31: no inherited buffer survives a wipe or
+    # a restore). MOSTLY redundant - the wipe removes guisettings.xml and Kodi's own
+    # default is already 20 MB - but only mostly, and the gaps are exactly the ones this
+    # add-on has been bitten by before: Kodi's LIVE store still holds this box's old
+    # buffer, so any flush writes it straight back into the fresh file, and a wipe that
+    # left guisettings.xml behind (wipe_failed) leaves the old number sitting in it.
+    # Runs AFTER the wipe for that second reason. Gated on wipe_started so a run that
+    # destroyed nothing changes nothing. No prompt here or anywhere; the per-device
+    # recommendation is offered on demand under Video Cache Buffer.
+    if wipe_started:
+        try:
+            from resources.lib.modules import tools
+
+            tools.reset_cache_buffer(
+                log=lambda m: xbmc.log("%s : %s" % (AddonTitle, m), level=xbmc.LOGINFO)
+            )
+        except Exception as e:
+            xbmc.log(
+                "%s : cache-buffer reset after Fresh Start failed: %s: %s"
+                % (AddonTitle, type(e).__name__, e),
+                level=xbmc.LOGWARNING,
+            )
     if mode != "silent":
         # Honest completion: "Clean slate ready" is only ever claimed when the wipe
         # ran AND removed everything it was asked to. A wipe that never ran, or that

@@ -374,6 +374,20 @@ def dmod(monkeypatch):
     wiz.configured_path = _real_configured_path(control)
     _submodule("wiz", wiz)
 
+    # ---- tools stub ---- #
+    # FRESHSTART imports this lazily to reset the video cache buffer once the wipe has
+    # run (owner decision 2026-07-31: a wiped box lands on Kodi's default, never on an
+    # inherited number). `event_log` is shared with the per-test onetap fake so the
+    # ORDER of wipe-then-reset is assertable, not just the fact of the call.
+    tools = types.ModuleType("resources.lib.modules.tools")
+    tools.event_log = []
+    tools.reset_cache_buffer = lambda *a, **k: tools.event_log.append("reset") or {
+        "live": True,
+        "file": False,
+        "before": 150,
+    }
+    _submodule("tools", tools)
+
     # ---- maintenance / backtothefuture stubs ---- #
     maintenance = types.ModuleType("resources.lib.modules.maintenance")
     maintenance.getNextMaintenance = lambda: 0
@@ -412,6 +426,7 @@ def dmod(monkeypatch):
     ns.control = control
     ns.ui = ui
     ns.wiz = wiz
+    ns.tools = tools
     ns.set_nsud = set_nsud
     return ns
 
@@ -1976,6 +1991,143 @@ def test_freshstart_that_never_started_stays_up_and_says_nothing_was_removed(
     assert any("did not run" in m.lower() for m in dmod.ui.done_calls), (
         dmod.ui.done_calls
     )
+
+
+def test_freshstart_resets_the_cache_buffer_after_the_wipe(dmod, monkeypatch):
+    """A wiped box lands on Kodi's default video cache buffer (owner decision
+    2026-07-31: no inherited number survives a wipe or a restore, because the fleet
+    mixes device classes whose right buffer differs).
+
+    On this path the reset is MOSTLY redundant - the wipe removes guisettings.xml and
+    Kodi's own default is already 20 MB - and the owner asked for the guarantee to be
+    explicit and TESTABLE rather than incidental. It is not entirely redundant either,
+    which is why it runs AFTER the wipe rather than before: Kodi's LIVE store still
+    holds this box's old buffer (a wipe removes files, not the running process's
+    memory), so any flush writes it straight back into the fresh file, and a wipe that
+    left guisettings.xml behind leaves the old number sitting in it.
+
+    No prompt is involved and none may appear: the per-device recommendation stays on
+    demand under Video Cache Buffer."""
+    import sys
+    import types as _t
+
+    onetap = _t.ModuleType("resources.lib.modules.onetap")
+
+    def _wipe(home, excludes, keep=None, progress=None):
+        dmod.tools.event_log.append("wipe")
+        return (5, 2, 0, [])
+
+    onetap._wipe = _wipe
+    onetap._wipe_excludes = lambda: set()
+    onetap.keep_addon_db = lambda: set()
+    monkeypatch.setitem(sys.modules, "resources.lib.modules.onetap", onetap)
+    setattr(sys.modules["resources.lib.modules"], "onetap", onetap)
+
+    dmod.mod.HOME = "/home/.kodi"
+    dmod.mod.translatePath = lambda p: (
+        "/apk/assets/skin.estuary" if p == "special://skin/" else p
+    )
+    dmod.ui.confirm_wipe = lambda *a, **k: True
+    dmod.ui.ask_terminate = lambda status="", **k: False
+
+    dmod.mod.FRESHSTART()
+
+    assert dmod.tools.event_log == ["wipe", "reset"], (
+        "Fresh Start must reset the cache buffer exactly once, AFTER the wipe; the "
+        "event log was %r. Resetting before the wipe writes a value the wipe then "
+        "deletes, and leaves the old number in a guisettings.xml the wipe failed to "
+        "remove." % (dmod.tools.event_log,)
+    )
+
+
+def test_freshstart_that_died_mid_wipe_still_resets_the_cache_buffer(dmod, monkeypatch):
+    """The destructive pass BEGAN, so the box is going to a clean state whether or not
+    the wipe finished - and the file layer is exactly what a half-finished wipe may
+    have left holding the old buffer. The reset must not be gated on the wipe
+    SUCCEEDING, only on it having started."""
+    import sys
+    import types as _t
+
+    onetap = _t.ModuleType("resources.lib.modules.onetap")
+
+    def _wipe(home, excludes, keep=None, progress=None):
+        dmod.tools.event_log.append("wipe")
+        raise RuntimeError("NSUserDefaults key sweep blew up after the POSIX delete")
+
+    onetap._wipe = _wipe
+    onetap._wipe_excludes = lambda: set()
+    onetap.keep_addon_db = lambda: set()
+    monkeypatch.setitem(sys.modules, "resources.lib.modules.onetap", onetap)
+    setattr(sys.modules["resources.lib.modules"], "onetap", onetap)
+
+    dmod.mod.HOME = "/home/.kodi"
+    dmod.mod.translatePath = lambda p: (
+        "/apk/assets/skin.estuary" if p == "special://skin/" else p
+    )
+    dmod.ui.confirm_wipe = lambda *a, **k: True
+    dmod.ui.ask_terminate = lambda status="", **k: False
+
+    dmod.mod.FRESHSTART()
+
+    assert dmod.tools.event_log == ["wipe", "reset"], dmod.tools.event_log
+
+
+def test_freshstart_that_never_started_leaves_the_cache_buffer_alone(dmod, monkeypatch):
+    """The counterpart, and the reason the reset is gated rather than unconditional.
+
+    If the wipe genuinely never began (an import error, a raise before the first
+    delete) the box is UNTOUCHED. Changing the user's cache buffer there would be an
+    uninstructed mutation on a run that did nothing else - the same reasoning that
+    keeps Kodi alive on this path instead of terminating it."""
+    import sys
+    import types as _t
+
+    onetap = _t.ModuleType("resources.lib.modules.onetap")
+
+    def _excludes():
+        raise RuntimeError("failed before any delete")
+
+    onetap._wipe = lambda *a, **k: (0, 0, 0, [])
+    onetap._wipe_excludes = _excludes
+    onetap.keep_addon_db = lambda: set()
+    monkeypatch.setitem(sys.modules, "resources.lib.modules.onetap", onetap)
+    setattr(sys.modules["resources.lib.modules"], "onetap", onetap)
+
+    dmod.mod.HOME = "/home/.kodi"
+    dmod.mod.translatePath = lambda p: (
+        "/apk/assets/skin.estuary" if p == "special://skin/" else p
+    )
+    dmod.ui.confirm_wipe = lambda *a, **k: True
+    dmod.ui.ask_terminate = lambda status="", **k: False
+
+    dmod.mod.FRESHSTART()
+
+    assert dmod.tools.event_log == [], (
+        "nothing was destroyed, so nothing may be changed: %r" % (dmod.tools.event_log,)
+    )
+
+
+def test_freshstart_refused_from_a_custom_skin_changes_nothing(dmod, monkeypatch):
+    """The refusal path must not reset the buffer either - it never reaches the wipe."""
+    import sys
+    import types as _t
+
+    onetap = _t.ModuleType("resources.lib.modules.onetap")
+    onetap._wipe = lambda *a, **k: (0, 0, 0, [])
+    onetap._wipe_excludes = lambda: set()
+    onetap.keep_addon_db = lambda: set()
+    monkeypatch.setitem(sys.modules, "resources.lib.modules.onetap", onetap)
+    setattr(sys.modules["resources.lib.modules"], "onetap", onetap)
+
+    dmod.mod.HOME = "/home/.kodi"
+    dmod.mod.translatePath = lambda p: (
+        "/home/.kodi/addons/skin.estuary7" if p == "special://skin/" else p
+    )
+    dmod.ui.confirm_wipe = lambda *a, **k: True
+
+    dmod.mod.FRESHSTART()
+
+    assert dmod.tools.event_log == [], dmod.tools.event_log
 
 
 def test_freshstart_requires_stock_estuary_skin(dmod, monkeypatch):

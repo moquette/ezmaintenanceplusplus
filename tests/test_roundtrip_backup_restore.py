@@ -40,6 +40,7 @@ import shutil
 import struct
 import sys
 import types
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
@@ -71,9 +72,16 @@ def _pseudo_random_bytes(n, seed=b"ezm-roundtrip"):
 
 
 PROFILE_SPEC = {
+    # Carries all three shapes the guisettings check below needs: an ordinary setting
+    # the restore must round-trip untouched, the device name the restore PRESERVES from
+    # the target box, and the cache buffer the restore RESETS to Kodi's default. The
+    # buffer is deliberately NOT 20, so "the reset ran" and "the archive happened to
+    # carry the default" cannot be confused.
     "userdata/guisettings.xml": (
         b'<settings version="2">'
         b'<setting id="services.devicename">SourceBox</setting>'
+        b'<setting id="filecache.memorysize">96</setting>'
+        b'<setting id="audiooutput.volumesteps">91</setting>'
         b"</settings>"
     ),
     "userdata/sources.xml": b"<sources><video><default/></video></sources>",
@@ -116,6 +124,51 @@ PERMITTED_MISSING_OPTIONAL = {
 }
 # Extras the restore may legitimately leave that are not profile payload.
 TOLERATED_EXTRA_BASENAMES = {MANIFEST_BASENAME}
+
+# The ONE file a restore deliberately rewrites, so it can never be byte-identical and
+# never could be: guisettings.xml. The restore PRESERVES this box's services.devicename
+# over the archive's and RESETS filecache.memorysize to Kodi's default (owner decision
+# 2026-07-31 - the fleet mixes device classes, so no inherited buffer survives).
+# Excluded from the BYTE diff and checked SEMANTICALLY instead
+# (_assert_guisettings_rewrite_is_surgical), so the tolerance cannot hide a restore that
+# mangled the rest of the file - a blanket ignore here would have let exactly that
+# through unnoticed.
+GUISETTINGS_REL = "userdata/guisettings.xml"
+REWRITTEN_BY_RESTORE = {GUISETTINGS_REL}
+KODI_DEFAULT_BUFFER_MB = "20"
+RESTORE_OWNED_SETTINGS = ("services.devicename", "filecache.memorysize")
+
+
+def _settings_map(blob: bytes) -> dict:
+    """{setting id: text} from a guisettings.xml payload."""
+    root = ET.fromstring(blob)
+    return {
+        n.get("id"): (n.text or "").strip() for n in root.iter("setting") if n.get("id")
+    }
+
+
+def _assert_guisettings_rewrite_is_surgical(original: bytes, restored: bytes) -> None:
+    """The restore may rewrite exactly two ids in guisettings.xml, and nothing else.
+
+    Anything the restore does not own must survive the round trip with the archive's
+    own value, and filecache.memorysize must land on Kodi's default rather than on
+    either box's number. Asserting per-setting rather than per-file is what keeps this
+    a test instead of an exemption."""
+    was = _settings_map(original)
+    now = _settings_map(restored)
+    for sid, value in was.items():
+        if sid in RESTORE_OWNED_SETTINGS:
+            continue
+        assert now.get(sid) == value, (
+            "the restore changed %r in guisettings.xml (%r -> %r). Only %r are the "
+            "restore's to rewrite; everything else must round-trip untouched."
+            % (sid, value, now.get(sid), RESTORE_OWNED_SETTINGS)
+        )
+    assert now.get("filecache.memorysize") == KODI_DEFAULT_BUFFER_MB, (
+        "the restored guisettings.xml carries buffer %r, not Kodi's default %r. A "
+        "restore must leave no inherited cache buffer behind - not the archive's, and "
+        "not this box's own." % (now.get("filecache.memorysize"), KODI_DEFAULT_BUFFER_MB)
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -472,8 +525,21 @@ def test_full_roundtrip_backup_wipe_restore_is_byte_identical(
     drive_restore(wiz, monkeypatch, home, zip_path)
     restored = snapshot(home)
 
-    expected = {k: v for k, v in original.items() if k not in PERMITTED_MISSING_ALWAYS}
-    missing, changed, extra = _diff_trees(expected, restored)
+    # guisettings.xml is checked SEMANTICALLY (the restore owns two ids in it and
+    # rewrites them by design), so it comes out of the byte diff - but only after the
+    # per-setting check below has run on it, and only if it is actually there.
+    assert GUISETTINGS_REL in restored, "the restore delivered no guisettings.xml"
+    _assert_guisettings_rewrite_is_surgical(
+        PROFILE_SPEC[GUISETTINGS_REL], (home / GUISETTINGS_REL).read_bytes()
+    )
+
+    expected = {
+        k: v
+        for k, v in original.items()
+        if k not in PERMITTED_MISSING_ALWAYS and k not in REWRITTEN_BY_RESTORE
+    }
+    actual = {k: v for k, v in restored.items() if k not in REWRITTEN_BY_RESTORE}
+    missing, changed, extra = _diff_trees(expected, actual)
     missing = [m for m in missing if m not in PERMITTED_MISSING_OPTIONAL]
 
     # The IPTV instance files are the payload that has been lost the most

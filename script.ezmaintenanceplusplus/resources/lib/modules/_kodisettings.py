@@ -62,16 +62,26 @@ def _coerce(raw, typ):
 # the mandatory post-restore restart boots straight into it with no countdown firing.
 #
 # services.devicename and filecache.memorysize - these describe the TARGET HARDWARE, not
-# the backup. They are the two values a restore must PRESERVE rather than clone: the box
-# keeps the name it answers to on the network and the cache buffer sized for its own RAM.
-# Skipping the live-apply is only half the fix and is INSUFFICIENT on its own, because the
-# archive's values still sit in the restored guisettings.xml and win at the next boot.
-# wiz._preserve_device_settings writes this box's captured values back into that file, so
-# both layers - Kodi's live memory and the file it is flushed to - hold this box's values.
-# Same both-halves pattern proven for lookandfeel.skin (wiz._apply_boot_skin).
+# the backup, so the archive's value must never win. Skipping the live-apply is only half
+# the fix and is INSUFFICIENT on its own, because the archive's values still sit in the
+# restored guisettings.xml and win at the next boot. wiz._preserve_device_settings owns
+# the other half, and the two ids DIVERGE there - same principle, different resolutions,
+# and collapsing them back into one rule is a regression:
 #
-# Adding an id here without a matching write-back is a silent regression: the archive's
-# value survives on disk and takes effect one restart later, where nothing is watching.
+#   * services.devicename is PRESERVED. This box's captured live value is written back
+#     over the archive's, so the box keeps the name it answers to on the network.
+#   * filecache.memorysize is RESET to tools.KODI_DEFAULT_MB, never preserved and never
+#     cloned. The fleet mixes device classes whose right buffer differs, so no inherited
+#     number survives a restore - not the archive's, and not this box's own previous one
+#     either (owner decision 2026-07-31). The per-device recommendation is offered on
+#     demand under Video Cache Buffer (tools.advancedSettings); there is NO prompt.
+#
+# Either way both layers end up agreeing - Kodi's live memory and the file it is flushed
+# to - which is the both-halves pattern proven for lookandfeel.skin (wiz._apply_boot_skin).
+#
+# Adding an id here without a matching write-back or reset is a silent regression: the
+# archive's value survives on disk and takes effect one restart later, where nothing is
+# watching.
 _BOOT_STATE_ONLY = frozenset(
     ("lookandfeel.skin", "services.devicename", "filecache.memorysize")
 )

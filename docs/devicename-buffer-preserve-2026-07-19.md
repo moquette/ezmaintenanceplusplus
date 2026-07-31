@@ -3,6 +3,24 @@
 **Status: implemented, tested, tvOS-verified on hardware. NOT released.**
 Version `2026.07.19.4`. Owner decision 2026-07-19.
 
+> **HALF OF THIS IS SUPERSEDED. Owner decision 2026-07-31.**
+>
+> The prompt deletion stands, and the DEVICE NAME is still preserved exactly as
+> described below. The CACHE BUFFER is no longer preserved: a restore, a
+> clean-clone wipe and a Fresh Start now all land the box on Kodi's own default,
+> `tools.KODI_DEFAULT_MB` (20 MB). Not the archive's number and not this box's
+> own previous one either, because the fleet mixes device classes whose right
+> buffer differs, so no inherited value may survive. The per-device
+> recommendation is offered only on demand, in the add-on's Video Cache Buffer
+> menu, and the buffer moves off 20 only when the user accepts it or types his
+> own value. There is still NO prompt anywhere.
+>
+> Everything below about `filecache.memorysize` being written back from the
+> pre-extract capture describes the OLD behaviour. The reasoning that produced
+> it is kept because it is still the reason there is no prompt; the outcome is
+> not. The live code is `tools.reset_cache_buffer` and
+> `wiz._preserve_device_settings`.
+
 ## What changed
 
 A restore used to clone the SOURCE box's `services.devicename` and

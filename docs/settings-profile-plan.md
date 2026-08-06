@@ -12,7 +12,7 @@ comes up carrying the owner's essential settings: services, add-on policy, guide
 behaviour, language, file manager sources, the T7B repository, and this add-on's
 own backup folder.
 
-`kodi-launcher` already produces exactly that box, in 18 seconds, on a macOS
+`bootstrapper` already produces exactly that box, in 18 seconds, on a macOS
 bench, by seeding files while Kodi is CLOSED. This plan is about producing the
 same box from INSIDE a running Kodi, which is a different problem with different
 mechanisms and a named failure class attached to it.
@@ -25,7 +25,7 @@ mechanisms and a named failure class attached to it.
 2. **Those values are generic and shipping them publicly is accepted.** This was
    raised and accepted. It is not an open risk and is not to be re-raised at
    review time.
-3. **EZ Maintenance++ owns the bundle.** `kodi-launcher` becomes a consumer.
+3. **EZ Maintenance++ owns the bundle.** `bootstrapper` becomes a consumer.
 
 ## 2. Goals and non-goals
 
@@ -38,7 +38,7 @@ mechanisms and a named failure class attached to it.
 - Every value is data in a bundle, never a literal in code.
 - Every applied value is verified, not assumed, and anything that cannot be
   verified before the restart is verified on the next boot.
-- One source of truth shared with `kodi-launcher`, with no second copy to drift.
+- One source of truth shared with `bootstrapper`, with no second copy to drift.
 
 ### Non-goals
 
@@ -47,7 +47,7 @@ mechanisms and a named failure class attached to it.
   Start owns destruction and stays untouched.
 - Not automatic. It never runs at boot and is never offered at boot.
 - Not a folder of options. One row (6.1).
-- Not a bench provisioner. `settings/windowed.d/` in `kodi-launcher` is bench-only
+- Not a bench provisioner. `settings/windowed.d/` in `bootstrapper` is bench-only
   and excluded from the bundle: `videoscreen.screen` of -1 and `screenmode` of
   WINDOW would put a television into a window.
 
@@ -173,7 +173,7 @@ fragment carrying `default="true"`.
 ### 4.2 Class B
 
 `general/settinglevel` lives in its own `<general>` block, not as a setting id.
-`kodi-launcher/README.md:191-193` records that it has no JSON-RPC path. Its
+`bootstrapper/README.md:191-193` records that it has no JSON-RPC path. Its
 fragment carries a load-bearing empty `<viewstates />` stub, because
 `CViewStateSettings::Load` returns early without it.
 
@@ -193,7 +193,7 @@ live path would be cheap to use if it exists, but the plan does not depend on it
 
 ### 4.3 Class C
 
-**The bundle carries source ENTRIES, never a document.** `kodi-launcher`'s
+**The bundle carries source ENTRIES, never a document.** `bootstrapper`'s
 `settings/sources.xml` is a complete `<sources>` document with stubs for every
 media section; copying it onto a configured box DELETES every source that box
 already had, which contradicts the additive guarantee in section 2 outright. The
@@ -339,13 +339,13 @@ Four arms, because one arm cannot close the question:
 
 Each arm ends the same way, and ends at USABLE rather than at "the file looks
 right": relaunch, `Files.GetSources` compared by path, then `Files.GetDirectory`
-to prove the source browses. `kodi-launcher/README.md:395-400` already has those
+to prove the source browses. `bootstrapper/README.md:395-400` already has those
 exact commands.
 
 Decision tree:
 
 - **Survives arms 1 and 3:** class C is a single-step merge plus restart, the
-  deleted `boxsetup` was correct, and `kodi-launcher/README.md:403` needs
+  deleted `boxsetup` was correct, and `bootstrapper/README.md:403` needs
   narrowing.
 - **Lost in arm 1, kept in arm 2:** the write is real but the clean-shutdown flush
   eats it. Class C cannot ship in phase 2 without a mechanism that avoids a clean
@@ -472,7 +472,7 @@ Rules:
 - The class C document carries source entries only. It is never copied onto a box.
 - **Device-scoped leaves are overlay-only and absent from the base.** The backup
   path is the live example: `settings/addon_data/script.ezmaintenanceplusplus/settings.xml`
-  in `kodi-launcher` hardcodes the `fireos/` leaf and its own comment says a tvOS
+  in `bootstrapper` hardcodes the `fireos/` leaf and its own comment says a tvOS
   transport means a per-class variant, not an edit in place. Under a plain
   base-plus-overlay shape a box whose class does not resolve would silently
   inherit `fireos/`, and an Apple TV would write its backups into the Fire TV
@@ -507,10 +507,11 @@ Rules:
 
 ### 7.2 One copy, not two
 
-An earlier revision had `kodi-launcher` vendor a generated copy with a
-consumer-side drift check. That does not hold up: `kodi-launcher` has **no git
-remote and no CI**, and its only entry point is `npm run validate`, typed by
-hand. A check nobody runs is not a guard, and this project has already lost weeks
+An earlier revision had `bootstrapper` vendor a generated copy with a
+consumer-side drift check. That does not hold up: when this was written `bootstrapper` had **no git
+remote and no CI**, and its only entry point was `npm run validate`, typed by
+hand. It gained a remote on 2026-08-06 (`moquette/kodi-bootstrapper`, private)
+and still has no CI, so the conclusion stands until one exists. A check nobody runs is not a guard, and this project has already lost weeks
 to hand-synced copies drifting.
 
 **Remove the second copy.** `bin/reset-kodi` and `bin/seed-kodi` resolve the
@@ -843,7 +844,7 @@ Boot and restore stay exactly as restricted as they are now.
 | ----- | ----------- | ------------ |
 | 0 | Kodi source read, then E1, E2 and E3 on the bench; results recorded; class B and C outcomes decided | The `sources.xml` question is answered in writing with all four arms |
 | 0.5 | The CLAUDE.md and README fake correction (8.2), as its OWN commit | Landed before phase 1 starts |
-| 1 | Bundle at `resources/profiles/house/`, `tools/resolve_profile.py`, run-time resolution from `bin/reset-kodi` and `bin/seed-kodi`, the launcher adapter, the lint extension | The adapter reproduces `kodi-launcher/settings/` BYTE-FOR-BYTE from the bundle, checked through `bin/seed-kodi --dry-run` |
+| 1 | Bundle at `resources/profiles/house/`, `tools/resolve_profile.py`, run-time resolution from `bin/reset-kodi` and `bin/seed-kodi`, the launcher adapter, the lint extension | The adapter reproduces `bootstrapper/settings/` BYTE-FOR-BYTE from the bundle, checked through `bin/seed-kodi --dry-run` |
 | 2 | `profile.py` (load/plan/apply/verify), one menu row, three-state result record, in-flow verification | Projection differential is clean on the bench |
 | 3 | Boot check, silent unless something failed | One Fire TV and one Apple TV, wiped to first run |
 | 4 | "Save this box as a profile": capture the same key set to the backup folder | Optional. It is what makes this a feature rather than a fleet script |
@@ -858,7 +859,7 @@ tree, so reproducing that tree is the definition of a correct adapter.
 
 ## 11. Open items
 
-1. `settings/defaults.d/40-media.xml` in `kodi-launcher` currently seeds
+1. `settings/defaults.d/40-media.xml` in `bootstrapper` currently seeds
    `filelists.showparentdiritems` as `true`, which SHOWS the ".." entry, while the
    comment directly above it and `defaults.txt` both say parent items are off. Two
    documents agree against the value, so the recommendation is `false`; the bundle
@@ -909,15 +910,15 @@ one gates the next. Owner decisions are marked; everything else is work.
 - [ ] Extend `test_no_raw_userdata_writer._is_write_call` to see
       `ElementTree`/`tree.write`, with a failing-first test. Before `profile.py`.
 - [ ] Author `resources/profiles/house/` from the current
-      `kodi-launcher/settings/` tree, including `overlays/bench/` deliberately.
+      `bootstrapper/settings/` tree, including `overlays/bench/` deliberately.
 - [ ] `tools/resolve_profile.py --device-class <c>`, emitting a flattened payload.
 - [ ] Bundle-authoring gate in ezmpp CI: every setting id checked against a
       captured `Settings.GetSettings` catalog.
-- [ ] `kodi-launcher`: resolve and validate the bundle in the argument-parsing
+- [ ] `bootstrapper`: resolve and validate the bundle in the argument-parsing
       phase, above `bin/reset-kodi:286`, never after the wipe.
 - [ ] The launcher adapter: entries to a whole `sources.xml`, add-on list to
       `installed` rows.
-- [ ] GATE: the adapter reproduces `kodi-launcher/settings/` byte-for-byte,
+- [ ] GATE: the adapter reproduces `bootstrapper/settings/` byte-for-byte,
       checked through `bin/seed-kodi --dry-run`.
 - [ ] Accept the consequences: the launcher's `npm run validate` and
       `npm run preview` both need repointing.
@@ -951,7 +952,7 @@ one gates the next. Owner decisions are marked; everything else is work.
 
 ## Appendix A: the payload as it stands today
 
-Class A, from `kodi-launcher/settings/defaults.d/`:
+Class A, from `bootstrapper/settings/defaults.d/`:
 
 | Setting id | Value |
 | ---------- | ----- |
@@ -972,7 +973,7 @@ Class A, from `kodi-launcher/settings/defaults.d/`:
 Class B: `general/settinglevel` of 3 with the `<viewstates />` stub. Dropped
 unless E2 finds a live path.
 
-Class C entries, from `kodi-launcher/settings/sources.xml`:
+Class C entries, from `bootstrapper/settings/sources.xml`:
 
 | Name | Path |
 | ---- | ---- |
@@ -1023,7 +1024,7 @@ Round 1's blocking findings and where they landed:
 | Class B and C omitted `persist_one`, and the chokepoint lint cannot see a `tree.write` | 4.2, 4.3, 7.3 |
 | The deferred boot-write mechanism cannot work: Kodi reads both files at startup | 5.3 |
 | `profiles/` at repository root would never ship, per `tools/build.py` | 7.1 |
-| The drift guard had no enforcement point: `kodi-launcher` has no remote and no CI | 7.2 |
+| The drift guard had no enforcement point: `bootstrapper` had no remote and no CI (it gained a remote 2026-08-06, still no CI) | 7.2 |
 | `Files.GetSources` cannot verify class C in-flow and would emit a false PARTIAL | 7.6 |
 | The lint covers every `.py` already; "add by name" had exactly one literal implementation and it was the wrong one | 7.3 |
 | `fake_kodi_sandbox_io.py` is the wrong fake; CLAUDE.md and README name it wrongly | 8.2 |

@@ -62,7 +62,7 @@ import urllib.request
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 ADDON_ID = "script.ezmaintenanceplusplus"
 ADDON_XML = os.path.join(ROOT, ADDON_ID, "addon.xml")
-REPO = "moquette/ezmaintenanceplusplus"
+REPO = "moquette/kodi-ezmpp"
 
 
 def read_addon_version(path: str = ADDON_XML) -> str:

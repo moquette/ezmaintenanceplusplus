@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Release EZ Maintenance++: build the deterministic zip, tag it, and publish
-# the zip as a GitHub Release asset on THIS repo (moquette/ezmaintenanceplusplus).
+# the zip as a GitHub Release asset on THIS repo (moquette/kodi-ezmpp).
 #
 # Mirrors estuary7's release discipline (tools/build_skin.py + `gh release`):
 # build -> CI GATE -> sha256 -> tag -> gh release create -> verify the asset is
@@ -23,7 +23,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 ADDON=script.ezmaintenanceplusplus
-REPO="moquette/ezmaintenanceplusplus"
+REPO="moquette/kodi-ezmpp"
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
 
